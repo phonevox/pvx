@@ -42,6 +42,17 @@ class InstallShFreshDebianTest(unittest.TestCase):
         )
         self.assertIn("pvx", result.stdout.lower())
 
+    def test_pvx_works_for_non_root_user_after_install(self):
+        result = run_install_in_container(
+            "debian:bookworm-slim",
+            "sh install.sh && useradd -m testuser && su testuser -c 'pvx --version'",
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
+        self.assertIn("pvx", result.stdout.lower())
+
 
 class InstallShFailureTest(unittest.TestCase):
     def test_failed_download_leaves_no_pvx_on_path(self):

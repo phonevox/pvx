@@ -2,7 +2,11 @@
 set -e
 
 CORE_URL="${PVX_CORE_URL:-https://registry.pvx.dev/core/latest/core.pyz}"
-PVX_HOME="${PVX_HOME:-$HOME/.pvx}"
+# caminho fixo de sistema, igual qualquer pacote instalado via apt/yum --
+# nunca $HOME: install.sh roda como root (via sudo, que reseta $HOME pra
+# /root), então o binário compartilhado não pode morar na home de quem
+# instalou, senão outros usuários tomam Permission denied.
+PVX_LIB_DIR="/usr/local/lib/pvx"
 
 if ! command -v python3 >/dev/null 2>&1; then
     if command -v apt-get >/dev/null 2>&1; then
@@ -17,7 +21,7 @@ if ! command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
-mkdir -p "$PVX_HOME/bin"
+mkdir -p "$PVX_LIB_DIR"
 
 # baixa via python3 (já garantido acima) em vez de curl/wget -- evita mais
 # uma dependência externa que pode não existir na imagem base.
@@ -31,11 +35,12 @@ urllib.request.urlretrieve(sys.argv[1], sys.argv[2])
     exit 1
 fi
 
-mv "$TMP_CORE" "$PVX_HOME/bin/core.pyz"
+mv "$TMP_CORE" "$PVX_LIB_DIR/core.pyz"
+chmod 644 "$PVX_LIB_DIR/core.pyz"
 
 cat > /usr/local/bin/pvx <<EOF
 #!/bin/sh
-exec python3 "$PVX_HOME/bin/core.pyz" "\$@"
+exec python3 "$PVX_LIB_DIR/core.pyz" "\$@"
 EOF
 chmod +x /usr/local/bin/pvx
 
