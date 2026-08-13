@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -93,6 +95,24 @@ class DiscoverTest(unittest.TestCase):
 
         self.assertEqual(modules["dummy"].name, "dummy")
         self.assertEqual(modules["other"].name, "other")
+
+    def test_discovers_real_built_module_pyz(self):
+        dummy_dir = Path(__file__).resolve().parents[3] / "modules" / "dummy"
+        build = subprocess.run(
+            ["sh", "build.sh"], cwd=dummy_dir, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(build.returncode, 0, msg=build.stderr)
+
+        with TemporaryDirectory() as tmp:
+            modules_dir = Path(tmp)
+            installed_dir = modules_dir / "dummy"
+            installed_dir.mkdir()
+            shutil.copy(dummy_dir / "dist" / "manifest.json", installed_dir / "manifest.json")
+            shutil.copy(dummy_dir / "dist" / "module.pyz", installed_dir / "module.pyz")
+
+            modules = discover(modules_dir)
+
+        self.assertEqual(modules["dummy"].name, "dummy")
 
 
 if __name__ == "__main__":
