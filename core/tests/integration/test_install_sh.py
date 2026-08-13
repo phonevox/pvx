@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+CORE_DIR = REPO_ROOT / "core"
 FIXTURE_CORE_URL = "file:///workspace/core/tests/integration/fixtures/fake_core.pyz"
 
 
@@ -52,6 +53,48 @@ class InstallShFreshDebianTest(unittest.TestCase):
             msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
         )
         self.assertIn("pvx", result.stdout.lower())
+
+    def test_pvx_accessible_with_restricted_sudo_path(self):
+        # secure_path do sudoers em RHEL/Rocky (e vários outros) exclui
+        # /usr/local/bin de propósito -- simula isso sem precisar de sudo
+        # de verdade dentro do container.
+        result = run_install_in_container(
+            "debian:bookworm-slim",
+            "sh install.sh && env -i PATH=/sbin:/bin:/usr/sbin:/usr/bin pvx --version",
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
+        self.assertIn("pvx", result.stdout.lower())
+
+
+class InstallShRockyLinuxTest(unittest.TestCase):
+    def test_interactive_deps_import_cleanly_on_rhel_family(self):
+        core_build = subprocess.run(
+            ["sh", "build.sh"], cwd=CORE_DIR, capture_output=True, text=True, timeout=180,
+        )
+        self.assertEqual(core_build.returncode, 0, msg=core_build.stderr)
+
+        result = subprocess.run(
+            [
+                "docker", "run", "--rm",
+                "-v", f"{REPO_ROOT}:/workspace:ro",
+                "-w", "/workspace",
+                "-e", "PVX_CORE_URL=file:///workspace/core/dist/core.pyz",
+                "rockylinux:8",
+                "sh", "-c",
+                "sh install.sh && "
+                "PY=$(head -2 /usr/local/bin/pvx | tail -1 | awk '{print $2}' | tr -d '\"') && "
+                "$PY -c \"import sys; sys.path.insert(0, '/usr/local/lib/pvx/core.pyz'); import questionary; print('questionary ok')\"",
+            ],
+            capture_output=True, text=True, timeout=180,
+        )
+        self.assertEqual(
+            result.returncode, 0,
+            msg=f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
+        self.assertIn("questionary ok", result.stdout)
 
 
 class InstallShFailureTest(unittest.TestCase):
