@@ -1,0 +1,10 @@
+{
+  "name": "dummy",
+  "version": "0.1.0",
+  "entrypoint": "main:cli",
+  "description": "Módulo dummy pra testar instalação, loader e dispatch.",
+  "author": "pvx",
+  "min_pvx_version": "0.1.0",
+  "checksum_sha256": "",
+  "dependencies": []
+}
