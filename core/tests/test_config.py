@@ -14,6 +14,7 @@ class ConfigPathsTest(unittest.TestCase):
             os.environ.pop("PVX_HOME", None)
         else:
             os.environ["PVX_HOME"] = self._old_home
+        os.environ.pop("PVX_REGISTRY_URL", None)
 
     def test_pvx_home_respects_env_override(self):
         os.environ["PVX_HOME"] = "/tmp/fake-pvx-home"
@@ -31,6 +32,10 @@ class ConfigPathsTest(unittest.TestCase):
         self.assertEqual(config.logs_dir(), base / "logs")
         self.assertEqual(config.registry_cache_path(), base / "registry.json")
         self.assertEqual(config.config_file_path(), base / "config.json")
+
+    def test_registry_index_url_respects_env_override(self):
+        os.environ["PVX_REGISTRY_URL"] = "https://example.com/index.json"
+        self.assertEqual(config.registry_index_url(), "https://example.com/index.json")
 
 
 if __name__ == "__main__":
