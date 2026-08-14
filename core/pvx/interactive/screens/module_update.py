@@ -1,0 +1,20 @@
+from pvx import config
+from pvx.cli import discover_installed_modules
+from pvx.interactive.inputs import ask_select
+from pvx.modules import installer
+
+
+class ModuleUpdateScreen:
+    def render(self):
+        modules = discover_installed_modules()
+        selected = ask_select("pvx > módulos > atualizar >", list(modules.keys()) + ["Todos"])
+        if selected is None:
+            return "BACK"
+
+        if selected == "Todos":
+            for name in modules:
+                installer.install(name, config.registry_index_url())
+        else:
+            installer.install(selected, config.registry_index_url())
+
+        return "BACK"

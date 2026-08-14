@@ -46,6 +46,16 @@ class RootScreenTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(mock_ask_select.call_count, 2)
 
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Módulos")
+    def test_selecting_modulos_pushes_modules_screen(self, mock_ask_select, mock_discover):
+        self.assertEqual(RootScreen().render(), "modules")
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Logs")
+    def test_selecting_logs_pushes_logs_screen(self, mock_ask_select, mock_discover):
+        self.assertEqual(RootScreen().render(), "logs")
+
 
 if __name__ == "__main__":
     unittest.main()
