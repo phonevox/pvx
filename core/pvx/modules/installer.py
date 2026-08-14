@@ -12,7 +12,9 @@ from pvx.registry.client import fetch_index
 def install(name, index_url, version=None):
     try:
         index = fetch_index(index_url)
-        entry = next(m for m in index["modules"] if m["name"] == name)
+        entry = next((m for m in index["modules"] if m["name"] == name), None)
+        if entry is None:
+            raise ValueError(f"módulo '{name}' não encontrado no registry ({index_url})")
         version = version or entry["latest"]
 
         with urllib.request.urlopen(entry["manifest_url"]) as response:

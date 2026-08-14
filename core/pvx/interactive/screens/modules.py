@@ -1,11 +1,12 @@
 from pvx.interactive.inputs import ask_select
 
-CHOICES = ["Instalar", "Atualizar", "Remover", "Voltar"]
+CHOICES = ["Instalar", "Atualizar", "Remover", "Listar", "Voltar"]
 
 SCREEN_BY_CHOICE = {
     "Instalar": "modules.install",
     "Atualizar": "modules.update",
     "Remover": "modules.uninstall",
+    "Listar": "modules.list",
 }
 
 

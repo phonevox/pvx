@@ -49,6 +49,28 @@ if [ -z "$PY_BIN" ]; then
     PY_BIN="$(find_py_bin || true)"
 fi
 
+if [ -z "$PY_BIN" ] && command -v yum >/dev/null 2>&1; then
+    # CentOS/RHEL 7: sem AppStream, os pacotes python3.X acima não existem
+    # -- só dá pra ter 3.8+ via Software Collections (SCL). O repo que o
+    # centos-release-scl instala ainda aponta pro mirrorlist.centos.org,
+    # que não resolve mais (CentOS 7 é EOL) -- troca pro mesmo mirror que
+    # o resto do sistema já usa (aliyun) antes de instalar o pacote.
+    yum install -y centos-release-scl || true
+    for f in /etc/yum.repos.d/CentOS-SCLo-scl*.repo; do
+        [ -f "$f" ] || continue
+        sed -i -e 's|^mirrorlist=|#mirrorlist=|' \
+               -e 's|^#\s*baseurl=http://mirror.centos.org|baseurl=https://mirrors.aliyun.com|' \
+               "$f"
+    done
+    yum install -y rh-python38 || true
+    for scl_bin in /opt/rh/rh-python38/root/usr/bin/python3.8 /opt/rh/rh-python38/root/usr/bin/python3; do
+        if [ -x "$scl_bin" ] && is_python_new_enough "$scl_bin"; then
+            PY_BIN="$scl_bin"
+            break
+        fi
+    done
+fi
+
 if [ -z "$PY_BIN" ]; then
     echo "pvx: nenhum python3 >= 3.8 disponível ou instalável" >&2
     exit 1

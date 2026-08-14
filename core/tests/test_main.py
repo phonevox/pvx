@@ -15,6 +15,10 @@ class MainDispatchTest(unittest.TestCase):
         main(argv=["--version"])
         mock_cli.main.assert_called_once_with(args=["--version"], prog_name="pvx")
 
+    @patch("pvx.__main__.run_interactive", side_effect=KeyboardInterrupt)
+    def test_ctrl_c_exits_cleanly_without_traceback(self, mock_run_interactive):
+        main(argv=[])  # não deve levantar
+
 
 if __name__ == "__main__":
     unittest.main()

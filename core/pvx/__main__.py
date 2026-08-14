@@ -1,5 +1,7 @@
 import sys
 
+import click
+
 from pvx.cli import cli
 from pvx.interactive.router import run_interactive
 
@@ -9,7 +11,10 @@ def main(argv=None):
     if argv:
         cli.main(args=argv, prog_name="pvx")
     else:
-        run_interactive()
+        try:
+            run_interactive()
+        except KeyboardInterrupt:
+            click.echo("\npvx encerrado.")
 
 
 if __name__ == "__main__":
