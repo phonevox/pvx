@@ -38,6 +38,12 @@ class ConfigPathsTest(unittest.TestCase):
         os.environ["PVX_REGISTRY_URL"] = "https://example.com/index.json"
         self.assertEqual(config.registry_index_url(), "https://example.com/index.json")
 
+    def test_registry_index_url_defaults_to_phonevox_registry(self):
+        os.environ.pop("PVX_REGISTRY_URL", None)
+        self.assertEqual(
+            config.registry_index_url(), "https://registry.phonevox.com.br/pvx/index.json"
+        )
+
 
 class CoreUpdateConfigTest(unittest.TestCase):
     def tearDown(self):

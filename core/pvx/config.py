@@ -31,7 +31,9 @@ def config_file_path() -> Path:
 
 
 def registry_index_url() -> str:
-    return os.environ.get("PVX_REGISTRY_URL", "https://registry.pvx.dev/index.json")
+    return os.environ.get(
+        "PVX_REGISTRY_URL", "https://registry.phonevox.com.br/pvx/index.json"
+    )
 
 
 def core_update_url() -> str:
