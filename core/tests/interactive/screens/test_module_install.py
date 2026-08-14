@@ -37,6 +37,12 @@ class ModuleInstallScreenTest(unittest.TestCase):
     def test_none_source_selection_returns_back(self, mock_ask_select):
         self.assertEqual(ModuleInstallScreen().render(), "BACK")
 
+    @patch("pvx.interactive.screens.module_install.installer.install")
+    @patch("pvx.interactive.screens.module_install.ask_select", return_value="Voltar")
+    def test_selecting_voltar_returns_back_without_installing(self, mock_ask_select, mock_install):
+        self.assertEqual(ModuleInstallScreen().render(), "BACK")
+        mock_install.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

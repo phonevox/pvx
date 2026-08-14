@@ -56,6 +56,11 @@ class RootScreenTest(unittest.TestCase):
     def test_selecting_logs_pushes_logs_screen(self, mock_ask_select, mock_discover):
         self.assertEqual(RootScreen().render(), "logs")
 
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Tema")
+    def test_selecting_tema_pushes_theme_screen(self, mock_ask_select, mock_discover):
+        self.assertEqual(RootScreen().render(), "theme")
+
 
 if __name__ == "__main__":
     unittest.main()

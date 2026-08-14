@@ -1,3 +1,6 @@
+from pvx.interactive import widgets
+
+
 class Router:
     def __init__(self, registry):
         self.registry = registry
@@ -6,6 +9,7 @@ class Router:
     def run(self, start_screen_name):
         self.stack = [self.registry[start_screen_name]()]
         while self.stack:
+            widgets.clear()
             result = self.stack[-1].render()
             if result is None:
                 continue
@@ -25,6 +29,7 @@ def run_interactive():
     from pvx.interactive.screens.module_update import ModuleUpdateScreen
     from pvx.interactive.screens.modules import ModulesScreen
     from pvx.interactive.screens.root import RootScreen
+    from pvx.interactive.screens.theme_settings import ThemeScreen
 
     registry = {
         "root": RootScreen,
@@ -33,5 +38,6 @@ def run_interactive():
         "modules.update": ModuleUpdateScreen,
         "modules.uninstall": ModuleUninstallScreen,
         "logs": LogsScreen,
+        "theme": ThemeScreen,
     }
     Router(registry).run("root")

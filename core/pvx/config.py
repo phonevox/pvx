@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -31,3 +32,26 @@ def config_file_path() -> Path:
 
 def registry_index_url() -> str:
     return os.environ.get("PVX_REGISTRY_URL", "https://registry.pvx.dev/index.json")
+
+
+def read_config() -> dict:
+    path = config_file_path()
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
+def write_config(data: dict) -> None:
+    path = config_file_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data))
+
+
+def get_theme_name() -> str:
+    return read_config().get("theme", "azul")
+
+
+def set_theme_name(name: str) -> None:
+    data = read_config()
+    data["theme"] = name
+    write_config(data)

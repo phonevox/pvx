@@ -2,7 +2,7 @@ from pvx.cli import discover_installed_modules
 from pvx.interactive.auto_menu import build_choices
 from pvx.interactive.inputs import ask_select
 
-SCREEN_BY_SYSTEM_CHOICE = {"Módulos": "modules", "Logs": "logs"}
+SCREEN_BY_SYSTEM_CHOICE = {"Módulos": "modules", "Logs": "logs", "Tema": "theme"}
 
 
 class RootScreen:

@@ -7,8 +7,10 @@ from pvx.modules import installer
 class ModuleUpdateScreen:
     def render(self):
         modules = discover_installed_modules()
-        selected = ask_select("pvx > módulos > atualizar >", list(modules.keys()) + ["Todos"])
-        if selected is None:
+        selected = ask_select(
+            "pvx > módulos > atualizar >", list(modules.keys()) + ["Todos", "Voltar"]
+        )
+        if selected is None or selected == "Voltar":
             return "BACK"
 
         if selected == "Todos":

@@ -8,8 +8,8 @@ from pvx.logging_ import viewer
 class LogsScreen:
     def render(self):
         modules = discover_installed_modules()
-        selected = ask_select("pvx > logs >", list(modules.keys()))
-        if selected is None:
+        selected = ask_select("pvx > logs >", list(modules.keys()) + ["Voltar"])
+        if selected is None or selected == "Voltar":
             return "BACK"
         click.echo(viewer.read_log(selected, lines=None))
         return "BACK"
