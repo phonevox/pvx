@@ -9,6 +9,13 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 cp -r pvx "$BUILD_DIR/"
 python3 -m pip install --quiet --target "$BUILD_DIR" click questionary rich
 
+if [ -z "$PVX_RELEASE_BUILD" ] && git rev-parse --git-dir >/dev/null 2>&1; then
+    cat > "$BUILD_DIR/pvx/_build_stamp.py" <<EOF
+BRANCH = "$(git rev-parse --abbrev-ref HEAD)"
+COMMIT = "$(git rev-parse --short HEAD)"
+EOF
+fi
+
 cat > "$BUILD_DIR/__main__.py" <<'EOF'
 from pvx.__main__ import main
 
