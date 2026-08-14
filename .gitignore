@@ -7,3 +7,4 @@ __pycache__/
 htmlcov/
 core/dist/
 modules/dummy/dist/
+modules/ssh-hardening/dist/
