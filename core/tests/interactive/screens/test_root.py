@@ -24,12 +24,26 @@ class FakeDummyModule(PvxModule):
         return group
 
 
+def _index_of_value(choices, value):
+    return next(
+        i for i, c in enumerate(choices)
+        if (c.value if isinstance(c, questionary.Choice) else c) == value
+    )
+
+
 class RootScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
     def test_selecting_sair_exits(self, mock_ask_select, mock_discover):
         result = RootScreen().render()
         self.assertEqual(result, "EXIT")
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
+    @patch("pvx.interactive.screens.root.widgets.banner")
+    def test_shows_banner(self, mock_banner, mock_ask_select, mock_discover):
+        RootScreen().render()
+        mock_banner.assert_called_once()
 
     @patch(
         "pvx.interactive.screens.root.discover_installed_modules",
@@ -81,9 +95,35 @@ class RootScreenTest(unittest.TestCase):
             i for i, c in enumerate(choices)
             if isinstance(c, questionary.Separator) and c.line == "MODULES"
         )
-        self.assertLess(system_index, choices.index("Módulos"))
-        self.assertLess(modules_index, choices.index("dummy"))
-        self.assertLess(choices.index("dummy"), choices.index("Sair"))
+        self.assertLess(system_index, _index_of_value(choices, "Módulos"))
+        self.assertLess(modules_index, _index_of_value(choices, "dummy"))
+        self.assertLess(_index_of_value(choices, "dummy"), choices.index("Sair"))
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"dummy": FakeDummyModule()},
+    )
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
+    def test_section_items_are_indented(self, mock_ask_select, mock_discover):
+        RootScreen().render()
+        choices = mock_ask_select.call_args.args[1]
+
+        modulos = next(c for c in choices if isinstance(c, questionary.Choice) and c.value == "Módulos")
+        dummy = next(c for c in choices if isinstance(c, questionary.Choice) and c.value == "dummy")
+        self.assertTrue(modulos.title.startswith("  "))
+        self.assertTrue(dummy.title.startswith("  "))
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"dummy": FakeDummyModule()},
+    )
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
+    def test_sair_has_its_own_separator(self, mock_ask_select, mock_discover):
+        RootScreen().render()
+        choices = mock_ask_select.call_args.args[1]
+
+        sair_index = choices.index("Sair")
+        self.assertIsInstance(choices[sair_index - 1], questionary.Separator)
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
