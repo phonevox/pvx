@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import click
+import questionary
 
 from pvx.interactive.screens.root import RootScreen
 from pvx.modules.base import PvxModule
@@ -60,6 +61,38 @@ class RootScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.root.ask_select", return_value="Tema")
     def test_selecting_tema_pushes_theme_screen(self, mock_ask_select, mock_discover):
         self.assertEqual(RootScreen().render(), "theme")
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"dummy": FakeDummyModule()},
+    )
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
+    def test_choices_are_grouped_under_system_and_modules_separators(
+        self, mock_ask_select, mock_discover
+    ):
+        RootScreen().render()
+        choices = mock_ask_select.call_args.args[1]
+
+        system_index = next(
+            i for i, c in enumerate(choices)
+            if isinstance(c, questionary.Separator) and c.line == "SYSTEM"
+        )
+        modules_index = next(
+            i for i, c in enumerate(choices)
+            if isinstance(c, questionary.Separator) and c.line == "MODULES"
+        )
+        self.assertLess(system_index, choices.index("Módulos"))
+        self.assertLess(modules_index, choices.index("dummy"))
+        self.assertLess(choices.index("dummy"), choices.index("Sair"))
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
+    def test_no_modules_separator_when_none_installed(self, mock_ask_select, mock_discover):
+        RootScreen().render()
+        choices = mock_ask_select.call_args.args[1]
+        self.assertFalse(
+            any(isinstance(c, questionary.Separator) and c.line == "MODULES" for c in choices)
+        )
 
 
 if __name__ == "__main__":
