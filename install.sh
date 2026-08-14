@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-CORE_URL="${PVX_CORE_URL:-https://registry.pvx.dev/core/latest/core.pyz}"
+CORE_URL="${PVX_CORE_URL:-https://github.com/phonevox/pvx/releases/latest/download/core.pyz}"
 # caminho fixo de sistema, igual qualquer pacote instalado via apt/yum --
 # nunca $HOME: install.sh roda como root (via sudo, que reseta $HOME pra
 # /root), então o binário compartilhado não pode morar na home de quem

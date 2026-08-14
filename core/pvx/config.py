@@ -34,6 +34,26 @@ def registry_index_url() -> str:
     return os.environ.get("PVX_REGISTRY_URL", "https://registry.pvx.dev/index.json")
 
 
+def core_update_url() -> str:
+    return os.environ.get(
+        "PVX_CORE_URL", "https://github.com/phonevox/pvx/releases/latest/download/core.pyz"
+    )
+
+
+def core_manifest_url() -> str:
+    return os.environ.get(
+        "PVX_CORE_MANIFEST_URL",
+        "https://github.com/phonevox/pvx/releases/latest/download/core-manifest.json",
+    )
+
+
+def core_lib_path() -> Path:
+    override = os.environ.get("PVX_CORE_LIB_PATH")
+    if override:
+        return Path(override)
+    return Path("/usr/local/lib/pvx/core.pyz")
+
+
 def read_config() -> dict:
     path = config_file_path()
     if not path.exists():

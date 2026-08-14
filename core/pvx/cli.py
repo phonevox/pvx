@@ -1,6 +1,6 @@
 import click
 
-from pvx import config
+from pvx import config, self_update
 from pvx.logging_ import viewer
 from pvx.modules import installer, loader
 from pvx.version import __version__
@@ -65,6 +65,16 @@ def build_cli():
     @click.option("--lines", type=int, default=None)
     def logs_command(name, lines):
         click.echo(viewer.read_log(name, lines=lines))
+
+    @cli.command(name="self-update")
+    def self_update_command():
+        try:
+            version = self_update.self_update()
+        except PermissionError:
+            raise click.ClickException(
+                "self-update precisa de privilégios de root (rode com sudo)."
+            )
+        click.echo(f"pvx atualizado pra versão {version}.")
 
     for name, module in discover_installed_modules().items():
         cli.add_command(module.cli_group(), name=name)

@@ -39,6 +39,36 @@ class ConfigPathsTest(unittest.TestCase):
         self.assertEqual(config.registry_index_url(), "https://example.com/index.json")
 
 
+class CoreUpdateConfigTest(unittest.TestCase):
+    def tearDown(self):
+        os.environ.pop("PVX_CORE_URL", None)
+        os.environ.pop("PVX_CORE_MANIFEST_URL", None)
+        os.environ.pop("PVX_CORE_LIB_PATH", None)
+
+    def test_core_update_url_defaults_to_github_release(self):
+        self.assertEqual(
+            config.core_update_url(),
+            "https://github.com/phonevox/pvx/releases/latest/download/core.pyz",
+        )
+
+    def test_core_update_url_respects_env_override(self):
+        os.environ["PVX_CORE_URL"] = "https://example.com/core.pyz"
+        self.assertEqual(config.core_update_url(), "https://example.com/core.pyz")
+
+    def test_core_manifest_url_defaults_to_github_release(self):
+        self.assertEqual(
+            config.core_manifest_url(),
+            "https://github.com/phonevox/pvx/releases/latest/download/core-manifest.json",
+        )
+
+    def test_core_lib_path_defaults_to_fixed_system_path(self):
+        self.assertEqual(config.core_lib_path(), Path("/usr/local/lib/pvx/core.pyz"))
+
+    def test_core_lib_path_respects_env_override(self):
+        os.environ["PVX_CORE_LIB_PATH"] = "/tmp/fake-core.pyz"
+        self.assertEqual(config.core_lib_path(), Path("/tmp/fake-core.pyz"))
+
+
 class ThemeConfigTest(unittest.TestCase):
     def setUp(self):
         self._tmp = TemporaryDirectory()
