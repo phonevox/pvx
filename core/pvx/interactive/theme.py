@@ -7,6 +7,10 @@ ACCENT_COLORS = {
     "verde": "#00af5f",
     "roxo": "#af5fff",
     "laranja": "#ff8700",
+    "vermelho": "#ff5555",
+    "amarelo": "#ffd700",
+    "ciano": "#00d7ff",
+    "rosa": "#ff5fd7",
 }
 
 SEPARATOR_COLOR = "#808080"

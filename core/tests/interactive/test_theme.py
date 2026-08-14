@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 import questionary
 
 from pvx.interactive.theme import (
+    ACCENT_COLORS,
     PRESETS,
     THEME,
     THEME_RULES,
@@ -30,6 +31,16 @@ class ThemeTest(unittest.TestCase):
 
     def test_theme_is_questionary_style_instance(self):
         self.assertIsInstance(THEME, questionary.Style)
+
+    def test_more_preset_colors_available(self):
+        self.assertEqual(ACCENT_COLORS["vermelho"], "#ff5555")
+        self.assertEqual(ACCENT_COLORS["amarelo"], "#ffd700")
+        self.assertEqual(ACCENT_COLORS["ciano"], "#00d7ff")
+        self.assertEqual(ACCENT_COLORS["rosa"], "#ff5fd7")
+        self.assertIn("vermelho", PRESETS)
+        self.assertIn("amarelo", PRESETS)
+        self.assertIn("ciano", PRESETS)
+        self.assertIn("rosa", PRESETS)
 
 
 class CurrentStyleTest(unittest.TestCase):
