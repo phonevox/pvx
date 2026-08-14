@@ -18,8 +18,12 @@ class RootScreen:
 
         choices = [questionary.Separator("SYSTEM"), *(indented(c) for c in SCREEN_BY_SYSTEM_CHOICE)]
         if modules:
-            choices += [questionary.Separator("MODULES"), *(indented(name) for name in modules)]
-        choices += [questionary.Separator(), "Sair"]
+            choices += [
+                questionary.Separator(" "),
+                questionary.Separator("MODULES"),
+                *(indented(name) for name in modules),
+            ]
+        choices += [questionary.Separator(" "), "Sair"]
 
         selected = ask_select("pvx >", choices)
         if selected is None or selected == "Sair":

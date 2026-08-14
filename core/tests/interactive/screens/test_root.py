@@ -134,12 +134,29 @@ class RootScreenTest(unittest.TestCase):
         return_value={"dummy": FakeDummyModule()},
     )
     @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
-    def test_sair_has_its_own_separator(self, mock_ask_select, mock_discover):
+    def test_sair_separator_is_a_blank_line_not_dashes(self, mock_ask_select, mock_discover):
         RootScreen().render()
         choices = mock_ask_select.call_args.args[1]
 
         sair_index = choices.index("Sair")
         self.assertIsInstance(choices[sair_index - 1], questionary.Separator)
+        self.assertEqual(choices[sair_index - 1].line, " ")
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"dummy": FakeDummyModule()},
+    )
+    @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
+    def test_blank_line_separates_system_and_modules_sections(self, mock_ask_select, mock_discover):
+        RootScreen().render()
+        choices = mock_ask_select.call_args.args[1]
+
+        modules_index = next(
+            i for i, c in enumerate(choices)
+            if isinstance(c, questionary.Separator) and c.line == "MODULES"
+        )
+        self.assertIsInstance(choices[modules_index - 1], questionary.Separator)
+        self.assertEqual(choices[modules_index - 1].line, " ")
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="Sair")
