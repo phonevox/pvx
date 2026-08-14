@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 import urllib.request
 
 from pvx import config
@@ -26,3 +27,18 @@ def self_update():
     tmp_path.replace(lib_path)
 
     return manifest.get("version")
+
+
+def uninstall(purge=False):
+    lib_path = config.core_lib_path()
+    lib_path.unlink(missing_ok=True)
+    try:
+        lib_path.parent.rmdir()
+    except OSError:
+        pass
+
+    config.pvx_bin_path().unlink(missing_ok=True)
+    config.pvx_bin_symlink_path().unlink(missing_ok=True)
+
+    if purge:
+        shutil.rmtree(config.pvx_home(), ignore_errors=True)

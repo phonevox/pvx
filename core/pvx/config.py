@@ -54,6 +54,20 @@ def core_lib_path() -> Path:
     return Path("/usr/local/lib/pvx/core.pyz")
 
 
+def pvx_bin_path() -> Path:
+    override = os.environ.get("PVX_BIN_PATH")
+    if override:
+        return Path(override)
+    return Path("/usr/local/bin/pvx")
+
+
+def pvx_bin_symlink_path() -> Path:
+    override = os.environ.get("PVX_BIN_SYMLINK_PATH")
+    if override:
+        return Path(override)
+    return Path("/usr/bin/pvx")
+
+
 def read_config() -> dict:
     path = config_file_path()
     if not path.exists():

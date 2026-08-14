@@ -44,5 +44,24 @@ class SelfUpdateCommandTest(unittest.TestCase):
         mock_self_update.assert_called_once()
 
 
+class SelfUninstallCommandTest(unittest.TestCase):
+    @patch("pvx.cli.self_update.uninstall")
+    def test_requires_confirmation(self, mock_uninstall):
+        result = CliRunner().invoke(build_cli(), ["self-uninstall"], input="n\n")
+        mock_uninstall.assert_not_called()
+
+    @patch("pvx.cli.self_update.uninstall")
+    def test_yes_flag_skips_confirmation(self, mock_uninstall):
+        result = CliRunner().invoke(build_cli(), ["self-uninstall", "--yes"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_uninstall.assert_called_once_with(purge=False)
+
+    @patch("pvx.cli.self_update.uninstall")
+    def test_purge_flag_passed_through(self, mock_uninstall):
+        result = CliRunner().invoke(build_cli(), ["self-uninstall", "--yes", "--purge"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_uninstall.assert_called_once_with(purge=True)
+
+
 if __name__ == "__main__":
     unittest.main()

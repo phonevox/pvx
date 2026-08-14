@@ -86,6 +86,15 @@ def build_cli():
             )
         click.echo(f"pvx atualizado pra versão {version}.")
 
+    @cli.command(name="self-uninstall")
+    @click.option("--yes", is_flag=True)
+    @click.option("--purge", is_flag=True)
+    def self_uninstall_command(yes, purge):
+        if not yes:
+            click.confirm("Remover o pvx do sistema?", abort=True)
+        self_update.uninstall(purge=purge)
+        click.echo("pvx removido.")
+
     for name, module in discover_installed_modules().items():
         cli.add_command(module.cli_group(), name=name)
 

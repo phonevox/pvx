@@ -44,6 +44,8 @@ class CoreUpdateConfigTest(unittest.TestCase):
         os.environ.pop("PVX_CORE_URL", None)
         os.environ.pop("PVX_CORE_MANIFEST_URL", None)
         os.environ.pop("PVX_CORE_LIB_PATH", None)
+        os.environ.pop("PVX_BIN_PATH", None)
+        os.environ.pop("PVX_BIN_SYMLINK_PATH", None)
 
     def test_core_update_url_defaults_to_github_release(self):
         self.assertEqual(
@@ -67,6 +69,20 @@ class CoreUpdateConfigTest(unittest.TestCase):
     def test_core_lib_path_respects_env_override(self):
         os.environ["PVX_CORE_LIB_PATH"] = "/tmp/fake-core.pyz"
         self.assertEqual(config.core_lib_path(), Path("/tmp/fake-core.pyz"))
+
+    def test_pvx_bin_path_defaults_to_fixed_system_path(self):
+        self.assertEqual(config.pvx_bin_path(), Path("/usr/local/bin/pvx"))
+
+    def test_pvx_bin_path_respects_env_override(self):
+        os.environ["PVX_BIN_PATH"] = "/tmp/fake-pvx-bin"
+        self.assertEqual(config.pvx_bin_path(), Path("/tmp/fake-pvx-bin"))
+
+    def test_pvx_bin_symlink_path_defaults_to_fixed_system_path(self):
+        self.assertEqual(config.pvx_bin_symlink_path(), Path("/usr/bin/pvx"))
+
+    def test_pvx_bin_symlink_path_respects_env_override(self):
+        os.environ["PVX_BIN_SYMLINK_PATH"] = "/tmp/fake-pvx-symlink"
+        self.assertEqual(config.pvx_bin_symlink_path(), Path("/tmp/fake-pvx-symlink"))
 
 
 class ThemeConfigTest(unittest.TestCase):
