@@ -1,6 +1,7 @@
 import click
 
 from pvx import build_info, config, self_update
+from pvx.interactive import widgets
 from pvx.logging_ import viewer
 from pvx.modules import installer, loader
 from pvx.version import __version__
@@ -19,7 +20,11 @@ def build_module_group():
     @click.argument("name")
     @click.option("--version", "version_", default=None)
     def module_install(name, version_):
-        installer.install(name, config.registry_index_url(), version=version_)
+        try:
+            with widgets.spinner(f"Instalando {name}..."):
+                installer.install(name, config.registry_index_url(), version=version_)
+        except (RuntimeError, ValueError) as e:
+            raise click.ClickException(str(e))
         click.echo(f"{name} instalado.")
 
     @module_group.command(name="update")
@@ -27,12 +32,18 @@ def build_module_group():
     @click.option("--all", "update_all", is_flag=True)
     def module_update(name, update_all):
         if update_all:
-            for installed_name in discover_installed_modules():
-                installer.install(installed_name, config.registry_index_url())
+            names = list(discover_installed_modules())
         elif name:
-            installer.install(name, config.registry_index_url())
+            names = [name]
         else:
             raise click.UsageError("informe um nome de módulo ou use --all")
+
+        try:
+            for installed_name in names:
+                with widgets.spinner(f"Atualizando {installed_name}..."):
+                    installer.install(installed_name, config.registry_index_url())
+        except (RuntimeError, ValueError) as e:
+            raise click.ClickException(str(e))
         click.echo("atualizado.")
 
     @module_group.command(name="uninstall")
@@ -79,7 +90,8 @@ def build_cli():
                 abort=True,
             )
         try:
-            version = self_update.self_update()
+            with widgets.spinner("Baixando atualização..."):
+                version = self_update.self_update()
         except PermissionError:
             raise click.ClickException(
                 "self-update precisa de privilégios de root (rode com sudo)."

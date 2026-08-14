@@ -43,6 +43,14 @@ class SelfUpdateCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_self_update.assert_called_once()
 
+    @patch("pvx.cli.self_update.self_update", return_value="0.1.0")
+    @patch("pvx.cli.build_info.describe", return_value=None)
+    @patch("pvx.cli.widgets.spinner")
+    def test_self_update_shows_spinner(self, mock_spinner, mock_describe, mock_self_update):
+        result = CliRunner().invoke(build_cli(), ["self-update"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_spinner.assert_called_once()
+
 
 class SelfUninstallCommandTest(unittest.TestCase):
     @patch("pvx.cli.self_update.uninstall")
