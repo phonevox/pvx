@@ -63,7 +63,7 @@ def build_cli():
     version_string = f"{__version__} ({channel})" if channel else __version__
 
     @click.group()
-    @click.version_option(version=version_string, prog_name="pvx")
+    @click.version_option(version_string, "-V", "--version", prog_name="pvx")
     def cli():
         pass
 
