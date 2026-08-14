@@ -19,9 +19,10 @@ python3 -m zipapp "$BUILD_DIR" -o dist/module.pyz
 # module.py) -- diferente do manifest.json fonte, que usa "main:cli"
 # (aponta pra src/main.py, layout de código-fonte).
 python3 -c "
-import json
+import hashlib, json
 manifest = json.load(open('manifest.json'))
 manifest['entrypoint'] = 'module:cli'
+manifest['checksum_sha256'] = hashlib.sha256(open('dist/module.pyz', 'rb').read()).hexdigest()
 json.dump(manifest, open('dist/manifest.json', 'w'), indent=2)
 "
 
