@@ -1,4 +1,7 @@
+import click
+
 from pvx import config
+from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_select, ask_text
 from pvx.modules import installer
 
@@ -17,6 +20,10 @@ class ModuleInstallScreen:
             index_url = config.registry_index_url()
 
         name = ask_text("Nome do módulo:")
-        installer.install(name, index_url)
+        try:
+            with widgets.spinner(f"Instalando {name}..."):
+                installer.install(name, index_url)
+        except (RuntimeError, ValueError) as e:
+            click.echo(str(e))
 
         return "BACK"

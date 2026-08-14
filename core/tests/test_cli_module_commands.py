@@ -24,10 +24,27 @@ class ModuleInstallCommandTest(unittest.TestCase):
         self.assertEqual(mock_install.call_args.args[0], "dummy")
 
     @patch("pvx.cli.installer.install")
+    @patch("pvx.cli.widgets.spinner")
+    def test_module_install_shows_spinner(self, mock_spinner, mock_install):
+        result = CliRunner().invoke(build_cli(), ["module", "install", "dummy"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_spinner.assert_called_once()
+
+    @patch("pvx.cli.installer.install")
     def test_root_install_alias_calls_same_command(self, mock_install):
         result = CliRunner().invoke(build_cli(), ["install", "dummy"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_install.assert_called_once()
+
+    @patch(
+        "pvx.cli.installer.install",
+        side_effect=RuntimeError("não foi possível acessar o registry (nome não resolvido)"),
+    )
+    def test_network_failure_shows_clean_message_no_traceback(self, mock_install):
+        result = CliRunner().invoke(build_cli(), ["module", "install", "dummy"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("não foi possível acessar o registry", result.output)
 
 
 class ModuleUpdateCommandTest(unittest.TestCase):
@@ -40,6 +57,24 @@ class ModuleUpdateCommandTest(unittest.TestCase):
         result = CliRunner().invoke(build_cli(), ["module", "update", "--all"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         self.assertEqual(mock_install.call_count, 2)
+
+    @patch("pvx.cli.installer.install")
+    @patch("pvx.cli.widgets.spinner")
+    @patch("pvx.cli.discover_installed_modules", return_value={"dummy": FakeModule()})
+    def test_update_shows_spinner(self, mock_discover, mock_spinner, mock_install):
+        result = CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_spinner.assert_called_once()
+
+    @patch(
+        "pvx.cli.installer.install",
+        side_effect=RuntimeError("não foi possível acessar o registry (nome não resolvido)"),
+    )
+    def test_network_failure_shows_clean_message_no_traceback(self, mock_install):
+        result = CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("não foi possível acessar o registry", result.output)
 
 
 class ModuleUninstallCommandTest(unittest.TestCase):

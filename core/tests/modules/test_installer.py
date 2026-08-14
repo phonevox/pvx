@@ -3,8 +3,10 @@ import json
 import os
 import subprocess
 import unittest
+import urllib.error
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from pvx.modules import installer
 
@@ -70,6 +72,14 @@ class InstallTest(unittest.TestCase):
 
         installed = Path(self._tmp.name) / "modules" / "dummy"
         self.assertFalse(installed.exists())
+
+    def test_registry_unreachable_raises_clean_error(self):
+        with patch(
+            "pvx.modules.installer.fetch_index",
+            side_effect=urllib.error.URLError("nome não resolvido"),
+        ):
+            with self.assertRaises(RuntimeError):
+                installer.install("dummy", "https://example.com/index.json")
 
     def test_uninstall_removes_module_directory(self):
         installed = Path(self._tmp.name) / "modules" / "dummy"
