@@ -81,6 +81,14 @@ class InstallTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 installer.install("dummy", "https://example.com/index.json")
 
+    def test_unknown_module_raises_clean_error(self):
+        with TemporaryDirectory() as registry_tmp:
+            registry_dir = Path(registry_tmp)
+            self._build_fake_registry(registry_dir)
+
+            with self.assertRaises(ValueError):
+                installer.install("inexistente", f"file://{registry_dir}/index.json")
+
     def test_uninstall_removes_module_directory(self):
         installed = Path(self._tmp.name) / "modules" / "dummy"
         installed.mkdir(parents=True)

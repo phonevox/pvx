@@ -21,4 +21,8 @@ def spinner(message):
 
 
 def banner():
-    Console().print(BANNER, style=theme.current_accent_color())
+    Console().print(BANNER + "\n", style=theme.current_accent_color())
+
+
+def pause(message):
+    click.pause(message)

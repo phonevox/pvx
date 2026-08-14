@@ -48,6 +48,34 @@ class ModuleInstallScreenTest(unittest.TestCase):
         "pvx.interactive.screens.module_install.config.registry_index_url",
         return_value="https://registry.pvx.dev/index.json",
     )
+    @patch("pvx.interactive.screens.module_install.ask_text", return_value=None)
+    @patch("pvx.interactive.screens.module_install.ask_select", return_value="Registry oficial")
+    def test_none_module_name_returns_back_without_installing(
+        self, mock_ask_select, mock_ask_text, mock_url, mock_install
+    ):
+        self.assertEqual(ModuleInstallScreen().render(), "BACK")
+        mock_install.assert_not_called()
+
+    @patch("pvx.interactive.screens.module_install.installer.install")
+    @patch(
+        "pvx.interactive.screens.module_install.ask_text",
+        side_effect=[None],
+    )
+    @patch(
+        "pvx.interactive.screens.module_install.ask_select",
+        return_value="Outro repositório (URL)",
+    )
+    def test_none_custom_index_url_returns_back_without_installing(
+        self, mock_ask_select, mock_ask_text, mock_install
+    ):
+        self.assertEqual(ModuleInstallScreen().render(), "BACK")
+        mock_install.assert_not_called()
+
+    @patch("pvx.interactive.screens.module_install.installer.install")
+    @patch(
+        "pvx.interactive.screens.module_install.config.registry_index_url",
+        return_value="https://registry.pvx.dev/index.json",
+    )
     @patch("pvx.interactive.screens.module_install.ask_text", return_value="dummy")
     @patch("pvx.interactive.screens.module_install.ask_select", return_value="Registry oficial")
     @patch("pvx.interactive.screens.module_install.widgets.spinner")

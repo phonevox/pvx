@@ -10,6 +10,10 @@ from pvx.modules import installer
 class ModuleUpdateScreen:
     def render(self):
         modules = discover_installed_modules()
+        if not modules:
+            widgets.pause("Nenhum módulo instalado. Pressione enter pra continuar...")
+            return "BACK"
+
         selected = ask_select(
             "pvx > módulos > atualizar >", list(modules.keys()) + ["Todos", "Voltar"]
         )

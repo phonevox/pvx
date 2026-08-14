@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from pvx.interactive.widgets import BANNER, banner, clear, spinner
+from pvx.interactive.widgets import BANNER, banner, clear, pause, spinner
 
 
 class ClearTest(unittest.TestCase):
@@ -26,7 +26,14 @@ class BannerTest(unittest.TestCase):
     @patch("pvx.interactive.widgets.Console")
     def test_prints_banner_in_theme_accent_color(self, mock_console_cls, mock_accent):
         banner()
-        mock_console_cls.return_value.print.assert_called_once_with(BANNER, style="#0087ff")
+        mock_console_cls.return_value.print.assert_called_once_with(BANNER + "\n", style="#0087ff")
+
+
+class PauseTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.click.pause")
+    def test_delegates_to_click_pause_with_message(self, mock_pause):
+        pause("nenhum módulo instalado")
+        mock_pause.assert_called_once_with("nenhum módulo instalado")
 
 
 if __name__ == "__main__":

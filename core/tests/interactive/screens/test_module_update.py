@@ -47,6 +47,17 @@ class ModuleUpdateScreenTest(unittest.TestCase):
     def test_none_selection_returns_back(self, mock_discover, mock_ask_select):
         self.assertEqual(ModuleUpdateScreen().render(), "BACK")
 
+    @patch("pvx.interactive.screens.module_update.ask_select")
+    @patch("pvx.interactive.screens.module_update.widgets.pause")
+    @patch("pvx.interactive.screens.module_update.discover_installed_modules", return_value={})
+    def test_no_installed_modules_shows_pause_and_returns_back(
+        self, mock_discover, mock_pause, mock_ask_select
+    ):
+        result = ModuleUpdateScreen().render()
+        self.assertEqual(result, "BACK")
+        mock_pause.assert_called_once()
+        mock_ask_select.assert_not_called()
+
     @patch("pvx.interactive.screens.module_update.installer.install")
     @patch("pvx.interactive.screens.module_update.ask_select", return_value="Voltar")
     @patch(

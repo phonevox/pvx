@@ -4,20 +4,32 @@ from prompt_toolkit.keys import Keys
 
 from pvx.interactive import theme
 
-NAV_HINT = questionary.Separator("↑↓ navega · enter confirma · esc/ctrl-c volta")
+NAV_HINT = questionary.Separator("↑↓ navega · enter confirma · esc/q volta · ctrl-c fecha o pvx")
+
+_BACK = object()
 
 
-def _cancel_on_escape(question):
-    escape_binding = KeyBindings()
+def _ask(question, include_q=False):
+    back_binding = KeyBindings()
 
-    @escape_binding.add(Keys.Escape, eager=True)
+    @back_binding.add(Keys.Escape, eager=True)
     def _(event):
-        event.app.exit(exception=KeyboardInterrupt, style="class:aborting")
+        event.app.exit(result=_BACK)
+
+    if include_q:
+        @back_binding.add("q", eager=True)
+        def _(event):
+            event.app.exit(result=_BACK)
 
     question.application.key_bindings = merge_key_bindings(
-        [question.application.key_bindings, escape_binding]
+        [question.application.key_bindings, back_binding]
     )
-    return question
+
+    # unsafe_ask(): não engole KeyboardInterrupt (Ctrl-C) -- questionary
+    # trataria como "cancelado" igual o Esc; aqui precisa propagar pra
+    # fechar o pvx inteiro, não só voltar uma tela.
+    result = question.unsafe_ask()
+    return None if result is _BACK else result
 
 
 def ask_select(msg, choices, default=None):
@@ -28,16 +40,16 @@ def ask_select(msg, choices, default=None):
         instruction="",
         style=theme.current_style(),
     )
-    return _cancel_on_escape(question).ask()
+    return _ask(question, include_q=True)
 
 
 def ask_confirm(msg, default=True):
     question = questionary.confirm(msg, default=default, style=theme.current_style())
-    return _cancel_on_escape(question).ask()
+    return _ask(question, include_q=True)
 
 
 def ask_text(msg, validator=None, default=None):
     question = questionary.text(
         msg, default=default or "", validate=validator, style=theme.current_style()
     )
-    return _cancel_on_escape(question).ask()
+    return _ask(question)

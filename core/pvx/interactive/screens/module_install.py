@@ -16,10 +16,15 @@ class ModuleInstallScreen:
 
         if source == "Outro repositório (URL)":
             index_url = ask_text("URL do index.json:")
+            if index_url is None:
+                return "BACK"
         else:
             index_url = config.registry_index_url()
 
         name = ask_text("Nome do módulo:")
+        if name is None:
+            return "BACK"
+
         try:
             with widgets.spinner(f"Instalando {name}..."):
                 installer.install(name, index_url)
