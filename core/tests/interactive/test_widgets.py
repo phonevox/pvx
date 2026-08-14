@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from pvx.interactive.widgets import BANNER, banner, clear, pause, print_modules_table, spinner
+from pvx.interactive import theme
+from pvx.interactive.widgets import BANNER, banner, breadcrumb, clear, pause, print_modules_table, spinner
 
 
 class ClearTest(unittest.TestCase):
@@ -44,9 +45,20 @@ class PrintModulesTableTest(unittest.TestCase):
 
 class PauseTest(unittest.TestCase):
     @patch("pvx.interactive.widgets.click.pause")
-    def test_delegates_to_click_pause_with_message(self, mock_pause):
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_message_in_gray_then_waits_for_a_keypress(self, mock_console_cls, mock_pause):
         pause("nenhum módulo instalado")
-        mock_pause.assert_called_once_with("nenhum módulo instalado")
+        mock_console_cls.return_value.print.assert_called_once_with(
+            "nenhum módulo instalado", style=theme.SEPARATOR_COLOR
+        )
+        mock_pause.assert_called_once_with("")
+
+
+class BreadcrumbTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.click.echo")
+    def test_prints_breadcrumb_with_question_mark_prefix(self, mock_echo):
+        breadcrumb("pvx > módulos > listar >")
+        mock_echo.assert_called_once_with("? pvx > módulos > listar >")
 
 
 if __name__ == "__main__":

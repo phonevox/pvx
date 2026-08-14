@@ -50,12 +50,14 @@ class ModuleUpdateScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.module_update.ask_select")
     @patch("pvx.interactive.screens.module_update.widgets.pause")
     @patch("pvx.interactive.screens.module_update.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.module_update.widgets.breadcrumb")
     def test_no_installed_modules_shows_pause_and_returns_back(
-        self, mock_discover, mock_pause, mock_ask_select
+        self, mock_breadcrumb, mock_discover, mock_pause, mock_ask_select
     ):
         result = ModuleUpdateScreen().render()
         self.assertEqual(result, "BACK")
-        mock_pause.assert_called_once()
+        mock_breadcrumb.assert_called_once_with("pvx > módulos > atualizar >")
+        mock_pause.assert_called_once_with("nenhum módulo instalado. pressione enter pra continuar...")
         mock_ask_select.assert_not_called()
 
     @patch("pvx.interactive.screens.module_update.installer.install")

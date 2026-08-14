@@ -26,7 +26,12 @@ def banner():
 
 
 def pause(message):
-    click.pause(message)
+    Console().print(message, style=theme.SEPARATOR_COLOR)
+    click.pause("")
+
+
+def breadcrumb(text):
+    click.echo(f"? {text}")
 
 
 def print_modules_table(rows):
