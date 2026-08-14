@@ -4,6 +4,7 @@ import sys
 import click
 
 from pvx import config
+from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_confirm, ask_select, ask_text
 from pvx.modules.base import PvxModule
 
@@ -144,12 +145,28 @@ class SSHHardeningModule(PvxModule):
                     default=False,
                 )
                 if not confirmed:
-                    click.echo("Operação cancelada.")
+                    widgets.message("nada foi alterado.")
+                    widgets.pause()
                     return
 
             state_dir = str(config.modules_dir() / "ssh-hardening" / "state")
             result = apply_module.apply(plan, CONFIG_PATH, SUDOERS_DIR, state_dir)
-            click.echo("ssh-hardening aplicado." if result["applied"] else "Nada a fazer.")
+
+            if not result["applied"]:
+                outcome = "nada a fazer."
+            elif not result["config_valid"]:
+                outcome = (
+                    "config resultante era inválida -- revertido pro backup automaticamente, "
+                    "nada foi aplicado de verdade."
+                )
+            else:
+                outcome = "ssh-hardening aplicado. reinicie o sshd (ou a máquina) pra entrar em vigor."
+
+            if is_tty:
+                widgets.message(outcome)
+                widgets.pause()
+            else:
+                click.echo(outcome)
 
         return group
 
