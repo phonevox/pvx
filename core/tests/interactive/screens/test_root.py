@@ -61,6 +61,22 @@ class RootScreenTest(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(mock_ask_select.call_count, 2)
 
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"dummy": FakeDummyModule()},
+    )
+    @patch("pvx.interactive.screens.root.widgets.clear")
+    @patch(
+        "pvx.interactive.screens.root.ask_select",
+        side_effect=["dummy", "hello"],
+    )
+    def test_clears_screen_before_auto_menu_prompt(self, mock_ask_select, mock_clear, mock_discover):
+        # sem isso, o header "pvx > dummy" fica na tela e o prompt do
+        # auto-menu ("pvx > dummy >") aparece duplicado embaixo, dentro do
+        # mesmo render() (o router só limpa ENTRE renders, não no meio de um).
+        RootScreen().render()
+        mock_clear.assert_called_once()
+
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="Módulos")
     def test_selecting_modulos_pushes_modules_screen(self, mock_ask_select, mock_discover):

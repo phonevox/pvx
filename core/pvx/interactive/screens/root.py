@@ -33,6 +33,10 @@ class RootScreen:
             return f"{selected}.main"
 
         group = module.cli_group()
+        # sem o clear(), o header "pvx > <módulo>" já respondido fica na tela
+        # e esse segundo prompt (auto-menu) aparece duplicado embaixo -- o
+        # router só limpa ENTRE renders, não no meio de um render() só.
+        widgets.clear()
         command_name = ask_select(f"pvx > {selected} >", build_choices(group))
         if command_name is not None:
             group.commands[command_name].main(args=[], standalone_mode=False)
