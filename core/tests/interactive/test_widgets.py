@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from pvx.interactive.widgets import BANNER, banner, clear, pause, spinner
+from pvx.interactive.widgets import BANNER, banner, clear, pause, print_modules_table, spinner
 
 
 class ClearTest(unittest.TestCase):
@@ -27,6 +27,19 @@ class BannerTest(unittest.TestCase):
     def test_prints_banner_in_theme_accent_color(self, mock_console_cls, mock_accent):
         banner()
         mock_console_cls.return_value.print.assert_called_once_with(BANNER + "\n", style="#0087ff")
+
+
+class PrintModulesTableTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_a_table_with_one_column_per_field(self, mock_console_cls):
+        rows = [
+            {"name": "dummy", "installed_version": "1.0.0", "latest_version": "1.1.0", "status": "atualização disponível"},
+        ]
+        print_modules_table(rows)
+
+        mock_console_cls.return_value.print.assert_called_once()
+        table = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(len(table.columns), 4)
 
 
 class PauseTest(unittest.TestCase):

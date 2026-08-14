@@ -94,6 +94,43 @@ class ModuleUninstallCommandTest(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
 
 
+class ModuleListCommandTest(unittest.TestCase):
+    @patch(
+        "pvx.cli.listing.list_modules",
+        return_value=[
+            {
+                "name": "dummy",
+                "installed_version": "1.0.0",
+                "latest_version": "1.1.0",
+                "status": "atualização disponível",
+            },
+            {
+                "name": "ssh-hardening",
+                "installed_version": "-",
+                "latest_version": "1.0.0",
+                "status": "disponível",
+            },
+        ],
+    )
+    def test_lists_modules_in_a_table(self, mock_list_modules):
+        result = CliRunner().invoke(build_cli(), ["module", "list"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        self.assertIn("dummy", result.output)
+        self.assertIn("ssh-hardening", result.output)
+        self.assertIn("atualização disponível", result.output)
+        self.assertIn("disponível", result.output)
+
+    @patch(
+        "pvx.cli.listing.list_modules",
+        side_effect=RuntimeError("não foi possível acessar o registry (nome não resolvido)"),
+    )
+    def test_network_failure_shows_clean_message_no_traceback(self, mock_list_modules):
+        result = CliRunner().invoke(build_cli(), ["module", "list"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("não foi possível acessar o registry", result.output)
+
+
 class LogsCommandTest(unittest.TestCase):
     @patch("pvx.cli.viewer.read_log", return_value="conteúdo do log")
     def test_logs_command_prints_log_content(self, mock_read_log):

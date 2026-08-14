@@ -17,6 +17,10 @@ class ModulesScreenTest(unittest.TestCase):
     def test_selecting_remover_pushes_uninstall_screen(self, mock_ask_select):
         self.assertEqual(ModulesScreen().render(), "modules.uninstall")
 
+    @patch("pvx.interactive.screens.modules.ask_select", return_value="Listar")
+    def test_selecting_listar_pushes_list_screen(self, mock_ask_select):
+        self.assertEqual(ModulesScreen().render(), "modules.list")
+
     @patch("pvx.interactive.screens.modules.ask_select", return_value="Voltar")
     def test_selecting_voltar_returns_back(self, mock_ask_select):
         self.assertEqual(ModulesScreen().render(), "BACK")

@@ -25,6 +25,7 @@ class Router:
 def run_interactive():
     from pvx.interactive.screens.logs import LogsScreen
     from pvx.interactive.screens.module_install import ModuleInstallScreen
+    from pvx.interactive.screens.module_list import ModuleListScreen
     from pvx.interactive.screens.module_uninstall import ModuleUninstallScreen
     from pvx.interactive.screens.module_update import ModuleUpdateScreen
     from pvx.interactive.screens.modules import ModulesScreen
@@ -37,6 +38,7 @@ def run_interactive():
         "modules.install": ModuleInstallScreen,
         "modules.update": ModuleUpdateScreen,
         "modules.uninstall": ModuleUninstallScreen,
+        "modules.list": ModuleListScreen,
         "logs": LogsScreen,
         "theme": ThemeScreen,
     }

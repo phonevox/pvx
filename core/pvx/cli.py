@@ -3,7 +3,7 @@ import click
 from pvx import build_info, config, self_update
 from pvx.interactive import widgets
 from pvx.logging_ import viewer
-from pvx.modules import installer, loader
+from pvx.modules import installer, listing, loader
 from pvx.version import __version__
 
 
@@ -45,6 +45,14 @@ def build_module_group():
         except (RuntimeError, ValueError) as e:
             raise click.ClickException(str(e))
         click.echo("atualizado.")
+
+    @module_group.command(name="list")
+    def module_list():
+        try:
+            rows = listing.list_modules(discover_installed_modules(), config.registry_index_url())
+        except RuntimeError as e:
+            raise click.ClickException(str(e))
+        widgets.print_modules_table(rows)
 
     @module_group.command(name="uninstall")
     @click.argument("name")
