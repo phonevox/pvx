@@ -1,6 +1,6 @@
 import click
 
-from pvx import config, self_update
+from pvx import build_info, config, self_update
 from pvx.logging_ import viewer
 from pvx.modules import installer, loader
 from pvx.version import __version__
@@ -48,8 +48,11 @@ def build_module_group():
 
 
 def build_cli():
+    channel = build_info.describe()
+    version_string = f"{__version__} ({channel})" if channel else __version__
+
     @click.group()
-    @click.version_option(version=__version__, prog_name="pvx")
+    @click.version_option(version=version_string, prog_name="pvx")
     def cli():
         pass
 
@@ -68,6 +71,13 @@ def build_cli():
 
     @cli.command(name="self-update")
     def self_update_command():
+        current_channel = build_info.describe()
+        if current_channel is not None:
+            click.confirm(
+                f"Você está rodando um build {current_channel} — atualizar vai "
+                "substituir pela versão oficial mais recente. Continuar?",
+                abort=True,
+            )
         try:
             version = self_update.self_update()
         except PermissionError:
@@ -75,6 +85,15 @@ def build_cli():
                 "self-update precisa de privilégios de root (rode com sudo)."
             )
         click.echo(f"pvx atualizado pra versão {version}.")
+
+    @cli.command(name="self-uninstall")
+    @click.option("--yes", is_flag=True)
+    @click.option("--purge", is_flag=True)
+    def self_uninstall_command(yes, purge):
+        if not yes:
+            click.confirm("Remover o pvx do sistema?", abort=True)
+        self_update.uninstall(purge=purge)
+        click.echo("pvx removido.")
 
     for name, module in discover_installed_modules().items():
         cli.add_command(module.cli_group(), name=name)
