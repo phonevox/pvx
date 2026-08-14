@@ -11,8 +11,9 @@ class ModuleUpdateScreen:
     def render(self):
         modules = discover_installed_modules()
         if not modules:
-            widgets.breadcrumb("pvx > módulos > atualizar >")
-            widgets.pause("nenhum módulo instalado. pressione enter pra continuar...")
+            widgets.breadcrumb("pvx > módulos > atualizar")
+            widgets.message("nenhum módulo instalado.")
+            widgets.pause()
             return "BACK"
 
         selected = ask_select(

@@ -8,8 +8,9 @@ class ModuleUninstallScreen:
     def render(self):
         modules = discover_installed_modules()
         if not modules:
-            widgets.breadcrumb("pvx > módulos > remover >")
-            widgets.pause("nenhum módulo instalado. pressione enter pra continuar...")
+            widgets.breadcrumb("pvx > módulos > remover")
+            widgets.message("nenhum módulo instalado.")
+            widgets.pause()
             return "BACK"
 
         selected = ask_select("pvx > módulos > remover >", list(modules.keys()) + ["Voltar"])
@@ -18,5 +19,7 @@ class ModuleUninstallScreen:
 
         if ask_confirm(f"Remover o módulo '{selected}'?", default=False):
             installer.uninstall(selected)
+            widgets.message(f"{selected} removido.")
+            widgets.pause()
 
         return "BACK"
