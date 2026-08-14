@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+import urllib.error
 import urllib.request
 
 from pvx import config
@@ -9,17 +10,20 @@ from pvx.registry.client import fetch_index
 
 
 def install(name, index_url, version=None):
-    index = fetch_index(index_url)
-    entry = next(m for m in index["modules"] if m["name"] == name)
-    version = version or entry["latest"]
+    try:
+        index = fetch_index(index_url)
+        entry = next(m for m in index["modules"] if m["name"] == name)
+        version = version or entry["latest"]
 
-    with urllib.request.urlopen(entry["manifest_url"]) as response:
-        manifest = json.loads(response.read())
-    schema.validate_manifest(manifest)
+        with urllib.request.urlopen(entry["manifest_url"]) as response:
+            manifest = json.loads(response.read())
+        schema.validate_manifest(manifest)
 
-    pyz_url = entry["url_template"].format(name=name, version=version)
-    with urllib.request.urlopen(pyz_url) as response:
-        pyz_bytes = response.read()
+        pyz_url = entry["url_template"].format(name=name, version=version)
+        with urllib.request.urlopen(pyz_url) as response:
+            pyz_bytes = response.read()
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError(f"não foi possível acessar o registry ({index_url}): {e}") from e
 
     actual_checksum = hashlib.sha256(pyz_bytes).hexdigest()
     expected_checksum = manifest.get("checksum_sha256")

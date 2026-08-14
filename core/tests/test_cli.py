@@ -17,6 +17,11 @@ class CliRootTest(unittest.TestCase):
         result = CliRunner().invoke(cli, ["--help"])
         self.assertEqual(result.exit_code, 0)
 
+    def test_v_shortcut_also_prints_version(self):
+        result = CliRunner().invoke(cli, ["-V"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn(__version__, result.output)
+
     @patch("pvx.cli.build_info.describe", return_value="nightly, a1b2c3d")
     def test_version_flag_shows_build_channel_when_present(self, mock_describe):
         result = CliRunner().invoke(build_cli(), ["--version"])

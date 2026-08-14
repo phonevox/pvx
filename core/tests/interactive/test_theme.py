@@ -4,7 +4,14 @@ from tempfile import TemporaryDirectory
 
 import questionary
 
-from pvx.interactive.theme import PRESETS, THEME, THEME_RULES, current_style, current_theme_rules
+from pvx.interactive.theme import (
+    PRESETS,
+    THEME,
+    THEME_RULES,
+    current_accent_color,
+    current_style,
+    current_theme_rules,
+)
 
 
 class ThemeTest(unittest.TestCase):
@@ -16,6 +23,10 @@ class ThemeTest(unittest.TestCase):
     def test_hint_separator_is_gray(self):
         rules = dict(THEME_RULES)
         self.assertIn("808080", rules["separator"])
+
+    def test_answer_style_matches_accent_color(self):
+        rules = dict(THEME_RULES)
+        self.assertIn("0087ff", rules["answer"])
 
     def test_theme_is_questionary_style_instance(self):
         self.assertIsInstance(THEME, questionary.Style)
@@ -45,6 +56,15 @@ class CurrentStyleTest(unittest.TestCase):
 
     def test_current_style_is_questionary_style_instance(self):
         self.assertIsInstance(current_style(), questionary.Style)
+
+    def test_current_accent_color_defaults_to_azul(self):
+        self.assertEqual(current_accent_color(), "#0087ff")
+
+    def test_current_accent_color_reflects_configured_theme(self):
+        from pvx import config
+
+        config.set_theme_name("verde")
+        self.assertEqual(current_accent_color(), "#00af5f")
 
 
 if __name__ == "__main__":
