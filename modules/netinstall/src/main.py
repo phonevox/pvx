@@ -39,7 +39,27 @@ def _default_tweaks():
     return [key for key, (on, _) in defaults.TWEAKS_CATALOG.items() if on]
 
 
+_SSH_FLAG_KEYS = (
+    "tweak_ssh_lock_root", "tweak_ssh_root_password", "tweak_ssh_create_user",
+    "tweak_ssh_username", "tweak_ssh_pubkey", "tweak_ssh_allow_password",
+    "tweak_ssh_user_password", "tweak_ssh_change_port", "tweak_ssh_port",
+)
+
+
 def _resolve_ssh_hardening_config(flags, interactive):
+    # atalho: com TTY e nenhuma flag --tweak-ssh-* dada, pergunta UMA vez se quer os
+    # padrões da Phonevox de cara (sem repetir as perguntas seguintes) ou revisar item
+    # por item -- uma flag explícita em qualquer campo pula direto pro fluxo de sempre.
+    if interactive and not any(flags[k] is not None for k in _SSH_FLAG_KEYS):
+        choice = ask_select(
+            "ssh-hardening: como configurar?",
+            ["Usar padrões da Phonevox (recomendado)", "Personalizar cada opção"],
+        )
+        if choice is None:
+            return None
+        if choice.startswith("Usar padrões"):
+            return {**defaults.SSH_HARDENING_DEFAULTS, "allow_password": False, "user_password": ""}
+
     if flags["tweak_ssh_lock_root"] is None and interactive:
         lock_root = ask_confirm("ssh-hardening: bloquear login SSH do root?", default=True)
     else:
@@ -93,7 +113,7 @@ def _report_tweak(name, result):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="netinstall")
@@ -175,14 +195,28 @@ class NetinstallModule(PvxModule):
                 else:
                     tweak_keys = _default_tweaks()
 
-            sql_pw = flags["sql_password"] or (ask_text("Senha do MySQL root:") if interactive else None)
-            web_pw = flags["web_password"] or (ask_text("Senha admin da interface Web:") if interactive else None)
-            if not sql_pw or not web_pw:
-                raise click.ClickException("informe --sql-password e --web-password (sem terminal).")
+            def _resolve_password(flag_value, prompt):
+                if flag_value:
+                    return flag_value
+                if not interactive:
+                    return os_ops.gen_password()
+                entered = ask_text(f"{prompt} (enter vazio = gera aleatória):")
+                if entered is None:
+                    return None  # esc -- aborta
+                return entered or os_ops.gen_password()
+
+            sql_pw = _resolve_password(flags["sql_password"], "Senha do MySQL root")
+            if sql_pw is None:
+                return
+            web_pw = _resolve_password(flags["web_password"], "Senha admin da interface Web")
+            if web_pw is None:
+                return
 
             ssh_config = None
             if "ssh-hardening" in tweak_keys:
                 ssh_config = _resolve_ssh_hardening_config(flags, interactive)
+                if ssh_config is None:
+                    return
 
             qint_config = None
             if "qint" in tweak_keys:
@@ -201,28 +235,46 @@ class NetinstallModule(PvxModule):
                 return
 
             pyz_path = _pyz_path()
-            install_steps.add_repos(pyz_path)
-            install_steps.prepare_system()
-            install_steps.enable_php_remi(preflight.version_major())
-            install_steps.install_packages(astver, extra_packages)
-            install_steps.post_install()
+            major = preflight.version_major()
+
+            with widgets.spinner("Adicionando repositórios (epel, tmux/htop, Issabel 5)..."):
+                install_steps.add_repos(pyz_path)
+            with widgets.spinner("Preparando o sistema (SELinux, usuário asterisk)..."):
+                install_steps.prepare_system()
+            with widgets.spinner(f"Habilitando repo Remi + módulo PHP (RHEL/Rocky {major})..."):
+                install_steps.enable_php_remi(major)
+            with widgets.spinner("Instalando pacotes (base + Asterisk + Issabel -- vários minutos)..."):
+                install_steps.install_packages(astver, extra_packages)
+            with widgets.spinner("Pós-instalação (mariadb, httpd, firewalld, asterisk)..."):
+                install_steps.post_install()
 
             if ssh_config is not None:
-                _report_tweak("ssh-hardening", integrations.run_ssh_hardening(ssh_config))
+                with widgets.spinner("Aplicando ssh-hardening..."):
+                    result = integrations.run_ssh_hardening(ssh_config)
+                _report_tweak("ssh-hardening", result)
             if "firewall" in tweak_keys:
-                _report_tweak("firewall", integrations.run_firewall_sync())
+                with widgets.spinner("Sincronizando firewall..."):
+                    result = integrations.run_firewall_sync()
+                _report_tweak("firewall", result)
             if qint_config is not None:
-                _report_tweak("qint", integrations.run_qint(qint_config))
+                with widgets.spinner("Aplicando integração qint..."):
+                    result = integrations.run_qint(qint_config)
+                _report_tweak("qint", result)
 
-            install_steps.install_db()
+            with widgets.spinner("Instalando o schema do banco de dados..."):
+                install_steps.install_db()
             if "operator-panel" in tweak_keys:
-                install_steps.install_control_panel(pyz_path)
-            install_steps.set_timezone(flags["timezone"] or defaults.DEFAULT_TIMEZONE)
+                with widgets.spinner("Instalando o painel do operador..."):
+                    install_steps.install_control_panel(pyz_path)
+            tz = flags["timezone"] or defaults.DEFAULT_TIMEZONE
+            with widgets.spinner(f"Ajustando timezone ({tz})..."):
+                install_steps.set_timezone(tz)
 
             extra_kv = {}
             if ssh_config is not None and ssh_config["change_port"]:
                 extra_kv["ssh_port"] = ssh_config["port"]
-            install_steps.set_passwords(sql_pw, web_pw)
+            with widgets.spinner("Definindo senhas de acesso (MySQL root / admin Web)..."):
+                install_steps.set_passwords(sql_pw, web_pw)
             cred_path = credentials.save_credentials(str(_state_dir()), "issabel5", sql_pw, web_pw, extra=extra_kv)
             widgets.success(f"credenciais salvas em {cred_path} (0600)")
 

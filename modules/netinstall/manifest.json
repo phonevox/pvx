@@ -1,6 +1,6 @@
 {
   "name": "netinstall",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "entrypoint": "main:cli",
   "description": "Instalação do Issabel 5 do zero (Rocky/CentOS/RHEL 8+), com pré-configuração opcional de ssh-hardening/firewall/qint.",
   "author": "pvx",

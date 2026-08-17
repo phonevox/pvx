@@ -53,5 +53,17 @@ class PkgInstallTest(unittest.TestCase):
         self.assertEqual(os_ops.pkg_install([]), [])
 
 
+class GenPasswordTest(unittest.TestCase):
+    def test_generates_24_char_alphanumeric_password_by_default(self):
+        password = os_ops.gen_password()
+        self.assertEqual(len(password), 24)
+        self.assertTrue(password.isalnum())
+
+    def test_never_repeats_between_calls(self):
+        # senha aleatória por instalação -- nunca um default fixo/compartilhado (ao
+        # contrário do resto dos defaults deste módulo, que são intencionalmente fixos).
+        self.assertNotEqual(os_ops.gen_password(), os_ops.gen_password())
+
+
 if __name__ == "__main__":
     unittest.main()

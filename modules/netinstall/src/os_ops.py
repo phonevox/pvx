@@ -1,3 +1,5 @@
+import secrets
+import string
 import subprocess
 
 
@@ -17,6 +19,12 @@ def mem_total_kb(path="/proc/meminfo"):
         elif key == "SwapTotal":
             swap_total = int(rest.split()[0])
     return mem_total + swap_total
+
+
+def gen_password(length=24):
+    # senha aleatória por instalação -- nunca um default fixo/compartilhado entre máquinas.
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 def run_cmd(args):

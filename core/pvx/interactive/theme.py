@@ -22,6 +22,10 @@ def _rules_for(accent):
         ("highlighted", f"fg:{accent} bold"),
         ("answer", f"fg:{accent} bold"),
         ("separator", f"fg:{SEPARATOR_COLOR}"),
+        # prompt_toolkit tem um "selected" embutido = "reverse" (inverte fundo/texto do
+        # item marcado num checkbox) -- sem sobrescrever aqui, ele sempre ganha, já que
+        # nem o default do questionary nem o nosso definiam esse token antes.
+        ("selected", f"fg:{accent} bold"),
     ]
 
 

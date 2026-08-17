@@ -32,7 +32,7 @@ class MainTestCase(unittest.TestCase):
              patch("main.install_steps.install_control_panel"), \
              patch("main.install_steps.set_timezone"), \
              patch("main.install_steps.set_passwords"), \
-             patch("main.credentials.save_credentials", return_value="/tmp/creds.txt"), \
+             patch("main.credentials.save_credentials", return_value="/tmp/creds.txt") as mock_creds, \
              patch("main.os_ops.run_cmd") as mock_reboot, \
              patch("main.integrations.run_ssh_hardening", return_value={"ok": True}) as mock_ssh, \
              patch("main.integrations.run_firewall_sync", return_value={"ok": True}) as mock_fw, \
@@ -40,6 +40,7 @@ class MainTestCase(unittest.TestCase):
             result = CliRunner().invoke(cli.cli_group(), args)
             return result, {
                 "reboot": mock_reboot, "ssh": mock_ssh, "firewall": mock_fw, "qint": mock_qint,
+                "creds": mock_creds,
             }
 
 
@@ -77,10 +78,17 @@ class HappyPathTest(MainTestCase):
         result, _ = self._invoke(args)
         self.assertNotEqual(result.exit_code, 0)
 
-    def test_requires_passwords_without_tty(self):
+    def test_generates_random_passwords_without_tty_instead_of_blocking(self):
+        # bash original nunca trava esperando senha -- sem flag e sem TTY, gera aleatória
+        # (fica recuperável depois via credentials.save_credentials). Corrigido: antes
+        # disso, faltar --sql-password/--web-password sem terminal dava erro.
         args = ["issabel5", "--astver", "18", "--yes", "--tweaks", "firewall"]
-        result, _ = self._invoke(args)
-        self.assertNotEqual(result.exit_code, 0)
+        result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        sql_pw, web_pw = mocks["creds"].call_args.args[2], mocks["creds"].call_args.args[3]
+        self.assertEqual(len(sql_pw), 24)
+        self.assertEqual(len(web_pw), 24)
+        self.assertNotEqual(sql_pw, web_pw)
 
 
 class SshHardeningTweakTest(MainTestCase):
@@ -125,6 +133,71 @@ class QintTweakTest(MainTestCase):
         config = mocks["qint"].call_args.args[0]
         self.assertEqual(config["tipo"], "ixcsoft")
         self.assertEqual(config["sftp"], "root@10.0.0.1:2222")
+
+
+class InteractivePasswordTest(MainTestCase):
+    def test_empty_enter_generates_random_password(self):
+        args = ["issabel5", "--astver", "18", "--yes", "--tweaks", "firewall"]
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]), \
+             patch("main.ask_text", return_value=""):
+            result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        sql_pw, web_pw = mocks["creds"].call_args.args[2], mocks["creds"].call_args.args[3]
+        self.assertEqual(len(sql_pw), 24)
+        self.assertNotEqual(sql_pw, web_pw)
+
+    def test_esc_on_password_prompt_aborts(self):
+        args = ["issabel5", "--astver", "18", "--yes", "--tweaks", "firewall"]
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]), \
+             patch("main.ask_text", return_value=None):
+            result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["firewall"].assert_not_called()
+
+
+class SshHardeningQuickShortcutTest(MainTestCase):
+    def test_quick_choice_uses_defaults_without_asking_anything_else(self):
+        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
+                "--tweaks", "ssh-hardening"]
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]), \
+             patch("main.ask_select", return_value="Usar padrões da Phonevox (recomendado)") as mock_select:
+            result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_select.assert_called_once()  # só a pergunta quick-vs-customize, mais nenhuma
+        config = mocks["ssh"].call_args.args[0]
+        self.assertEqual(config["username"], "phonevox")
+        self.assertEqual(config["port"], "21122")
+
+    def test_customize_choice_falls_through_to_per_field_questions(self):
+        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
+                "--tweaks", "ssh-hardening"]
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]), \
+             patch("main.ask_select", return_value="Personalizar cada opção") as mock_select, \
+             patch("main.ask_confirm", return_value=True) as mock_confirm:
+            result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        # 1 pergunta quick-vs-customize + 3 confirmações (lock_root/create_user/change_port).
+        self.assertEqual(mock_select.call_count, 1)
+        self.assertEqual(mock_confirm.call_count, 3)
+        mocks["ssh"].assert_called_once()
+
+    def test_flag_given_skips_the_quick_vs_customize_question(self):
+        args = [
+            "issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
+            "--tweaks", "ssh-hardening", "--tweak-ssh-username", "custom",
+        ]
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]), \
+             patch("main.ask_select") as mock_select, patch("main.ask_confirm", return_value=True):
+            result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_select.assert_not_called()  # uma flag ssh já dada pula a pergunta quick-vs-customize
+        config = mocks["ssh"].call_args.args[0]
+        self.assertEqual(config["username"], "custom")
 
 
 class ConfirmationTest(MainTestCase):
