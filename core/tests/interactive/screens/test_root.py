@@ -88,15 +88,18 @@ class RootScreenTest(unittest.TestCase):
     )
     @patch(
         "pvx.interactive.screens.root.ask_select",
-        side_effect=["dummy", "hello"],
+        side_effect=["dummy", "hello", None],
     )
     def test_module_without_interactive_entry_runs_command_inline(
         self, mock_ask_select, mock_discover
     ):
         # sem interactive_entry() (M7) -> auto-menu inline, sem push de tela.
+        # depois de rodar "hello", o menu redesenha o MESMO nível (bug
+        # reportado: listar/rodar algo não pode chutar de volta pro root) --
+        # só sai quando o usuário dá esc nesse nível (3º valor, None).
         result = RootScreen().render()
         self.assertIsNone(result)
-        self.assertEqual(mock_ask_select.call_count, 2)
+        self.assertEqual(mock_ask_select.call_count, 3)
 
     @patch(
         "pvx.interactive.screens.root.discover_installed_modules",
@@ -105,14 +108,14 @@ class RootScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.root.widgets.clear")
     @patch(
         "pvx.interactive.screens.root.ask_select",
-        side_effect=["dummy", "hello"],
+        side_effect=["dummy", "hello", None],
     )
     def test_clears_screen_before_auto_menu_prompt(self, mock_ask_select, mock_clear, mock_discover):
-        # sem isso, o header "pvx > dummy" fica na tela e o prompt do
-        # auto-menu ("pvx > dummy >") aparece duplicado embaixo, dentro do
-        # mesmo render() (o router só limpa ENTRE renders, não no meio de um).
+        # 1x antes do primeiro prompt do auto-menu (header do módulo não pode
+        # ficar preso na tela) + 1x depois de rodar "hello", antes de
+        # redesenhar o mesmo nível de novo.
         RootScreen().render()
-        mock_clear.assert_called_once()
+        self.assertEqual(mock_clear.call_count, 2)
 
     @patch(
         "pvx.interactive.screens.root.discover_installed_modules",
@@ -120,7 +123,7 @@ class RootScreenTest(unittest.TestCase):
     )
     @patch("pvx.interactive.screens.root.widgets.pause")
     @patch("pvx.interactive.screens.root.widgets.message")
-    @patch("pvx.interactive.screens.root.ask_select", side_effect=["picky", "prepare"])
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["picky", "prepare", None])
     def test_missing_required_argument_shows_message_instead_of_crashing(
         self, mock_ask_select, mock_message, mock_pause, mock_discover
     ):
@@ -140,16 +143,25 @@ class RootScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.root.widgets.clear")
     @patch(
         "pvx.interactive.screens.root.ask_select",
-        side_effect=["nested", "port", "accept"],
+        side_effect=["nested", "port", "accept", None, None],
     )
     def test_nested_group_is_navigated_into_and_leaf_runs(
         self, mock_ask_select, mock_clear, mock_discover
     ):
+        # depois de "accept" rodar, redesenha "port >" de novo (1º None);
+        # esc ali sobe pra "nested >" de novo (2º None) -- nunca pula pro
+        # root sozinho.
         result = RootScreen().render()
         self.assertIsNone(result)
-        self.assertEqual(mock_ask_select.call_count, 3)
+        self.assertEqual(mock_ask_select.call_count, 5)
         prompts = [c.args[0] for c in mock_ask_select.call_args_list]
-        self.assertEqual(prompts, ["pvx >", "pvx > nested >", "pvx > nested > port >"])
+        self.assertEqual(
+            prompts,
+            [
+                "pvx >", "pvx > nested >", "pvx > nested > port >",
+                "pvx > nested > port >", "pvx > nested >",
+            ],
+        )
 
     @patch(
         "pvx.interactive.screens.root.discover_installed_modules",

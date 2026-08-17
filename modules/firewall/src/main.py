@@ -6,7 +6,7 @@ import click
 
 from pvx import config as pvx_config
 from pvx.interactive import widgets
-from pvx.interactive.inputs import ask_confirm
+from pvx.interactive.inputs import ask_confirm, ask_text
 from pvx.modules.base import PvxModule
 
 import defaults
@@ -41,6 +41,14 @@ def _require_root():
         raise click.ClickException("firewall precisa rodar como root (sudo).")
 
 
+def _resolve_arg(value, prompt, usage):
+    if value is not None:
+        return value
+    if not _is_interactive():
+        raise click.ClickException(usage)
+    return ask_text(prompt)
+
+
 def _echo_list(title, entries):
     click.echo(title)
     if not entries:
@@ -51,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -63,10 +71,16 @@ class FirewallModule(PvxModule):
             pass
 
         @port_group.command(name="accept")
-        @click.argument("spec")
+        @click.argument("spec", required=False, default=None)
         @click.option("--comment", default="")
         def port_accept_cmd(spec, comment):
             _require_root()
+            spec = _resolve_arg(
+                spec, "Porta/faixa (ex.: 5060/udp, 10000-20000/tcp):",
+                "informe a porta: `pvx firewall port accept <spec> [--comment]`.",
+            )
+            if spec is None:
+                return
             try:
                 validators.parse_port_spec(spec)
             except ValueError as e:
@@ -75,10 +89,16 @@ class FirewallModule(PvxModule):
             click.echo(f"porta {spec} liberada.")
 
         @port_group.command(name="deny")
-        @click.argument("spec")
+        @click.argument("spec", required=False, default=None)
         @click.option("--comment", default="")
         def port_deny_cmd(spec, comment):
             _require_root()
+            spec = _resolve_arg(
+                spec, "Porta/faixa (ex.: 5060/udp, 10000-20000/tcp):",
+                "informe a porta: `pvx firewall port deny <spec> [--comment]`.",
+            )
+            if spec is None:
+                return
             try:
                 validators.parse_port_spec(spec)
             except ValueError as e:
@@ -87,9 +107,14 @@ class FirewallModule(PvxModule):
             click.echo(f"porta {spec} bloqueada.")
 
         @port_group.command(name="remove")
-        @click.argument("spec")
+        @click.argument("spec", required=False, default=None)
         def port_remove_cmd(spec):
             _require_root()
+            spec = _resolve_arg(
+                spec, "Porta/faixa a remover:", "informe a porta: `pvx firewall port remove <spec>`.",
+            )
+            if spec is None:
+                return
             removed = lists.remove_entry(_list_path("port_accept"), spec)
             removed = lists.remove_entry(_list_path("port_deny"), spec) or removed
             if not removed:
@@ -108,21 +133,33 @@ class FirewallModule(PvxModule):
             pass
 
         @ip_group.command(name="accept")
-        @click.argument("cidr")
+        @click.argument("cidr", required=False, default=None)
         @click.option("--comment", default="")
         def ip_accept_cmd(cidr, comment):
             _require_root()
+            cidr = _resolve_arg(
+                cidr, "IP/CIDR (ex.: 203.0.113.9, 10.0.0.0/8):",
+                "informe o CIDR: `pvx firewall ip accept <cidr> [--comment]`.",
+            )
+            if cidr is None:
+                return
             if not validators.validate_cidr(cidr):
                 raise click.ClickException(f"CIDR inválido: {cidr}")
             lists.add_entry(_list_path("ip_accept"), cidr, comment)
             click.echo(f"{cidr} adicionado à lista de confiáveis.")
 
         @ip_group.command(name="deny")
-        @click.argument("cidr")
+        @click.argument("cidr", required=False, default=None)
         @click.option("--comment", default="")
         @click.option("--force", is_flag=True, help="ignora a checagem de auto-bloqueio")
         def ip_deny_cmd(cidr, comment, force):
             _require_root()
+            cidr = _resolve_arg(
+                cidr, "IP/CIDR (ex.: 203.0.113.9, 10.0.0.0/8):",
+                "informe o CIDR: `pvx firewall ip deny <cidr> [--comment] [--force]`.",
+            )
+            if cidr is None:
+                return
             if not validators.validate_cidr(cidr):
                 raise click.ClickException(f"CIDR inválido: {cidr}")
             if not force:
@@ -135,9 +172,14 @@ class FirewallModule(PvxModule):
             click.echo(f"{cidr} adicionado à lista de bloqueio.")
 
         @ip_group.command(name="remove")
-        @click.argument("cidr")
+        @click.argument("cidr", required=False, default=None)
         def ip_remove_cmd(cidr):
             _require_root()
+            cidr = _resolve_arg(
+                cidr, "IP/CIDR a remover:", "informe o CIDR: `pvx firewall ip remove <cidr>`.",
+            )
+            if cidr is None:
+                return
             removed = lists.remove_entry(_list_path("ip_accept"), cidr)
             removed = lists.remove_entry(_list_path("ip_deny"), cidr) or removed
             if not removed:

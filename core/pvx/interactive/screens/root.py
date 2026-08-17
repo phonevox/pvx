@@ -47,30 +47,26 @@ class RootScreen:
 
 
 def _run_auto_menu(group, breadcrumb):
-    # loop nesse nível: esc num subgrupo aninhado só volta pra cá (redesenha
-    # este menu), não pula pra fora do módulo inteiro -- só um comando
-    # efetivamente executado sobe o "True" até o render() sair.
+    # loop nesse nível pra sempre: rodar um comando (ou voltar de um
+    # subgrupo aninhado) só redesenha ESTE menu de novo -- nunca sobe pro
+    # nível anterior sozinho. Só um esc dado NESTE nível sai daqui.
     while True:
         command_name = ask_select(f"{breadcrumb} >", build_choices(group))
         if command_name is None:
-            return False
+            return
 
         cmd = group.commands[command_name]
         if isinstance(cmd, click.Group):
             widgets.clear()
-            ran = _run_auto_menu(cmd, f"{breadcrumb} > {command_name}")
-            widgets.clear()
-            if ran:
-                return True
-            continue
-
-        try:
-            cmd.main(args=[], standalone_mode=False)
-        except click.ClickException as e:
-            # standalone_mode=False faz o click propagar a exceção crua
-            # (MissingParameter, UsageError, ...) em vez de tratar --
-            # qualquer módulo com comando de argumento obrigatório
-            # crasharia a sessão inteira do menu sem esse guard.
-            widgets.message(str(e))
-            widgets.pause()
-        return True
+            _run_auto_menu(cmd, f"{breadcrumb} > {command_name}")
+        else:
+            try:
+                cmd.main(args=[], standalone_mode=False)
+            except click.ClickException as e:
+                # standalone_mode=False faz o click propagar a exceção crua
+                # (MissingParameter, UsageError, ...) em vez de tratar --
+                # qualquer módulo com comando de argumento obrigatório
+                # crasharia a sessão inteira do menu sem esse guard.
+                widgets.message(str(e))
+                widgets.pause()
+        widgets.clear()
