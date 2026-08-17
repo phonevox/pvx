@@ -175,13 +175,14 @@ class SetupTypeQuestionTest(unittest.TestCase):
 
 
 class SetupSftpReachabilityTest(unittest.TestCase):
+    @patch("main.widgets.failed")
     @patch("main.staged_config.save")
     @patch("main.staged_config.load", return_value=None)
     @patch("main.ask_confirm", return_value=True)
     @patch("main.ask_text")
     @patch("main.reachability.is_reachable")
     def test_unreachable_host_reprompts_but_resubmitting_same_value_proceeds(
-        self, mock_reachable, mock_text, mock_confirm, mock_load, mock_save
+        self, mock_reachable, mock_text, mock_confirm, mock_load, mock_save, mock_failed
     ):
         mock_reachable.return_value = False
         mock_text.side_effect = ["root@10.0.0.1", "root@10.0.0.1"] + ["https://x.example.com"] * 30
@@ -191,6 +192,23 @@ class SetupSftpReachabilityTest(unittest.TestCase):
         saved = mock_save.call_args.args[1]
         self.assertEqual(saved["sftp_host"], "10.0.0.1")
         self.assertEqual(mock_reachable.call_count, 2)
+        self.assertEqual(mock_failed.call_count, 2)
+
+    @patch("main.widgets.success")
+    @patch("main.staged_config.save")
+    @patch("main.staged_config.load", return_value=None)
+    @patch("main.ask_confirm", return_value=True)
+    @patch("main.ask_text")
+    @patch("main.reachability.is_reachable", return_value=True)
+    def test_reachable_host_shows_success(
+        self, mock_reachable, mock_text, mock_confirm, mock_load, mock_save, mock_success
+    ):
+        mock_text.side_effect = ["root@10.0.0.1"] + ["https://x.example.com"] * 30
+
+        _invoke_interactive(["setup", "ixcsoft"])
+
+        shown = mock_success.call_args_list[0].args[0]
+        self.assertIn("10.0.0.1", shown)
 
 
 class SetupUrlValidationTest(unittest.TestCase):

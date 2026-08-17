@@ -55,7 +55,7 @@ def _apply_csv4(base, value, prefix):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.2"
+    version = "0.1.3"
 
     def cli_group(self):
         @click.group(name="qint")
@@ -179,15 +179,18 @@ class QintModule(PvxModule):
 
                 with widgets.spinner(f"Testando conexão com {parsed['host']}:{parsed['port']}..."):
                     reachable = reachability.is_reachable(parsed["host"], parsed["port"])
+
+                if reachable:
+                    widgets.success(f"{parsed['host']}:{parsed['port']} alcançável.")
+                else:
+                    widgets.failed(f"não consegui alcançar {parsed['host']}:{parsed['port']}.")
+
                 if reachable or sftp_value == sftp_default:
                     base["sftp_user"], base["sftp_host"], base["sftp_port"] = (
                         parsed["user"], parsed["host"], parsed["port"],
                     )
                     break
-                click.echo(
-                    f"não consegui alcançar {parsed['host']}:{parsed['port']} -- "
-                    "digite de novo pra confirmar mesmo assim, ou corrija."
-                )
+                click.echo("digite de novo pra confirmar mesmo assim, ou corrija.")
                 sftp_default = sftp_value
 
             for suffix, label in zip(CSV4_SUFFIXES, CSV4_LABELS):
