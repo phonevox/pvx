@@ -90,40 +90,59 @@ class MessageTest(unittest.TestCase):
 
 class SuccessTest(unittest.TestCase):
     @patch("pvx.interactive.widgets.Console")
-    def test_prints_green_checkmark_and_label(self, mock_console_cls):
+    def test_prints_label_alone_when_no_detail(self, mock_console_cls):
         success()
-        mock_console_cls.return_value.print.assert_called_once_with("✓ sucesso!", style="bold green")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "✓ sucesso!")
 
     @patch("pvx.interactive.widgets.Console")
-    def test_prints_detail_indented_in_normal_color(self, mock_console_cls):
+    def test_appends_detail_inline_after_the_label(self, mock_console_cls):
         success("dummy instalado.")
-        calls = mock_console_cls.return_value.print.call_args_list
-        self.assertEqual(calls[0], call("✓ sucesso!", style="bold green"))
-        self.assertEqual(calls[1], call("  dummy instalado.", highlight=False))
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertTrue(printed.plain.startswith("✓ sucesso!"))
+        self.assertTrue(printed.plain.endswith("dummy instalado."))
 
     @patch("pvx.interactive.widgets.Console")
-    def test_no_detail_line_when_message_is_omitted(self, mock_console_cls):
+    def test_label_is_bold_green(self, mock_console_cls):
         success()
-        self.assertEqual(mock_console_cls.return_value.print.call_count, 1)
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "bold green")
 
 
 class FailedTest(unittest.TestCase):
     @patch("pvx.interactive.widgets.Console")
-    def test_prints_red_x_and_label(self, mock_console_cls):
+    def test_prints_label_alone_when_no_detail(self, mock_console_cls):
         failed()
-        mock_console_cls.return_value.print.assert_called_once_with("✗ falha!", style="bold red")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "✗ falha!")
 
     @patch("pvx.interactive.widgets.Console")
-    def test_prints_detail_indented_in_normal_color(self, mock_console_cls):
+    def test_appends_detail_inline_after_the_label(self, mock_console_cls):
         failed("erro de rede.")
-        calls = mock_console_cls.return_value.print.call_args_list
-        self.assertEqual(calls[0], call("✗ falha!", style="bold red"))
-        self.assertEqual(calls[1], call("  erro de rede.", highlight=False))
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertTrue(printed.plain.startswith("✗ falha!"))
+        self.assertTrue(printed.plain.endswith("erro de rede."))
 
     @patch("pvx.interactive.widgets.Console")
-    def test_no_detail_line_when_message_is_omitted(self, mock_console_cls):
+    def test_label_is_bold_red(self, mock_console_cls):
         failed()
-        self.assertEqual(mock_console_cls.return_value.print.call_count, 1)
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "bold red")
+
+
+class SuccessFailedAlignmentTest(unittest.TestCase):
+    def test_detail_starts_at_the_same_column_for_both(self):
+        # "✓ sucesso!" e "✗ falha!" têm tamanhos diferentes -- o texto
+        # extra precisa começar na mesma coluna nos dois, senão usados em
+        # sequência (ex.: instalando vários módulos) fica desalinhado.
+        with patch("pvx.interactive.widgets.Console") as mock_console_cls:
+            success("x")
+            success_line = mock_console_cls.return_value.print.call_args.args[0].plain
+        with patch("pvx.interactive.widgets.Console") as mock_console_cls:
+            failed("x")
+            failed_line = mock_console_cls.return_value.print.call_args.args[0].plain
+
+        self.assertEqual(success_line.index("x"), failed_line.index("x"))
 
 
 if __name__ == "__main__":

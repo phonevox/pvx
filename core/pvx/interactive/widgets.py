@@ -49,16 +49,25 @@ def message(text):
     click.echo()
 
 
-def success(detail=None):
-    Console().print("✓ sucesso!", style="bold green")
+_SUCCESS_LABEL = "✓ sucesso!"
+_FAILED_LABEL = "✗ falha!"
+_OUTCOME_LABEL_WIDTH = max(len(_SUCCESS_LABEL), len(_FAILED_LABEL))
+
+
+def _print_outcome(label, style, detail):
+    line = Text()
+    line.append(label.ljust(_OUTCOME_LABEL_WIDTH) if detail else label, style=style)
     if detail:
-        Console().print(f"  {detail}", highlight=False)
+        line.append(f" {detail}")
+    Console().print(line, highlight=False)
+
+
+def success(detail=None):
+    _print_outcome(_SUCCESS_LABEL, "bold green", detail)
 
 
 def failed(detail=None):
-    Console().print("✗ falha!", style="bold red")
-    if detail:
-        Console().print(f"  {detail}", highlight=False)
+    _print_outcome(_FAILED_LABEL, "bold red", detail)
 
 
 def print_modules_table(rows):
