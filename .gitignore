@@ -9,3 +9,4 @@ core/dist/
 modules/dummy/dist/
 modules/ssh-hardening/dist/
 modules/qint/dist/
+modules/firewall/dist/
