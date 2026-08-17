@@ -41,6 +41,26 @@ class FakePickyModule(PvxModule):
         return group
 
 
+class FakeNestedModule(PvxModule):
+    name = "nested"
+    version = "0.1.0"
+
+    def cli_group(self):
+        @click.group()
+        def group():
+            pass
+
+        @group.group()
+        def port():
+            pass
+
+        @port.command()
+        def accept():
+            click.echo("port accepted")
+
+        return group
+
+
 def _index_of_value(choices, value):
     return next(
         i for i, c in enumerate(choices)
@@ -112,6 +132,43 @@ class RootScreenTest(unittest.TestCase):
         self.assertIsNone(result)
         mock_message.assert_called_once()
         mock_pause.assert_called_once()
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"nested": FakeNestedModule()},
+    )
+    @patch("pvx.interactive.screens.root.widgets.clear")
+    @patch(
+        "pvx.interactive.screens.root.ask_select",
+        side_effect=["nested", "port", "accept"],
+    )
+    def test_nested_group_is_navigated_into_and_leaf_runs(
+        self, mock_ask_select, mock_clear, mock_discover
+    ):
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        self.assertEqual(mock_ask_select.call_count, 3)
+        prompts = [c.args[0] for c in mock_ask_select.call_args_list]
+        self.assertEqual(prompts, ["pvx >", "pvx > nested >", "pvx > nested > port >"])
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"nested": FakeNestedModule()},
+    )
+    @patch(
+        "pvx.interactive.screens.root.ask_select",
+        side_effect=["nested", "port", None, None],
+    )
+    def test_esc_inside_nested_group_returns_to_parent_menu_not_to_root(
+        self, mock_ask_select, mock_discover
+    ):
+        # esc dentro de "port" só sai do "port", redesenha "nested >" de novo
+        # -- não deve pular direto pra fora do módulo inteiro.
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        self.assertEqual(mock_ask_select.call_count, 4)
+        prompts = [c.args[0] for c in mock_ask_select.call_args_list]
+        self.assertEqual(prompts, ["pvx >", "pvx > nested >", "pvx > nested > port >", "pvx > nested >"])
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="Módulos")

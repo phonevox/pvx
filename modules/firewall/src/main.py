@@ -51,14 +51,18 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="firewall")
         def group():
             pass
 
-        @group.command(name="port-accept")
+        @group.group(name="port")
+        def port_group():
+            pass
+
+        @port_group.command(name="accept")
         @click.argument("spec")
         @click.option("--comment", default="")
         def port_accept_cmd(spec, comment):
@@ -70,7 +74,7 @@ class FirewallModule(PvxModule):
             lists.add_entry(_list_path("port_accept"), spec, comment)
             click.echo(f"porta {spec} liberada.")
 
-        @group.command(name="port-deny")
+        @port_group.command(name="deny")
         @click.argument("spec")
         @click.option("--comment", default="")
         def port_deny_cmd(spec, comment):
@@ -82,7 +86,7 @@ class FirewallModule(PvxModule):
             lists.add_entry(_list_path("port_deny"), spec, comment)
             click.echo(f"porta {spec} bloqueada.")
 
-        @group.command(name="port-remove")
+        @port_group.command(name="remove")
         @click.argument("spec")
         def port_remove_cmd(spec):
             _require_root()
@@ -92,14 +96,18 @@ class FirewallModule(PvxModule):
                 raise click.ClickException(f"{spec} não está em nenhuma lista de portas.")
             click.echo(f"{spec} removido.")
 
-        @group.command(name="port-list")
+        @port_group.command(name="list")
         def port_list_cmd():
             _echo_list("liberadas:", _read("port_accept"))
             _echo_list("bloqueadas:", _read("port_deny"))
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="ip-accept")
+        @group.group(name="ip")
+        def ip_group():
+            pass
+
+        @ip_group.command(name="accept")
         @click.argument("cidr")
         @click.option("--comment", default="")
         def ip_accept_cmd(cidr, comment):
@@ -109,7 +117,7 @@ class FirewallModule(PvxModule):
             lists.add_entry(_list_path("ip_accept"), cidr, comment)
             click.echo(f"{cidr} adicionado à lista de confiáveis.")
 
-        @group.command(name="ip-deny")
+        @ip_group.command(name="deny")
         @click.argument("cidr")
         @click.option("--comment", default="")
         @click.option("--force", is_flag=True, help="ignora a checagem de auto-bloqueio")
@@ -126,7 +134,7 @@ class FirewallModule(PvxModule):
             lists.add_entry(_list_path("ip_deny"), cidr, comment)
             click.echo(f"{cidr} adicionado à lista de bloqueio.")
 
-        @group.command(name="ip-remove")
+        @ip_group.command(name="remove")
         @click.argument("cidr")
         def ip_remove_cmd(cidr):
             _require_root()
@@ -136,7 +144,7 @@ class FirewallModule(PvxModule):
                 raise click.ClickException(f"{cidr} não está em nenhuma lista de IPs.")
             click.echo(f"{cidr} removido.")
 
-        @group.command(name="ip-list")
+        @ip_group.command(name="list")
         def ip_list_cmd():
             _echo_list("confiáveis:", _read("ip_accept"))
             _echo_list("bloqueados:", _read("ip_deny"))
