@@ -59,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.5"
+    version = "0.1.6"
 
     def cli_group(self):
         @click.group(name="firewall")

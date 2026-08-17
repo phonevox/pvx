@@ -29,6 +29,14 @@ DEFAULT_LISTS = {
         ("50007/tcp", "SIP custom"),
         ("10000-20000/udp", "RTP audio/video"),
     ],
+    # portas de administração (MySQL, AMI, Zabbix, SSH -- padrão 22 E o
+    # custom do ssh-hardening, 21122) ficam fechadas pro mundo por padrão,
+    # de propósito -- acesso real é só via ip_accept (IP de confiança) ou o
+    # failsafe de sessão, nunca abrindo a porta geral. ssh-hardening nunca
+    # mexe em firewall (só troca a porta no sshd_config), então mudar de 22
+    # pra outra porta não abre nada aqui sozinho -- é o esperado.
+    # engines aplicam deny ANTES de accept na mesma chain: se uma porta cair
+    # nas duas listas, deny sempre vence (sync() nunca alerta sobre isso).
     "port_deny": [
         ("995/udp", "POP3D"),
         ("995/tcp", "POP3D"),
