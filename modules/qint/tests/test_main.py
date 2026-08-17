@@ -233,22 +233,32 @@ class SetupTokenTest(unittest.TestCase):
 
 
 class SetupSummaryConfirmationTest(unittest.TestCase):
+    @patch("main.widgets.pause")
+    @patch("main.widgets.message")
     @patch("main.staged_config.save")
     @patch("main.staged_config.load", return_value=None)
     @patch("main.reachability.is_reachable", return_value=True)
     @patch("main.ask_confirm", return_value=False)
     @patch("main.ask_text")
-    def test_declining_summary_discards_without_saving(self, mock_text, mock_confirm, mock_reachable, mock_load, mock_save):
+    def test_declining_summary_discards_without_saving_and_pauses(
+        self, mock_text, mock_confirm, mock_reachable, mock_load, mock_save, mock_message, mock_pause
+    ):
         mock_text.side_effect = ["root@10.0.0.1"] + ["https://x.example.com"] * 30
         _invoke_interactive(["setup", "ixcsoft"])
         mock_save.assert_not_called()
+        mock_message.assert_called_once_with("descartado, nada foi salvo.")
+        mock_pause.assert_called_once_with()
 
+    @patch("main.widgets.pause")
+    @patch("main.widgets.success")
     @patch("main.staged_config.save")
     @patch("main.staged_config.load", return_value=None)
     @patch("main.reachability.is_reachable", return_value=True)
     @patch("main.ask_confirm", return_value=True)
     @patch("main.ask_text")
-    def test_full_ixcsoft_run_ends_up_complete(self, mock_text, mock_confirm, mock_reachable, mock_load, mock_save):
+    def test_full_ixcsoft_run_ends_up_complete(
+        self, mock_text, mock_confirm, mock_reachable, mock_load, mock_save, mock_success, mock_pause
+    ):
         mock_text.side_effect = (
             ["root@10.0.0.1"]  # sftp
             + ["600", "601", "602", "603"]  # filas
@@ -268,6 +278,10 @@ class SetupSummaryConfirmationTest(unittest.TestCase):
         self.assertEqual(missing_fields(saved), [])
         self.assertEqual(saved["id_departamento_comercial"], "20")
         self.assertEqual(saved["id_assunto_financeiro"], "41")
+
+        shown = mock_success.call_args.args[0]
+        self.assertIn("qint apply", shown)
+        mock_pause.assert_called_once_with()
 
 
 _COMPLETE_STAGED = {

@@ -55,7 +55,7 @@ def _apply_csv4(base, value, prefix):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="qint")
@@ -250,6 +250,7 @@ class QintModule(PvxModule):
                 if not _ask_csv4_group(base, "id_motivo_os", "Motivo de OS"):
                     return
 
+            click.echo()
             click.echo("Resumo:")
             for key in sorted(base):
                 if key == "type":
@@ -258,11 +259,13 @@ class QintModule(PvxModule):
                 click.echo(f"  {key}: {display}")
 
             if not ask_confirm("Salvar essa configuração?", default=True):
-                click.echo("Descartado, nada foi salvo.")
+                widgets.message("descartado, nada foi salvo.")
+                widgets.pause()
                 return
 
             staged_config.save(_config_path(), defaults.apply_defaults(base))
-            click.echo(f"config do qint ({tipo}) salva. rode `pvx qint apply` quando quiser aplicar de verdade.")
+            widgets.success(f"config do qint ({tipo}) salva. rode `pvx qint apply` pra aplicar de verdade.")
+            widgets.pause()
 
         @group.command(name="apply")
         @click.option("--yes", is_flag=True)
