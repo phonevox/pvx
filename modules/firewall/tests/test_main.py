@@ -111,7 +111,10 @@ class IpCommandsTest(MainTestCase):
 
 
 class StatusCommandTest(MainTestCase):
-    def test_shows_success_when_synced(self):
+    def test_shows_synced_state_without_success_wording(self):
+        # status é consulta, não ação -- "sucesso!"/"falha!" não fazem
+        # sentido aqui (usava widgets.success/failed antes, corrigido pra
+        # widgets.state: só cor, sem rótulo de ação).
         with patch("main.status_module.get_status", return_value={
             "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
             "synced": True, "failsafe_ok": True,
@@ -120,14 +123,16 @@ class StatusCommandTest(MainTestCase):
         self.assertIn("iptables", result.output)
         self.assertIn("sincronizado", result.output.lower())
         self.assertNotIn("não sincronizado", result.output.lower())
+        self.assertNotIn("sucesso", result.output.lower())
 
-    def test_shows_failure_when_not_synced(self):
+    def test_shows_not_synced_state_without_failure_wording(self):
         with patch("main.status_module.get_status", return_value={
             "engine": "iptables", "rule_count": 0, "session_ip": "203.0.113.9",
             "synced": False, "failsafe_ok": False,
         }):
             result = self._invoke(["status"])
         self.assertIn("não sincronizado", result.output.lower())
+        self.assertNotIn("falha", result.output.lower())
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
         with patch("main.status_module.get_status", return_value={

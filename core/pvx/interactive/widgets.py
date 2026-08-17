@@ -79,6 +79,16 @@ def failed(detail=None):
     _print_outcome(_FAILED_LABEL, "bold red", detail)
 
 
+def state(text, ok):
+    # pra reportar um FATO/estado (ex.: resultado de uma consulta), não o
+    # resultado de uma ação -- diferente de success()/failed(), sem rótulo
+    # "sucesso!"/"falha!" (usar isso numa consulta não faz sentido, não
+    # houve ação nenhuma pra "ter sucesso" ou "falhar").
+    line = Text()
+    line.append(text, style="bold green" if ok else "bold red")
+    Console().print(line, highlight=False)
+
+
 def print_modules_table(rows):
     table = Table()
     for column in ("Módulo", "Instalado", "Disponível", "Status"):

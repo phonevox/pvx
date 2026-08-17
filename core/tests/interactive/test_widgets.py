@@ -12,6 +12,7 @@ from pvx.interactive.widgets import (
     pause,
     print_modules_table,
     spinner,
+    state,
     success,
 )
 
@@ -142,6 +143,25 @@ class FailedTest(unittest.TestCase):
     @patch("pvx.interactive.widgets.Console")
     def test_label_is_bold_red(self, mock_console_cls):
         failed()
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "bold red")
+
+
+class StateTest(unittest.TestCase):
+    # distinto de success()/failed(): reporta um FATO/estado (ex.: "status"
+    # de uma consulta), não o resultado de uma ação -- por isso sem o rótulo
+    # "sucesso!"/"falha!" (usar isso numa consulta é semanticamente errado,
+    # não houve ação nenhuma pra "ter sucesso" ou "falhar").
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_text_in_green_when_ok(self, mock_console_cls):
+        state("sincronizado -- 6 regra(s) ativa(s)", ok=True)
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "sincronizado -- 6 regra(s) ativa(s)")
+        self.assertEqual(printed.spans[0].style, "bold green")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_text_in_red_when_not_ok(self, mock_console_cls):
+        state("não sincronizado", ok=False)
         printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.spans[0].style, "bold red")
 
