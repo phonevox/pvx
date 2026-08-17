@@ -1,6 +1,7 @@
 import subprocess
 
 import defaults
+from validators import parse_port_spec
 
 
 def _run(args, check=True):
@@ -58,8 +59,6 @@ def _rule_arg_groups(spec):
 
 
 def sync(ip_accept, ip_deny, port_accept, port_deny, failsafe_ip):
-    from validators import parse_port_spec
-
     if failsafe_ip and not insert_failsafe(failsafe_ip):
         raise RuntimeError("não consegui confirmar a regra de failsafe -- abortando sem limpar nada.")
 

@@ -1,6 +1,7 @@
 import subprocess
 
 import defaults
+from validators import parse_port_spec
 
 
 def _run(args, check=True):
@@ -71,8 +72,6 @@ def port_rule_args(spec):
 
 
 def sync(ip_accept, ip_deny, port_accept, port_deny, failsafe_ip):
-    from validators import parse_port_spec
-
     zone = defaults.FIREWALLD_ZONE
     ensure_zone(zone)
 
