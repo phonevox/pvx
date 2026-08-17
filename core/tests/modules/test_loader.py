@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import zipapp
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -95,6 +96,60 @@ class DiscoverTest(unittest.TestCase):
 
         self.assertEqual(modules["dummy"].name, "dummy")
         self.assertEqual(modules["other"].name, "other")
+
+    def test_sibling_helper_files_dont_leak_between_two_pyz_modules(self):
+        # bug real: dois módulos instalados que cada um tem seu próprio
+        # helper.py (mesmo nome de arquivo, conteúdo diferente) -- sem
+        # limpar TODO nome novo que entrou em sys.modules (não só o
+        # entrypoint "module"), o segundo módulo carregado herdava o
+        # helper.py cacheado do primeiro.
+        def build_pyz(build_dir, helper_value, name):
+            build_dir.mkdir(parents=True)
+            (build_dir / "helper.py").write_text(f'VALUE = "{helper_value}"\n')
+            (build_dir / "module.py").write_text(f"""
+from pvx.modules.base import PvxModule
+import helper
+
+
+class Mod(PvxModule):
+    name = helper.VALUE
+    version = "0.1.0"
+
+    def cli_group(self):
+        import click
+
+        @click.group()
+        def group():
+            pass
+
+        return group
+
+
+cli = Mod()
+""")
+            (build_dir / "__main__.py").write_text("from module import cli\n")
+            pyz_path = build_dir.parent / f"{name}.pyz"
+            zipapp.create_archive(build_dir, pyz_path)
+            return pyz_path
+
+        with TemporaryDirectory() as tmp:
+            build_root = Path(tmp) / "build"
+            first_pyz = build_pyz(build_root / "first_src", "first-value", "first")
+            second_pyz = build_pyz(build_root / "second_src", "second-value", "second")
+
+            modules_dir = Path(tmp) / "modules"
+            for mod_name, pyz_path in (("first", first_pyz), ("second", second_pyz)):
+                mod_dir = modules_dir / mod_name
+                mod_dir.mkdir(parents=True)
+                (mod_dir / "manifest.json").write_text(json.dumps({
+                    "name": mod_name, "version": "0.1.0", "entrypoint": "module:cli",
+                }))
+                shutil.copy(pyz_path, mod_dir / "module.pyz")
+
+            modules = discover(modules_dir)
+
+        self.assertEqual(modules["first"].name, "first-value")
+        self.assertEqual(modules["second"].name, "second-value")
 
     def test_discovers_real_built_module_pyz(self):
         dummy_dir = Path(__file__).resolve().parents[3] / "modules" / "dummy"

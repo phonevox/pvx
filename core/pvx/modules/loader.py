@@ -5,16 +5,16 @@ import sys
 
 
 def _load_from_pyz(pyz_path, module_file):
-    # zipimport resolve pelo nome puro (não dá pra usar um nome sintético
-    # único aqui) -- processa um módulo de cada vez e limpa sys.path/
-    # sys.modules logo em seguida, pra não colidir com o próximo .pyz que
-    # também se chame "module".
+    # limpa TODO nome novo em sys.modules, não só module_file -- módulos
+    # internos (ex. validators.py) de módulos diferentes colidem senão.
+    before = set(sys.modules)
     sys.path.insert(0, str(pyz_path))
     try:
         return importlib.import_module(module_file)
     finally:
         sys.path.remove(str(pyz_path))
-        sys.modules.pop(module_file, None)
+        for name in set(sys.modules) - before:
+            sys.modules.pop(name, None)
 
 
 def _load_from_py(py_path, name):

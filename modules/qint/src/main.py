@@ -315,20 +315,24 @@ class QintModule(PvxModule):
                     return
 
             state_dir = pvx_config.modules_dir() / "qint" / "state"
-            with widgets.spinner("Aplicando integração..."):
-                result = apply_module.apply(
-                    staged,
-                    staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
-                    str(state_dir / "versions"),
-                    defaults.DESTINATION_BASE_DIRS,
-                    str(state_dir / "history.log"),
-                )
+            try:
+                with widgets.spinner("Aplicando integração..."):
+                    result = apply_module.apply(
+                        staged,
+                        staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
+                        str(state_dir / "versions"),
+                        defaults.DESTINATION_BASE_DIRS,
+                        str(state_dir / "history.log"),
+                    )
+            except Exception as e:
+                widgets.failed(str(e))
+                return
 
             if result["reloaded"]:
-                click.echo("Aplicado com sucesso.")
+                widgets.success("dialplan recarregado.")
             else:
-                click.echo(
-                    "Aplicado, mas o dialplan não foi recarregado (asterisk não encontrado) "
+                widgets.success(
+                    "dialplan não foi recarregado (asterisk não encontrado) "
                     "-- rode `asterisk -rx \"dialplan reload\"` manualmente."
                 )
 

@@ -42,6 +42,8 @@ class ModuleInstallScreen:
                 with widgets.spinner(f"Instalando {name}..."):
                     installer.install(name, index_url)
             except (RuntimeError, ValueError) as e:
-                click.echo(str(e))
+                widgets.failed(str(e))
+            else:
+                widgets.success(f"{name} instalado.")
 
         return "BACK"

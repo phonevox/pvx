@@ -7,10 +7,12 @@ from pvx.interactive.widgets import (
     banner,
     breadcrumb,
     clear,
+    failed,
     message,
     pause,
     print_modules_table,
     spinner,
+    success,
 )
 
 
@@ -84,6 +86,44 @@ class MessageTest(unittest.TestCase):
             mock_echo.call_args_list,
             [call(), call("nenhum módulo instalado."), call()],
         )
+
+
+class SuccessTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_green_checkmark_and_label(self, mock_console_cls):
+        success()
+        mock_console_cls.return_value.print.assert_called_once_with("✓ sucesso!", style="bold green")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_detail_indented_in_normal_color(self, mock_console_cls):
+        success("dummy instalado.")
+        calls = mock_console_cls.return_value.print.call_args_list
+        self.assertEqual(calls[0], call("✓ sucesso!", style="bold green"))
+        self.assertEqual(calls[1], call("  dummy instalado.", highlight=False))
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_no_detail_line_when_message_is_omitted(self, mock_console_cls):
+        success()
+        self.assertEqual(mock_console_cls.return_value.print.call_count, 1)
+
+
+class FailedTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_red_x_and_label(self, mock_console_cls):
+        failed()
+        mock_console_cls.return_value.print.assert_called_once_with("✗ falha!", style="bold red")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_detail_indented_in_normal_color(self, mock_console_cls):
+        failed("erro de rede.")
+        calls = mock_console_cls.return_value.print.call_args_list
+        self.assertEqual(calls[0], call("✗ falha!", style="bold red"))
+        self.assertEqual(calls[1], call("  erro de rede.", highlight=False))
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_no_detail_line_when_message_is_omitted(self, mock_console_cls):
+        failed()
+        self.assertEqual(mock_console_cls.return_value.print.call_count, 1)
 
 
 if __name__ == "__main__":

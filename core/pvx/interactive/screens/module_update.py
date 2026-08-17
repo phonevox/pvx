@@ -1,5 +1,3 @@
-import click
-
 from pvx import config
 from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
@@ -28,6 +26,8 @@ class ModuleUpdateScreen:
                 with widgets.spinner(f"Atualizando {name}..."):
                     installer.install(name, config.registry_index_url())
             except (RuntimeError, ValueError) as e:
-                click.echo(str(e))
+                widgets.failed(str(e))
+            else:
+                widgets.success(f"{name} atualizado.")
 
         return "BACK"

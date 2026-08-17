@@ -49,6 +49,18 @@ def message(text):
     click.echo()
 
 
+def success(detail=None):
+    Console().print("✓ sucesso!", style="bold green")
+    if detail:
+        Console().print(f"  {detail}", highlight=False)
+
+
+def failed(detail=None):
+    Console().print("✗ falha!", style="bold red")
+    if detail:
+        Console().print(f"  {detail}", highlight=False)
+
+
 def print_modules_table(rows):
     table = Table()
     for column in ("Módulo", "Instalado", "Disponível", "Status"):

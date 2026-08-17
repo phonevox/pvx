@@ -14,6 +14,7 @@ _ROWS = [
 
 
 class ModuleInstallScreenTest(unittest.TestCase):
+    @patch("pvx.interactive.screens.module_install.widgets.success")
     @patch("pvx.interactive.screens.module_install.installer.install")
     @patch(
         "pvx.interactive.screens.module_install.config.registry_index_url",
@@ -23,13 +24,15 @@ class ModuleInstallScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.module_install.ask_checkbox", return_value=["dummy"])
     @patch("pvx.interactive.screens.module_install.ask_select", return_value="Registry oficial")
     def test_installs_selected_module_from_official_registry(
-        self, mock_ask_select, mock_checkbox, mock_list_modules, mock_url, mock_install
+        self, mock_ask_select, mock_checkbox, mock_list_modules, mock_url, mock_install, mock_success
     ):
         result = ModuleInstallScreen().render()
         self.assertEqual(result, "BACK")
         mock_install.assert_called_once_with("dummy", "https://registry.pvx.dev/index.json")
         self.assertEqual(mock_checkbox.call_args.args[1], ["dummy", "ssh-hardening"])
+        mock_success.assert_called_once_with("dummy instalado.")
 
+    @patch("pvx.interactive.screens.module_install.widgets.success")
     @patch("pvx.interactive.screens.module_install.installer.install")
     @patch(
         "pvx.interactive.screens.module_install.config.registry_index_url",
@@ -42,10 +45,30 @@ class ModuleInstallScreenTest(unittest.TestCase):
     )
     @patch("pvx.interactive.screens.module_install.ask_select", return_value="Registry oficial")
     def test_installs_every_module_checked(
-        self, mock_ask_select, mock_checkbox, mock_list_modules, mock_url, mock_install
+        self, mock_ask_select, mock_checkbox, mock_list_modules, mock_url, mock_install, mock_success
     ):
         ModuleInstallScreen().render()
         self.assertEqual(mock_install.call_count, 2)
+        self.assertEqual(mock_success.call_count, 2)
+
+    @patch("pvx.interactive.screens.module_install.widgets.failed")
+    @patch(
+        "pvx.interactive.screens.module_install.installer.install",
+        side_effect=RuntimeError("checksum não bate"),
+    )
+    @patch(
+        "pvx.interactive.screens.module_install.config.registry_index_url",
+        return_value="https://registry.pvx.dev/index.json",
+    )
+    @patch("pvx.interactive.screens.module_install.listing.list_modules", return_value=_ROWS)
+    @patch("pvx.interactive.screens.module_install.ask_checkbox", return_value=["dummy"])
+    @patch("pvx.interactive.screens.module_install.ask_select", return_value="Registry oficial")
+    def test_install_failure_shows_failed_per_module(
+        self, mock_ask_select, mock_checkbox, mock_list_modules, mock_url, mock_install, mock_failed
+    ):
+        result = ModuleInstallScreen().render()
+        self.assertEqual(result, "BACK")
+        mock_failed.assert_called_once_with("checksum não bate")
 
     @patch("pvx.interactive.screens.module_install.installer.install")
     @patch("pvx.interactive.screens.module_install.listing.list_modules", return_value=_ROWS)

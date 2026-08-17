@@ -388,6 +388,20 @@ class ApplyCommandTest(unittest.TestCase):
         result = _invoke(["apply"])
         self.assertIn("reload", result.output.lower())
 
+    @patch("main.widgets.failed")
+    @patch("main.apply_module.apply", side_effect=RuntimeError("SFTP falhou"))
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.deploy.compute_conflicts", return_value=[])
+    @patch("main.ask_confirm", return_value=True)
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_apply_exception_shows_failed_no_traceback(
+        self, mock_load, mock_confirm, mock_conflicts, mock_available, mock_apply, mock_failed
+    ):
+        result = _invoke(["apply"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        self.assertNotIn("Traceback", result.output)
+        mock_failed.assert_called_once_with("SFTP falhou")
+
 
 if __name__ == "__main__":
     unittest.main()
