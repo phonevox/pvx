@@ -33,6 +33,27 @@ class PrepareTypeTest(unittest.TestCase):
         saved = mock_save.call_args.args[1]
         self.assertEqual(saved["type"], "ixcsoft")
 
+    @patch("main.staged_config.save")
+    @patch("main.staged_config.load", return_value=None)
+    def test_missing_tipo_without_a_tty_raises_a_clean_error_no_traceback(self, mock_load, mock_save):
+        # o auto-menu roda o comando via `.main(args=[], ...)` -- sem tipo
+        # nenhum -- precisa dar erro limpo, nunca um traceback cru de
+        # click.MissingParameter.
+        result = _invoke(["prepare"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        mock_save.assert_not_called()
+
+    @patch("main.staged_config.save")
+    @patch("main.staged_config.load", return_value=None)
+    @patch("main.ask_select", return_value="IXCSoft")
+    def test_missing_tipo_with_a_tty_asks_for_it(self, mock_select, mock_load, mock_save):
+        with patch("main.os.geteuid", return_value=0), patch("main._is_interactive", return_value=True):
+            CliRunner().invoke(cli.cli_group(), ["prepare"])
+        mock_select.assert_called_once()
+        saved = mock_save.call_args.args[1]
+        self.assertEqual(saved["type"], "ixcsoft")
+
 
 class PrepareFieldsTest(unittest.TestCase):
     @patch("main.staged_config.save")
@@ -265,6 +286,28 @@ _COMPLETE_STAGED = {
 }
 
 
+class ApplyAsteriskGateTest(unittest.TestCase):
+    @patch("main.reload_.is_asterisk_available", return_value=False)
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_refuses_to_run_without_asterisk_installed(self, mock_load, mock_available):
+        result = _invoke(["apply"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("asterisk", result.output.lower())
+        self.assertIn("--skip-asterisk-check", result.output)
+
+    @patch("main.apply_module.apply")
+    @patch("main.deploy.compute_conflicts", return_value=[])
+    @patch("main.reload_.is_asterisk_available", return_value=False)
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_skip_asterisk_check_flag_bypasses_the_gate(
+        self, mock_load, mock_available, mock_conflicts, mock_apply
+    ):
+        mock_apply.return_value = {"applied": True, "reloaded": False}
+        result = _invoke(["apply", "--yes", "--skip-asterisk-check"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_apply.assert_called_once()
+
+
 class ApplyCommandTest(unittest.TestCase):
     def test_requires_root(self):
         result = _invoke(["apply"], is_root=False)
@@ -284,30 +327,33 @@ class ApplyCommandTest(unittest.TestCase):
         self.assertIn("sftp_user", result.output)
 
     @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
     @patch("main.ask_confirm", return_value=False)
     @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
-    def test_declining_confirmation_does_not_apply(self, mock_load, mock_confirm, mock_apply):
+    def test_declining_confirmation_does_not_apply(self, mock_load, mock_confirm, mock_available, mock_apply):
         result = _invoke(["apply"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_apply.assert_not_called()
 
     @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
     @patch("main.deploy.compute_conflicts", return_value=["php"])
     @patch("main.ask_confirm", side_effect=[True, False])  # confirma aplicar, recusa sobrescrever php
     @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
     def test_declining_a_directory_overwrite_aborts_the_whole_apply(
-        self, mock_load, mock_confirm, mock_conflicts, mock_apply
+        self, mock_load, mock_confirm, mock_conflicts, mock_available, mock_apply
     ):
         result = _invoke(["apply"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_apply.assert_not_called()
 
     @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
     @patch("main.deploy.compute_conflicts", return_value=[])
     @patch("main.ask_confirm", return_value=True)
     @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
     def test_confirmed_apply_calls_apply_module_and_prints_manual_reminders(
-        self, mock_load, mock_confirm, mock_conflicts, mock_apply
+        self, mock_load, mock_confirm, mock_conflicts, mock_available, mock_apply
     ):
         mock_apply.return_value = {"applied": True, "reloaded": True}
 
@@ -321,19 +367,23 @@ class ApplyCommandTest(unittest.TestCase):
         self.assertIn("Time Condition", result.output)
 
     @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
     @patch("main.deploy.compute_conflicts", return_value=[])
     @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
-    def test_yes_flag_skips_confirmation(self, mock_load, mock_conflicts, mock_apply):
+    def test_yes_flag_skips_confirmation(self, mock_load, mock_conflicts, mock_available, mock_apply):
         mock_apply.return_value = {"applied": True, "reloaded": True}
         result = _invoke(["apply", "--yes"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_apply.assert_called_once()
 
     @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
     @patch("main.deploy.compute_conflicts", return_value=[])
     @patch("main.ask_confirm", return_value=True)
     @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
-    def test_reports_when_dialplan_reload_was_skipped(self, mock_load, mock_confirm, mock_conflicts, mock_apply):
+    def test_reports_when_dialplan_reload_was_skipped(
+        self, mock_load, mock_confirm, mock_conflicts, mock_available, mock_apply
+    ):
         mock_apply.return_value = {"applied": True, "reloaded": False}
         result = _invoke(["apply"])
         self.assertIn("reload", result.output.lower())

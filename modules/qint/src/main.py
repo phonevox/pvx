@@ -14,6 +14,7 @@ import deploy
 import destinations
 import local_ip
 import reachability
+import reload as reload_
 import staged_config
 import validators
 
@@ -62,7 +63,7 @@ class QintModule(PvxModule):
             pass
 
         @group.command(name="prepare")
-        @click.argument("tipo")
+        @click.argument("tipo", required=False, default=None)
         @click.option("--sftp", default=None)
         @click.option("--url", default=None)
         @click.option("--token", default=None)
@@ -84,9 +85,19 @@ class QintModule(PvxModule):
             if os.geteuid() != 0:
                 raise click.ClickException("qint precisa rodar como root (sudo).")
 
-            tipo = TYPE_ALIASES.get(tipo, tipo)
-            if tipo not in ("ixcsoft", "sgp"):
-                raise click.ClickException(f"tipo inválido: {tipo} (use ixcsoft/ixc ou sgp)")
+            if tipo is None:
+                if not _is_interactive():
+                    raise click.ClickException(
+                        "informe o tipo: `pvx qint prepare <ixcsoft|sgp> [flags]`."
+                    )
+                label = ask_select("Tipo de integração:", ["IXCSoft", "SGP"])
+                if label is None:
+                    return
+                tipo = TYPE_LABELS[label]
+            else:
+                tipo = TYPE_ALIASES.get(tipo, tipo)
+                if tipo not in ("ixcsoft", "sgp"):
+                    raise click.ClickException(f"tipo inválido: {tipo} (use ixcsoft/ixc ou sgp)")
 
             existing = staged_config.load(_config_path())
             base = dict(existing) if existing and existing.get("type") == tipo else {"type": tipo}
@@ -255,7 +266,11 @@ class QintModule(PvxModule):
 
         @group.command(name="apply")
         @click.option("--yes", is_flag=True)
-        def apply_cmd(yes):
+        @click.option(
+            "--skip-asterisk-check", is_flag=True,
+            help="permite rodar mesmo sem o Asterisk instalado nesse host",
+        )
+        def apply_cmd(yes, skip_asterisk_check):
             if os.geteuid() != 0:
                 raise click.ClickException("qint precisa rodar como root (sudo).")
 
@@ -270,6 +285,12 @@ class QintModule(PvxModule):
                 raise click.ClickException(
                     "faltam campos obrigatórios: " + ", ".join(missing)
                     + " -- rode `pvx qint status` pra ver o que já está preenchido."
+                )
+
+            if not skip_asterisk_check and not reload_.is_asterisk_available():
+                raise click.ClickException(
+                    "Asterisk não encontrado nesse host -- qint apply não faz sentido sem ele. "
+                    "Use --skip-asterisk-check se tiver certeza (ex.: ambiente de teste)."
                 )
 
             tipo = staged["type"]

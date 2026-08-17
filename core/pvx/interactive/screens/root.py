@@ -1,3 +1,4 @@
+import click
 import questionary
 
 from pvx.cli import discover_installed_modules
@@ -43,5 +44,13 @@ class RootScreen:
         widgets.clear()
         command_name = ask_select(f"pvx > {selected} >", build_choices(group))
         if command_name is not None:
-            group.commands[command_name].main(args=[], standalone_mode=False)
+            try:
+                group.commands[command_name].main(args=[], standalone_mode=False)
+            except click.ClickException as e:
+                # standalone_mode=False faz o click propagar a exceção crua
+                # (MissingParameter, UsageError, ...) em vez de tratar --
+                # qualquer módulo com comando de argumento obrigatório
+                # crasharia a sessão inteira do menu sem esse guard.
+                widgets.message(str(e))
+                widgets.pause()
         return None

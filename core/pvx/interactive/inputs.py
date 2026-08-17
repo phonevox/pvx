@@ -43,6 +43,13 @@ def ask_select(msg, choices, default=None):
     return _ask(question, include_q=True)
 
 
+def ask_checkbox(msg, choices, defaults=None):
+    defaults = defaults or []
+    wrapped = [questionary.Choice(title=str(c), value=c, checked=c in defaults) for c in choices]
+    question = questionary.checkbox(msg, choices=wrapped, style=theme.current_style())
+    return _ask(question)
+
+
 def ask_confirm(msg, default=True):
     question = questionary.confirm(msg, default=default, style=theme.current_style())
     return _ask(question, include_q=True)

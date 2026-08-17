@@ -24,6 +24,23 @@ class FakeDummyModule(PvxModule):
         return group
 
 
+class FakePickyModule(PvxModule):
+    name = "picky"
+    version = "0.1.0"
+
+    def cli_group(self):
+        @click.group()
+        def group():
+            pass
+
+        @group.command()
+        @click.argument("tipo")
+        def prepare(tipo):
+            click.echo(f"preparando {tipo}")
+
+        return group
+
+
 def _index_of_value(choices, value):
     return next(
         i for i, c in enumerate(choices)
@@ -76,6 +93,25 @@ class RootScreenTest(unittest.TestCase):
         # mesmo render() (o router só limpa ENTRE renders, não no meio de um).
         RootScreen().render()
         mock_clear.assert_called_once()
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"picky": FakePickyModule()},
+    )
+    @patch("pvx.interactive.screens.root.widgets.pause")
+    @patch("pvx.interactive.screens.root.widgets.message")
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["picky", "prepare"])
+    def test_missing_required_argument_shows_message_instead_of_crashing(
+        self, mock_ask_select, mock_message, mock_pause, mock_discover
+    ):
+        # auto-menu roda o comando via .main(standalone_mode=False) -- isso
+        # faz o click propagar MissingParameter cru em vez de tratar; sem
+        # esse guard, qualquer módulo com argumento obrigatório crasha a
+        # sessão inteira do menu interativo.
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_message.assert_called_once()
+        mock_pause.assert_called_once()
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="Módulos")
