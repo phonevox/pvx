@@ -1,6 +1,6 @@
 {
   "name": "qint",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "entrypoint": "main:cli",
   "description": "Integração de URA (IXCSoft/SGP) com Asterisk/Issabel via SFTP.",
   "author": "pvx",

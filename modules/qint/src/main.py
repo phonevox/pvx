@@ -55,14 +55,14 @@ def _apply_csv4(base, value, prefix):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.3"
+    version = "0.1.4"
 
     def cli_group(self):
         @click.group(name="qint")
         def group():
             pass
 
-        @group.command(name="prepare")
+        @group.command(name="prepare", hidden=True)
         @click.argument("tipo", required=False, default=None)
         @click.option("--sftp", default=None)
         @click.option("--url", default=None)
@@ -352,14 +352,16 @@ class QintModule(PvxModule):
             existing = staged_config.load(_config_path())
             if existing is None:
                 click.echo("nenhuma config staged. use `pvx qint prepare <tipo>` ou `pvx qint setup`.")
-                return
+            else:
+                click.echo(f"tipo: {existing['type']}")
+                for key in sorted(existing):
+                    if key == "type":
+                        continue
+                    value = "***" if key == "token" else existing[key]
+                    click.echo(f"  {key}: {value}")
 
-            click.echo(f"tipo: {existing['type']}")
-            for key in sorted(existing):
-                if key == "type":
-                    continue
-                value = "***" if key == "token" else existing[key]
-                click.echo(f"  {key}: {value}")
+            if _is_interactive():
+                widgets.pause()
 
         return group
 

@@ -128,6 +128,24 @@ class StatusTest(unittest.TestCase):
         self.assertIn("10.0.0.1", result.output)
         self.assertNotIn("supersecreto", result.output)
 
+    @patch("main.widgets.pause")
+    @patch("main.staged_config.load", return_value=None)
+    def test_pauses_when_interactive_so_the_screen_reset_doesnt_lose_it(self, mock_load, mock_pause):
+        with patch("main.os.geteuid", return_value=0), patch("main._is_interactive", return_value=True):
+            CliRunner().invoke(cli.cli_group(), ["status"])
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.staged_config.load", return_value=None)
+    def test_does_not_pause_without_a_tty(self, mock_load, mock_pause):
+        _invoke(["status"])
+        mock_pause.assert_not_called()
+
+    def test_prepare_is_hidden_from_the_interactive_auto_menu(self):
+        from pvx.interactive.auto_menu import build_choices
+
+        self.assertNotIn("prepare", build_choices(cli.cli_group()))
+
 
 def _invoke_interactive(args, is_root=True):
     with patch("main.os.geteuid", return_value=0 if is_root else 1000), patch(
