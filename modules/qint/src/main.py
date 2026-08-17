@@ -55,7 +55,7 @@ def _apply_csv4(base, value, prefix):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="qint")

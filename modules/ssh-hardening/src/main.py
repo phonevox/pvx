@@ -27,7 +27,7 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
