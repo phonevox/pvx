@@ -55,16 +55,32 @@ class PrintModulesTableTest(unittest.TestCase):
 
 
 class PauseTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.sys.argv", ["pvx"])
     @patch("pvx.interactive.widgets.click.pause")
     @patch("pvx.interactive.widgets.Console")
     def test_prints_standard_message_in_gray_then_waits_for_a_keypress(
         self, mock_console_cls, mock_pause
     ):
+        # sys.argv == ["pvx"] -- é assim que o processo inteiro roda quando
+        # foi lançado sem argumentos (menu interativo, ver __main__.py).
         pause()
         mock_console_cls.return_value.print.assert_called_once_with(
             "pressione enter pra continuar...", style=theme.SEPARATOR_COLOR, highlight=False
         )
         mock_pause.assert_called_once_with("")
+
+    @patch("pvx.interactive.widgets.sys.argv", ["pvx", "firewall", "status"])
+    @patch("pvx.interactive.widgets.click.pause")
+    @patch("pvx.interactive.widgets.Console")
+    def test_no_ops_when_invoked_via_direct_cli(self, mock_console_cls, mock_pause):
+        # bug reportado ao vivo: "pause NUNCA deve ocorrer quando ta
+        # chamando pela CLI direto" -- `sys.stdin.isatty()` dava falso
+        # positivo (terminal real também é tty na CLI direta, não só no
+        # menu); sys.argv com mais de 1 item é o sinal correto de "não fui
+        # lançado pelo menu interativo".
+        pause()
+        mock_console_cls.return_value.print.assert_not_called()
+        mock_pause.assert_not_called()
 
 
 class BreadcrumbTest(unittest.TestCase):

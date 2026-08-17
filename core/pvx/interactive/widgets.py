@@ -1,3 +1,5 @@
+import sys
+
 import click
 from rich.console import Console
 from rich.table import Table
@@ -29,6 +31,13 @@ def banner():
 
 
 def pause():
+    # sys.argv com mais de 1 item = pvx foi lançado com argumentos (CLI
+    # direta, ver __main__.py) -- nunca pausa aí, o shell já devolve o
+    # prompt sozinho. Só pausa quando o processo inteiro está em modo
+    # interativo (`pvx` sem args). Checar sys.stdin.isatty() daria falso
+    # positivo: um terminal real também é tty na CLI direta, não só no menu.
+    if len(sys.argv) > 1:
+        return
     # highlight=False -- o ReprHighlighter automático do rich colore
     # padrões tipo "..." sozinho (achado testando: "pressione enter pra
     # continuar..." saía com as reticências amarelas, sem querer).
