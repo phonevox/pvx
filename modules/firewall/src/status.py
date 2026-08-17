@@ -11,21 +11,18 @@ def get_status(engine=None):
 
     if engine_name == "iptables":
         rule_count = iptables_engine.count_input_rules()
-        protected = ip is not None and iptables_engine.failsafe_present(ip)
+        failsafe_ok = ip is not None and iptables_engine.failsafe_present(ip)
     else:
         rule_count = firewalld_engine.count_rich_rules(defaults.FIREWALLD_ZONE)
-        protected = ip is not None and firewalld_engine.failsafe_present(defaults.FIREWALLD_ZONE, ip)
-
-    if ip is None:
-        protection = "IP da sessão não detectável"
-    elif protected:
-        protection = "protegido"
-    else:
-        protection = "não sincronizado"
+        failsafe_ok = ip is not None and firewalld_engine.failsafe_present(defaults.FIREWALLD_ZONE, ip)
 
     return {
         "engine": engine_name,
         "session_ip": ip,
         "rule_count": rule_count,
-        "protection": protection,
+        # sincronizado e failsafe-da-sessão-atual são sinais independentes
+        # (ex.: IP da sessão mudou desde o último sync) -- nunca inferir um
+        # a partir do outro.
+        "synced": rule_count > 0,
+        "failsafe_ok": failsafe_ok,
     }

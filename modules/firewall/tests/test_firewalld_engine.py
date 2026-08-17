@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -115,6 +116,21 @@ class CountRichRulesTest(unittest.TestCase):
             'rule priority="200" family="ipv4" port port="5060" protocol="udp" accept\n'
         ))
         self.assertEqual(fwd.count_rich_rules("pvxfw"), 2)
+
+    @patch("firewalld_engine.subprocess.run")
+    def test_returns_zero_when_zone_does_not_exist_yet(self, mock_run):
+        # antes do primeiro sync a zona pvxfw nem existe -- --list-rich-rules
+        # falha; com check=True isso levantaria CalledProcessError de verdade
+        # (comportamento real do subprocess.run), não pode virar exceção
+        # crua no status -- daí o fake_run respeitar o kwarg "check" de
+        # verdade, não só devolver um returncode fixo.
+        def fake_run(args, **kwargs):
+            if kwargs.get("check"):
+                raise subprocess.CalledProcessError(1, args)
+            return _run_result(returncode=1)
+
+        mock_run.side_effect = fake_run
+        self.assertEqual(fwd.count_rich_rules("pvxfw"), 0)
 
 
 class FailsafePresentTest(unittest.TestCase):

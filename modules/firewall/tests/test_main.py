@@ -32,7 +32,7 @@ class RootCheckTest(MainTestCase):
 
     def test_status_does_not_require_root(self):
         with patch("main.status_module.get_status", return_value={
-            "engine": "iptables", "rule_count": 0, "session_ip": None, "protection": "x",
+            "engine": "iptables", "rule_count": 0, "session_ip": None, "synced": False, "failsafe_ok": False,
         }):
             result = self._invoke(["status"], is_root=False)
         self.assertEqual(result.exit_code, 0)
@@ -111,13 +111,32 @@ class IpCommandsTest(MainTestCase):
 
 
 class StatusCommandTest(MainTestCase):
-    def test_prints_engine_and_protection(self):
+    def test_shows_success_when_synced(self):
         with patch("main.status_module.get_status", return_value={
-            "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9", "protection": "protegido",
+            "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
+            "synced": True, "failsafe_ok": True,
         }):
             result = self._invoke(["status"])
         self.assertIn("iptables", result.output)
-        self.assertIn("protegido", result.output)
+        self.assertIn("sincronizado", result.output.lower())
+        self.assertNotIn("não sincronizado", result.output.lower())
+
+    def test_shows_failure_when_not_synced(self):
+        with patch("main.status_module.get_status", return_value={
+            "engine": "iptables", "rule_count": 0, "session_ip": "203.0.113.9",
+            "synced": False, "failsafe_ok": False,
+        }):
+            result = self._invoke(["status"])
+        self.assertIn("não sincronizado", result.output.lower())
+
+    def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
+        with patch("main.status_module.get_status", return_value={
+            "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
+            "synced": True, "failsafe_ok": False,
+        }):
+            result = self._invoke(["status"])
+        self.assertIn("sincronizado", result.output.lower())
+        self.assertIn("atenção", result.output.lower())
 
 
 class SyncCommandTest(MainTestCase):

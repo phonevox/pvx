@@ -52,7 +52,11 @@ def insert_failsafe(zone, ip):
 
 
 def count_rich_rules(zone):
-    listing = _run(["--zone", zone, "--list-rich-rules"])
+    # zona pode nem existir ainda (antes do primeiro sync) -- não é erro,
+    # só significa zero regras.
+    listing = _run(["--zone", zone, "--list-rich-rules"], check=False)
+    if listing.returncode != 0:
+        return 0
     return len([line for line in listing.stdout.splitlines() if line.strip()])
 
 

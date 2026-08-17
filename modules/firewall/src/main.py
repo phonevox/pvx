@@ -59,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.3"
+    version = "0.1.4"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -198,9 +198,17 @@ class FirewallModule(PvxModule):
         def status_cmd(engine):
             result = status_module.get_status(engine=engine)
             click.echo(f"engine: {result['engine']}")
-            click.echo(f"regras ativas: {result['rule_count']}")
             click.echo(f"IP da sessão: {result['session_ip'] or 'não detectado'}")
-            click.echo(f"proteção: {result['protection']}")
+            click.echo()
+
+            if result["synced"]:
+                detail = f"{result['rule_count']} regra(s) ativa(s)"
+                if result["session_ip"] and not result["failsafe_ok"]:
+                    detail += " -- atenção: IP da sessão atual sem failsafe confirmado, rode `sync` de novo"
+                widgets.success(f"sincronizado -- {detail}")
+            else:
+                widgets.failed("não sincronizado -- rode `pvx firewall sync` pra aplicar as regras")
+
             if _is_interactive():
                 widgets.pause()
 
