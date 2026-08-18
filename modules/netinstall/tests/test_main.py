@@ -101,6 +101,32 @@ class PreflightReportTest(MainTestCase):
         self.assertIn(call("Verificando rede..."), mock_step.call_args_list)
 
 
+class AddpkgsDefaultsTest(MainTestCase):
+    def test_never_asks_and_uses_the_default_packages(self):
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]) as mock_checkbox, \
+             patch("main.ask_select", return_value="Usar padrões da Phonevox (recomendado)"):
+            result, mocks = self._invoke(
+                ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
+                 "--tweaks", "ssh-hardening"],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_checkbox.assert_not_called()
+        packages = mocks["install_packages"].call_args.args[1]
+        self.assertIn("issabel-license", packages)
+        self.assertIn("issabel-packetbl", packages)
+        self.assertNotIn("wanpipe", packages)
+
+    def test_flag_still_overrides_the_default(self):
+        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
+                "--tweaks", "firewall", "--addpkgs", "wanpipe"]
+        result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        packages = mocks["install_packages"].call_args.args[1]
+        self.assertIn("wanpipe-utils", packages)
+        self.assertNotIn("issabel-license", packages)
+
+
 class HappyPathTest(MainTestCase):
     def test_skip_clean_flag_forwards_to_install_packages(self):
         result, mocks = self._invoke(BASE_ARGS + ["--skip-clean"])

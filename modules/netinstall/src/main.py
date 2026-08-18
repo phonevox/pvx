@@ -169,7 +169,7 @@ COFFEE_ART = r"""
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.11"
+    version = "0.1.12"
 
     def cli_group(self):
         @click.group(name="netinstall")
@@ -235,15 +235,8 @@ class NetinstallModule(PvxModule):
                     return
                 astver = choice
 
-            addpkgs_keys = list(flags["addpkgs"])
-            if not addpkgs_keys and interactive:
-                selected = ask_checkbox(
-                    "Pacotes adicionais:", list(defaults.ADDPKGS),
-                    defaults=[k for k, v in defaults.ADDPKGS_DEFAULTS.items() if v],
-                )
-                if selected is None:
-                    return
-                addpkgs_keys = selected
+            # não pergunta mais (usuário leigo não entendia os itens) -- sempre o default.
+            addpkgs_keys = list(flags["addpkgs"]) or [k for k, v in defaults.ADDPKGS_DEFAULTS.items() if v]
             extra_packages = [pkg for key in addpkgs_keys for pkg in defaults.ADDPKGS[key]]
 
             tweak_keys = list(flags["tweaks"])
