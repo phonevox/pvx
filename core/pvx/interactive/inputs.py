@@ -5,6 +5,7 @@ from prompt_toolkit.keys import Keys
 from pvx.interactive import theme
 
 NAV_HINT = questionary.Separator("↑↓ navega · enter confirma · esc/q volta · ctrl-c fecha o pvx")
+CHECKBOX_NAV_HINT = questionary.Separator("↑↓ navega · espaço marca · enter confirma · esc volta · ctrl-c fecha o pvx")
 
 _BACK = object()
 
@@ -46,7 +47,7 @@ def ask_select(msg, choices, default=None):
 def ask_checkbox(msg, choices, defaults=None):
     defaults = defaults or []
     wrapped = [questionary.Choice(title=str(c), value=c, checked=c in defaults) for c in choices]
-    question = questionary.checkbox(msg, choices=wrapped, style=theme.current_style())
+    question = questionary.checkbox(msg, choices=wrapped + [CHECKBOX_NAV_HINT], style=theme.current_style())
     return _ask(question)
 
 

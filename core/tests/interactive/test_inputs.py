@@ -57,6 +57,16 @@ class AskCheckboxTest(unittest.TestCase):
         ask_checkbox("Selecione:", ["a"])
         self.assertIs(mock_checkbox.call_args.kwargs["style"], mock_current_style.return_value)
 
+    @patch("pvx.interactive.inputs.questionary.checkbox")
+    def test_appends_hint_separator_explaining_the_navigation(self, mock_checkbox):
+        # usuário leigo reclamou de não entender a navegação (breadcrumb sozinho não
+        # deixava claro) -- mesmo padrão de ask_select(), adaptado pro que existe aqui
+        # (espaço marca; sem "q" -- questionary não trata isso na checkbox).
+        mock_checkbox.return_value.unsafe_ask.return_value = []
+        ask_checkbox("Selecione:", ["a", "b"])
+        choices = mock_checkbox.call_args.kwargs["choices"]
+        self.assertIsInstance(choices[-1], questionary.Separator)
+
 
 class AskConfirmTest(unittest.TestCase):
     @patch("pvx.interactive.inputs.questionary.confirm")
