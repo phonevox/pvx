@@ -18,16 +18,21 @@ class ModuleListScreenTest(unittest.TestCase):
         return_value="https://example.com/index.json",
     )
     @patch("pvx.interactive.screens.module_list.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.module_list.widgets.spinner")
+    @patch("pvx.interactive.screens.module_list.widgets.breadcrumb")
     def test_shows_table_then_pause_and_returns_back(
-        self, mock_discover, mock_url, mock_list_modules, mock_print_table, mock_pause
+        self, mock_breadcrumb, mock_spinner, mock_discover, mock_url, mock_list_modules,
+        mock_print_table, mock_pause,
     ):
         result = ModuleListScreen().render()
         self.assertEqual(result, "BACK")
+        mock_breadcrumb.assert_called_once_with("pvx > módulos > listar")
+        mock_spinner.assert_called_once()
         mock_print_table.assert_called_once_with(mock_list_modules.return_value)
-        mock_pause.assert_called_once()
+        mock_pause.assert_called_once_with()
 
     @patch("pvx.interactive.screens.module_list.widgets.pause")
-    @patch("pvx.interactive.screens.module_list.click.echo")
+    @patch("pvx.interactive.screens.module_list.widgets.message")
     @patch(
         "pvx.interactive.screens.module_list.listing.list_modules",
         side_effect=RuntimeError("não foi possível acessar o registry"),
@@ -37,15 +42,15 @@ class ModuleListScreenTest(unittest.TestCase):
         return_value="https://example.com/index.json",
     )
     @patch("pvx.interactive.screens.module_list.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.module_list.widgets.breadcrumb")
     def test_network_failure_shows_message_and_returns_back(
-        self, mock_discover, mock_url, mock_list_modules, mock_echo, mock_pause
+        self, mock_breadcrumb, mock_discover, mock_url, mock_list_modules, mock_message, mock_pause
     ):
         result = ModuleListScreen().render()
         self.assertEqual(result, "BACK")
-        self.assertTrue(
-            any("não foi possível acessar o registry" in str(c) for c in mock_echo.call_args_list)
-        )
-        mock_pause.assert_called_once()
+        mock_breadcrumb.assert_called_once_with("pvx > módulos > listar")
+        mock_message.assert_called_once_with("não foi possível acessar o registry")
+        mock_pause.assert_called_once_with()
 
 
 if __name__ == "__main__":

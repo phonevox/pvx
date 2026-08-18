@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import questionary
 
-from pvx.interactive.inputs import ask_confirm, ask_select, ask_text
+from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_select, ask_text
 
 
 class AskSelectTest(unittest.TestCase):
@@ -32,6 +32,30 @@ class AskSelectTest(unittest.TestCase):
         mock_select.return_value.unsafe_ask.return_value = "a"
         ask_select("pvx >", ["a", "b"])
         self.assertIs(mock_select.call_args.kwargs["style"], mock_current_style.return_value)
+
+
+class AskCheckboxTest(unittest.TestCase):
+    @patch("pvx.interactive.inputs.questionary.checkbox")
+    def test_delegates_to_questionary_checkbox(self, mock_checkbox):
+        mock_checkbox.return_value.unsafe_ask.return_value = ["a", "b"]
+        result = ask_checkbox("Selecione:", ["a", "b", "c"])
+        self.assertEqual(result, ["a", "b"])
+        mock_checkbox.assert_called_once()
+
+    @patch("pvx.interactive.inputs.questionary.checkbox")
+    def test_marks_defaults_as_pre_checked(self, mock_checkbox):
+        mock_checkbox.return_value.unsafe_ask.return_value = ["a"]
+        ask_checkbox("Selecione:", ["a", "b"], defaults=["a"])
+        passed_choices = mock_checkbox.call_args.kwargs["choices"]
+        checked_values = [c.value for c in passed_choices if c.checked]
+        self.assertEqual(checked_values, ["a"])
+
+    @patch("pvx.interactive.inputs.theme.current_style")
+    @patch("pvx.interactive.inputs.questionary.checkbox")
+    def test_uses_current_theme(self, mock_checkbox, mock_current_style):
+        mock_checkbox.return_value.unsafe_ask.return_value = []
+        ask_checkbox("Selecione:", ["a"])
+        self.assertIs(mock_checkbox.call_args.kwargs["style"], mock_current_style.return_value)
 
 
 class AskConfirmTest(unittest.TestCase):

@@ -5,6 +5,7 @@ from pvx.interactive.screens.module_update import ModuleUpdateScreen
 
 
 class ModuleUpdateScreenTest(unittest.TestCase):
+    @patch("pvx.interactive.screens.module_update.widgets.success")
     @patch("pvx.interactive.screens.module_update.installer.install")
     @patch(
         "pvx.interactive.screens.module_update.config.registry_index_url",
@@ -16,12 +17,14 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object(), "other": object()},
     )
     def test_selecting_single_module_updates_it(
-        self, mock_discover, mock_ask_select, mock_url, mock_install
+        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success
     ):
         result = ModuleUpdateScreen().render()
         self.assertEqual(result, "BACK")
         mock_install.assert_called_once_with("dummy", "https://example.com/index.json")
+        mock_success.assert_called_once_with("dummy atualizado.")
 
+    @patch("pvx.interactive.screens.module_update.widgets.success")
     @patch("pvx.interactive.screens.module_update.installer.install")
     @patch(
         "pvx.interactive.screens.module_update.config.registry_index_url",
@@ -33,11 +36,13 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object(), "other": object()},
     )
     def test_selecting_todos_updates_every_installed_module(
-        self, mock_discover, mock_ask_select, mock_url, mock_install
+        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success
     ):
         result = ModuleUpdateScreen().render()
         self.assertEqual(result, "BACK")
         self.assertEqual(mock_install.call_count, 2)
+        self.assertEqual(mock_success.call_count, 2)
+
 
     @patch("pvx.interactive.screens.module_update.ask_select", return_value=None)
     @patch(
@@ -49,13 +54,17 @@ class ModuleUpdateScreenTest(unittest.TestCase):
 
     @patch("pvx.interactive.screens.module_update.ask_select")
     @patch("pvx.interactive.screens.module_update.widgets.pause")
+    @patch("pvx.interactive.screens.module_update.widgets.message")
     @patch("pvx.interactive.screens.module_update.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.module_update.widgets.breadcrumb")
     def test_no_installed_modules_shows_pause_and_returns_back(
-        self, mock_discover, mock_pause, mock_ask_select
+        self, mock_breadcrumb, mock_discover, mock_message, mock_pause, mock_ask_select
     ):
         result = ModuleUpdateScreen().render()
         self.assertEqual(result, "BACK")
-        mock_pause.assert_called_once()
+        mock_breadcrumb.assert_called_once_with("pvx > módulos > atualizar")
+        mock_message.assert_called_once_with("nenhum módulo instalado.")
+        mock_pause.assert_called_once_with()
         mock_ask_select.assert_not_called()
 
     @patch("pvx.interactive.screens.module_update.installer.install")
@@ -87,7 +96,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         ModuleUpdateScreen().render()
         mock_spinner.assert_called_once()
 
-    @patch("pvx.interactive.screens.module_update.click.echo")
+    @patch("pvx.interactive.screens.module_update.widgets.failed")
     @patch(
         "pvx.interactive.screens.module_update.installer.install",
         side_effect=RuntimeError("não foi possível acessar o registry"),
@@ -98,13 +107,11 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object()},
     )
     def test_network_failure_shows_message_and_returns_back(
-        self, mock_discover, mock_ask_select, mock_install, mock_echo
+        self, mock_discover, mock_ask_select, mock_install, mock_failed
     ):
         result = ModuleUpdateScreen().render()
         self.assertEqual(result, "BACK")
-        self.assertTrue(
-            any("não foi possível acessar o registry" in str(c) for c in mock_echo.call_args_list)
-        )
+        mock_failed.assert_called_once_with("não foi possível acessar o registry")
 
 
 if __name__ == "__main__":

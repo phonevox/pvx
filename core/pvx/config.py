@@ -1,5 +1,6 @@
 import json
 import os
+import pwd
 from pathlib import Path
 
 
@@ -7,6 +8,14 @@ def pvx_home() -> Path:
     override = os.environ.get("PVX_HOME")
     if override:
         return Path(override)
+
+    # `sudo` (sem -E) reseta $HOME pro do usuário alvo (root) -- pra quem
+    # chamou via `sudo pvx ...`, o estado por-usuário (módulos/config/logs)
+    # tem que continuar sendo o do usuário real, não o de root.
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user:
+        return Path(pwd.getpwnam(sudo_user).pw_dir) / ".pvx"
+
     return Path.home() / ".pvx"
 
 

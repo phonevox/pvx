@@ -1,9 +1,10 @@
 import click
 
 from pvx import config
+from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
-from pvx.interactive.inputs import ask_select, ask_text
-from pvx.modules import installer
+from pvx.interactive.inputs import ask_checkbox, ask_select, ask_text
+from pvx.modules import installer, listing
 
 SOURCES = ["Registry oficial", "Outro repositório (URL)", "Voltar"]
 
@@ -21,14 +22,28 @@ class ModuleInstallScreen:
         else:
             index_url = config.registry_index_url()
 
-        name = ask_text("Nome do módulo:")
-        if name is None:
+        try:
+            rows = listing.list_modules(discover_installed_modules(), index_url)
+        except RuntimeError as e:
+            click.echo(str(e))
             return "BACK"
 
-        try:
-            with widgets.spinner(f"Instalando {name}..."):
-                installer.install(name, index_url)
-        except (RuntimeError, ValueError) as e:
-            click.echo(str(e))
+        names = [row["name"] for row in rows]
+        if not names:
+            click.echo("nenhum módulo disponível nesse registry.")
+            return "BACK"
+
+        selected_names = ask_checkbox("Selecione os módulos pra instalar:", names)
+        if not selected_names:
+            return "BACK"
+
+        for name in selected_names:
+            try:
+                with widgets.spinner(f"Instalando {name}..."):
+                    installer.install(name, index_url)
+            except (RuntimeError, ValueError) as e:
+                widgets.failed(str(e))
+            else:
+                widgets.success(f"{name} instalado.")
 
         return "BACK"

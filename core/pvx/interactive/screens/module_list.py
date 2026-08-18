@@ -8,13 +8,17 @@ from pvx.modules import listing
 
 class ModuleListScreen:
     def render(self):
+        widgets.breadcrumb("pvx > módulos > listar")
+
         try:
-            rows = listing.list_modules(discover_installed_modules(), config.registry_index_url())
+            with widgets.spinner("Carregando módulos..."):
+                rows = listing.list_modules(discover_installed_modules(), config.registry_index_url())
         except RuntimeError as e:
-            click.echo(str(e))
-            widgets.pause("Pressione enter pra continuar...")
+            widgets.message(str(e))
+            widgets.pause()
             return "BACK"
 
         widgets.print_modules_table(rows)
-        widgets.pause("Pressione enter pra continuar...")
+        click.echo()
+        widgets.pause()
         return "BACK"

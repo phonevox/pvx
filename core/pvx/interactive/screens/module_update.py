@@ -1,5 +1,3 @@
-import click
-
 from pvx import config
 from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
@@ -11,7 +9,9 @@ class ModuleUpdateScreen:
     def render(self):
         modules = discover_installed_modules()
         if not modules:
-            widgets.pause("Nenhum módulo instalado. Pressione enter pra continuar...")
+            widgets.breadcrumb("pvx > módulos > atualizar")
+            widgets.message("nenhum módulo instalado.")
+            widgets.pause()
             return "BACK"
 
         selected = ask_select(
@@ -26,6 +26,8 @@ class ModuleUpdateScreen:
                 with widgets.spinner(f"Atualizando {name}..."):
                     installer.install(name, config.registry_index_url())
             except (RuntimeError, ValueError) as e:
-                click.echo(str(e))
+                widgets.failed(str(e))
+            else:
+                widgets.success(f"{name} atualizado.")
 
         return "BACK"

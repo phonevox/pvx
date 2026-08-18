@@ -2,6 +2,7 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from pvx import config
 
@@ -9,12 +10,18 @@ from pvx import config
 class ConfigPathsTest(unittest.TestCase):
     def setUp(self):
         self._old_home = os.environ.get("PVX_HOME")
+        self._old_sudo_user = os.environ.get("SUDO_USER")
+        os.environ.pop("SUDO_USER", None)
 
     def tearDown(self):
         if self._old_home is None:
             os.environ.pop("PVX_HOME", None)
         else:
             os.environ["PVX_HOME"] = self._old_home
+        if self._old_sudo_user is None:
+            os.environ.pop("SUDO_USER", None)
+        else:
+            os.environ["SUDO_USER"] = self._old_sudo_user
         os.environ.pop("PVX_REGISTRY_URL", None)
 
     def test_pvx_home_respects_env_override(self):
@@ -24,6 +31,20 @@ class ConfigPathsTest(unittest.TestCase):
     def test_pvx_home_defaults_under_user_home(self):
         os.environ.pop("PVX_HOME", None)
         self.assertEqual(config.pvx_home(), Path.home() / ".pvx")
+
+    @patch("pvx.config.pwd.getpwnam")
+    def test_pvx_home_resolves_real_user_home_when_running_via_sudo(self, mock_getpwnam):
+        os.environ.pop("PVX_HOME", None)
+        os.environ["SUDO_USER"] = "rocky"
+        mock_getpwnam.return_value.pw_dir = "/home/rocky"
+
+        self.assertEqual(config.pvx_home(), Path("/home/rocky/.pvx"))
+        mock_getpwnam.assert_called_once_with("rocky")
+
+    def test_pvx_home_env_override_wins_even_under_sudo(self):
+        os.environ["PVX_HOME"] = "/tmp/fake-pvx-home"
+        os.environ["SUDO_USER"] = "rocky"
+        self.assertEqual(config.pvx_home(), Path("/tmp/fake-pvx-home"))
 
     def test_subpaths_are_relative_to_pvx_home(self):
         os.environ["PVX_HOME"] = "/tmp/fake-pvx-home"

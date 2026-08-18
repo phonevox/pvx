@@ -1,0 +1,10 @@
+{
+  "name": "ssh-hardening",
+  "version": "0.1.2",
+  "entrypoint": "main:cli",
+  "description": "Hardening de SSH: bloqueio de login do root, usuário administrativo dedicado (chave/sudo), troca de porta.",
+  "author": "pvx",
+  "min_pvx_version": "0.2.0",
+  "checksum_sha256": "",
+  "dependencies": []
+}

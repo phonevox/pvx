@@ -7,6 +7,10 @@ ACCENT_COLORS = {
     "verde": "#00af5f",
     "roxo": "#af5fff",
     "laranja": "#ff8700",
+    "vermelho": "#ff5555",
+    "amarelo": "#ffd700",
+    "ciano": "#00d7ff",
+    "rosa": "#ff5fd7",
 }
 
 SEPARATOR_COLOR = "#808080"
@@ -18,6 +22,10 @@ def _rules_for(accent):
         ("highlighted", f"fg:{accent} bold"),
         ("answer", f"fg:{accent} bold"),
         ("separator", f"fg:{SEPARATOR_COLOR}"),
+        # prompt_toolkit tem um "selected" embutido = "reverse" (inverte fundo/texto do
+        # item marcado num checkbox) -- sem sobrescrever aqui, ele sempre ganha, já que
+        # nem o default do questionary nem o nosso definiam esse token antes.
+        ("selected", f"fg:{accent} bold"),
     ]
 
 
