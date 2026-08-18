@@ -1,5 +1,6 @@
+import re
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from click.testing import CliRunner
 
@@ -20,13 +21,17 @@ def _patched(**overrides):
 
 
 class MainTestCase(unittest.TestCase):
-    def _invoke(self, args, preflight_result=([], [])):
-        with patch("main.preflight.check", return_value=preflight_result), \
+    def _invoke(self, args, preflight_result=([], []), preflight_side_effect=None):
+        preflight_patch = (
+            patch("main.preflight.check", side_effect=preflight_side_effect) if preflight_side_effect
+            else patch("main.preflight.check", return_value=preflight_result)
+        )
+        with preflight_patch, \
              patch("main.preflight.version_major", return_value=9), \
              patch("main.install_steps.add_repos"), \
              patch("main.install_steps.prepare_system"), \
              patch("main.install_steps.enable_php_remi"), \
-             patch("main.install_steps.install_packages"), \
+             patch("main.install_steps.install_packages") as mock_install_packages, \
              patch("main.install_steps.post_install"), \
              patch("main.install_steps.install_db"), \
              patch("main.install_steps.install_control_panel"), \
@@ -40,7 +45,7 @@ class MainTestCase(unittest.TestCase):
             result = CliRunner().invoke(cli.cli_group(), args)
             return result, {
                 "reboot": mock_reboot, "ssh": mock_ssh, "firewall": mock_fw, "qint": mock_qint,
-                "creds": mock_creds,
+                "creds": mock_creds, "install_packages": mock_install_packages,
             }
 
 
@@ -56,7 +61,57 @@ class PreflightTest(MainTestCase):
         self.assertIn("RAM baixa", result.output)
 
 
+class PreflightReportTest(MainTestCase):
+    def test_prints_a_check_result_line_per_preflight_check_as_it_resolves(self):
+        def fake_check(min_version, force=False, report=None):
+            report("root", "ok", None)
+            report("SO", "ok", "Rocky/RHEL 9")
+            report("rede", "pending", None)
+            report("rede", "ok", None)
+            report("RAM", "warn", "768 MB")
+            report("instalação prévia", "error", "detectada")
+            return [], []
+
+        result, _ = self._invoke(BASE_ARGS, preflight_side_effect=fake_check)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("✓ root: ok", result.output)
+        self.assertIn("✓ SO: ok (Rocky/RHEL 9)", result.output)
+        self.assertIn("✓ rede: ok", result.output)
+        self.assertIn("! RAM: atenção (768 MB)", result.output)
+        self.assertIn("✗ instalação prévia: falha (detectada)", result.output)
+
+    def test_check_without_detail_shows_only_the_status_word(self):
+        def fake_check(min_version, force=False, report=None):
+            report("root", "ok", None)
+            return [], []
+
+        result, _ = self._invoke(BASE_ARGS, preflight_side_effect=fake_check)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("✓ root: ok", result.output)
+
+    def test_network_pending_phase_opens_its_own_spinner(self):
+        def fake_check(min_version, force=False, report=None):
+            report("rede", "pending", None)
+            report("rede", "ok", None)
+            return [], []
+
+        with patch("main.widgets.step") as mock_step:
+            result, _ = self._invoke(BASE_ARGS, preflight_side_effect=fake_check)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn(call("Verificando rede..."), mock_step.call_args_list)
+
+
 class HappyPathTest(MainTestCase):
+    def test_skip_clean_flag_forwards_to_install_packages(self):
+        result, mocks = self._invoke(BASE_ARGS + ["--skip-clean"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mocks["install_packages"].call_args.kwargs["skip_clean"])
+
+    def test_skip_clean_defaults_to_false(self):
+        result, mocks = self._invoke(BASE_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertFalse(mocks["install_packages"].call_args.kwargs["skip_clean"])
+
     def test_runs_base_install_sequence(self):
         result, mocks = self._invoke(BASE_ARGS)
         self.assertEqual(result.exit_code, 0, result.output)
@@ -89,6 +144,66 @@ class HappyPathTest(MainTestCase):
         self.assertEqual(len(sql_pw), 24)
         self.assertEqual(len(web_pw), 24)
         self.assertNotEqual(sql_pw, web_pw)
+
+
+class StepAnnouncementTest(MainTestCase):
+    # cada etapa deve anunciar sucesso ao terminar -- ver widgets.step()/_run_step().
+    # duração fica só no timer ao vivo do spinner (widgets.step), não repete no texto
+    # de sucesso -- linha do spinner some ao terminar (transient=True), então o que
+    # resta na tela é só a sequência de "✓ sucesso!".
+    DONE_MESSAGES = (
+        "Repositórios adicionados.",
+        "Sistema preparado.",
+        "Repo Remi + PHP habilitados.",
+        "Pacotes instalados.",
+        "Pós-instalação concluída.",
+        "Schema do banco instalado.",
+        "Senhas de acesso definidas.",
+    )
+
+    def test_announces_success_for_every_base_step(self):
+        result, _ = self._invoke(BASE_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        for done_message in self.DONE_MESSAGES:
+            self.assertIn(
+                f"✓ sucesso! {done_message}", result.output,
+                f"faltou anúncio de sucesso para: {done_message}",
+            )
+
+    def test_success_text_has_no_duration_suffix(self):
+        result, _ = self._invoke(BASE_ARGS)
+        self.assertNotRegex(result.output, r"\(\d+\.\ds\)")
+
+    def test_announces_tweak_results_too(self):
+        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
+                "--tweaks", "ssh-hardening"]
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]), \
+             patch("main.ask_select", return_value="Usar padrões da Phonevox (recomendado)"):
+            result, _ = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("✓ sucesso! ssh-hardening aplicado.", result.output)
+
+
+class AsteriskVersionPromptTest(MainTestCase):
+    def test_defaults_to_18_when_asked_interactively(self):
+        args = ["issabel5", "--yes", "--sql-password", "a", "--web-password", "b", "--tweaks", "firewall"]
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_checkbox", return_value=[]), \
+             patch("main.ask_select", return_value="18") as mock_select:
+            result, _ = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_select.assert_called_once_with("Versão do Asterisk:", ["16", "18"], default="18")
+
+
+class CoffeeBreakTest(MainTestCase):
+    def test_warns_before_the_slowest_step_and_prints_coffee_art(self):
+        result, _ = self._invoke(BASE_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("pega um café", result.output.lower())
+        cafe_index = result.output.lower().index("pega um café")
+        packages_index = result.output.index("Pacotes instalados.")
+        self.assertLess(cafe_index, packages_index)
 
 
 class SshHardeningTweakTest(MainTestCase):

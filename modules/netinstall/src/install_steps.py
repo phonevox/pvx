@@ -19,10 +19,22 @@ def _disable_ipv6(sysctl_path="/etc/sysctl.conf"):
     os_ops.run_cmd(["sysctl", "-p"])
 
 
+def _pkg_install_or_raise(packages, on_line=None):
+    # os_ops.pkg_install() já sabe quais pacotes falharam -- ignorar isso deixa o
+    # processo seguir quieto e crashar (confuso) várias etapas depois, num ponto sem
+    # relação nenhuma com o pacote que de fato não instalou.
+    # on_line só é encaminhado se dado -- mantém a chamada idêntica à de antes (sem
+    # kwarg extra) pros call sites que não streamam nada.
+    kwargs = {"on_line": on_line} if on_line is not None else {}
+    failed = os_ops.pkg_install(packages, **kwargs)
+    if failed:
+        raise RuntimeError(f"falha ao instalar pacote(s): {', '.join(failed)}")
+
+
 def add_repos(pyz_path):
-    os_ops.pkg_install(["epel-release"])
+    _pkg_install_or_raise(["epel-release"])
     os_ops.run_cmd(["dnf", "makecache"])
-    os_ops.pkg_install(["htop", "tmux"])
+    _pkg_install_or_raise(["htop", "tmux"])
     _disable_ipv6()
     # arquivos .repo vêm de DENTRO do próprio .pyz (ver assets.py) -- no host instalado só
     # module.pyz+manifest.json existem no diretório do módulo, nunca uma pasta config/ solta.
@@ -56,13 +68,13 @@ def prepare_system():
             "useradd", "-r", "-g", "asterisk", "-c", "Asterisk PBX",
             "-s", "/bin/bash", "-d", "/var/lib/asterisk", "asterisk",
         ])
-    os_ops.pkg_install(["issabel-config_helpers"])
+    _pkg_install_or_raise(["issabel-config_helpers"])
 
 
 def enable_php_remi(major):
     # sem repo Remi + módulo php:remi-7.4, php-imap/php-mcrypt/php-tidy (e quem depende
     # deles, ex. php-PHPMailer/php-tcpdf) não existem no módulo php padrão do AppStream.
-    os_ops.pkg_install([f"https://rpms.remirepo.net/enterprise/remi-release-{major}.rpm"])
+    _pkg_install_or_raise([f"https://rpms.remirepo.net/enterprise/remi-release-{major}.rpm"])
     os_ops.run_cmd(["dnf", "module", "reset", "php", "-y"])
     os_ops.run_cmd(["dnf", "module", "enable", "php:remi-7.4", "-y"])
     os_ops.run_cmd(["dnf", "config-manager", "--set-enabled", "remi"])
@@ -70,11 +82,12 @@ def enable_php_remi(major):
     os_ops.run_cmd(["dnf", "config-manager", "--set-enabled", "devel"])
 
 
-def install_packages(astver, extra_packages=()):
+def install_packages(astver, extra_packages=(), on_line=None, skip_clean=False):
     base = [pkg.replace("$ASTVER", astver) for pkg in defaults.PACKAGES_BASE]
-    os_ops.run_cmd(["dnf", "clean", "all"])
-    os_ops.pkg_install(base)
-    os_ops.pkg_install(defaults.PACKAGES_ISSABEL + list(extra_packages))
+    if not skip_clean:
+        os_ops.run_cmd(["dnf", "clean", "all"])
+    _pkg_install_or_raise(base, on_line=on_line)
+    _pkg_install_or_raise(defaults.PACKAGES_ISSABEL + list(extra_packages), on_line=on_line)
 
 
 def post_install():

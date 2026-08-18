@@ -104,6 +104,32 @@ def _resolve_qint_config(flags, interactive):
     return config
 
 
+_PREFLIGHT_STATUS_WORD = {"ok": "ok", "warn": "atenção", "error": "falha"}
+
+
+def _preflight_reporter():
+    # imprime cada checagem assim que ela resolve (nunca bufferiza tudo pra printar de
+    # uma vez só -- ver preflight.check(), reporta na ordem real de execução). "rede" é a
+    # única de fato lenta (curl real) -- só ela ganha spinner, via fase "pending".
+    pending_steps = {}
+
+    def report(label, status, detail=None):
+        if status == "pending":
+            step = widgets.step(f"Verificando {label}...")
+            step.__enter__()
+            pending_steps[label] = step
+            return
+        step = pending_steps.pop(label, None)
+        if step is not None:
+            step.__exit__(None, None, None)
+        text = f"{label}: {_PREFLIGHT_STATUS_WORD[status]}"
+        if detail:
+            text += f" ({detail})"
+        widgets.check_result(text, status)
+
+    return report
+
+
 def _report_tweak(name, result):
     if result["ok"]:
         widgets.success(f"{name} aplicado.")
@@ -111,9 +137,39 @@ def _report_tweak(name, result):
         widgets.failed(f"{name}: {result.get('stderr') or 'falha desconhecida'}")
 
 
+def _run_step(message, done_message, fn, *args):
+    # duração já fica visível ao vivo no spinner (widgets.step -- TimeElapsedColumn),
+    # repetir no sucesso é redundante.
+    with widgets.step(message):
+        fn(*args)
+    widgets.success(done_message)
+
+
+COFFEE_ART = r"""
+                       .
+                        `:.
+                          `:.
+                  .:'     ,::
+                 .:'      ;:'
+                 ::      ;:'
+                  :    .:'
+                   `.  :.
+          _________________________
+         : _ _ _ _ _ _ _ _ _ _ _ _ :
+     ,---:".".".".".".".".".".".".":
+    : ,'"`::.:.:.:.:.:.:.:.:.:.:.::'
+    `.`.  `:-===-===-===-===-===-:'
+      `.`-._:                   :
+        `-.__`.               ,'
+    ,--------`"`-------------'--------.
+     `"--.__                   __.--"'
+            `""-------------""'
+"""
+
+
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.1"
+    version = "0.1.11"
 
     def cli_group(self):
         @click.group(name="netinstall")
@@ -128,6 +184,11 @@ class NetinstallModule(PvxModule):
         @click.option("--sql-password", default=None)
         @click.option("--web-password", default=None)
         @click.option("--force", is_flag=True)
+        @click.option(
+            "--skip-clean", is_flag=True,
+            help="pula 'dnf clean all' antes de instalar pacotes -- só pra reinstalar rápido "
+                 "numa máquina de teste já usada, nunca numa máquina nova de verdade",
+        )
         @click.option("--yes", is_flag=True)
         @click.option("--reboot/--no-reboot", default=True)
         @click.option("--tweak-ssh-lock-root/--tweak-ssh-no-lock-root", default=None)
@@ -157,7 +218,9 @@ class NetinstallModule(PvxModule):
         def issabel5_cmd(**flags):
             interactive = _is_interactive()
 
-            errors, warnings = preflight.check(min_version=8, force=flags["force"])
+            errors, warnings = preflight.check(
+                min_version=8, force=flags["force"], report=_preflight_reporter(),
+            )
             for warning in warnings:
                 click.echo(f"aviso: {warning}")
             if errors:
@@ -167,7 +230,7 @@ class NetinstallModule(PvxModule):
             if astver is None:
                 if not interactive:
                     raise click.ClickException("informe --astver (16 ou 18).")
-                choice = ask_select("Versão do Asterisk:", list(defaults.ASTERISK_VERSIONS))
+                choice = ask_select("Versão do Asterisk:", list(defaults.ASTERISK_VERSIONS), default="18")
                 if choice is None:
                     return
                 astver = choice
@@ -237,44 +300,63 @@ class NetinstallModule(PvxModule):
             pyz_path = _pyz_path()
             major = preflight.version_major()
 
-            with widgets.spinner("Adicionando repositórios (epel, tmux/htop, Issabel 5)..."):
-                install_steps.add_repos(pyz_path)
-            with widgets.spinner("Preparando o sistema (SELinux, usuário asterisk)..."):
-                install_steps.prepare_system()
-            with widgets.spinner(f"Habilitando repo Remi + módulo PHP (RHEL/Rocky {major})..."):
-                install_steps.enable_php_remi(major)
-            with widgets.spinner("Instalando pacotes (base + Asterisk + Issabel -- vários minutos)..."):
-                install_steps.install_packages(astver, extra_packages)
-            with widgets.spinner("Pós-instalação (mariadb, httpd, firewalld, asterisk)..."):
-                install_steps.post_install()
+            _run_step(
+                "Adicionando repositórios (epel, tmux/htop, Issabel 5)...", "Repositórios adicionados.",
+                install_steps.add_repos, pyz_path,
+            )
+            _run_step(
+                "Preparando o sistema (SELinux, usuário asterisk)...", "Sistema preparado.",
+                install_steps.prepare_system,
+            )
+            _run_step(
+                f"Habilitando repo Remi + módulo PHP (RHEL/Rocky {major})...", "Repo Remi + PHP habilitados.",
+                install_steps.enable_php_remi, major,
+            )
+            widgets.message("esta é a etapa mais demorada -- aproveita, relaxa e pega um café.")
+            click.echo(COFFEE_ART)
+            click.echo()
+            with widgets.step_with_log("Instalando pacotes (base + Asterisk + Issabel)...") as s:
+                install_steps.install_packages(
+                    astver, extra_packages, on_line=s.feed, skip_clean=flags["skip_clean"],
+                )
+            widgets.success("Pacotes instalados.")
+            _run_step(
+                "Pós-instalação (mariadb, httpd, firewalld, asterisk)...", "Pós-instalação concluída.",
+                install_steps.post_install,
+            )
 
             if ssh_config is not None:
-                with widgets.spinner("Aplicando ssh-hardening..."):
+                with widgets.step("Aplicando ssh-hardening..."):
                     result = integrations.run_ssh_hardening(ssh_config)
                 _report_tweak("ssh-hardening", result)
             if "firewall" in tweak_keys:
-                with widgets.spinner("Sincronizando firewall..."):
+                with widgets.step("Sincronizando firewall..."):
                     result = integrations.run_firewall_sync()
                 _report_tweak("firewall", result)
             if qint_config is not None:
-                with widgets.spinner("Aplicando integração qint..."):
+                with widgets.step("Aplicando integração qint..."):
                     result = integrations.run_qint(qint_config)
                 _report_tweak("qint", result)
 
-            with widgets.spinner("Instalando o schema do banco de dados..."):
-                install_steps.install_db()
+            _run_step(
+                "Instalando o schema do banco de dados...", "Schema do banco instalado.",
+                install_steps.install_db,
+            )
             if "operator-panel" in tweak_keys:
-                with widgets.spinner("Instalando o painel do operador..."):
-                    install_steps.install_control_panel(pyz_path)
+                _run_step(
+                    "Instalando o painel do operador...", "Painel do operador instalado.",
+                    install_steps.install_control_panel, pyz_path,
+                )
             tz = flags["timezone"] or defaults.DEFAULT_TIMEZONE
-            with widgets.spinner(f"Ajustando timezone ({tz})..."):
-                install_steps.set_timezone(tz)
+            _run_step(f"Ajustando timezone ({tz})...", f"Timezone ajustado para {tz}.", install_steps.set_timezone, tz)
 
             extra_kv = {}
             if ssh_config is not None and ssh_config["change_port"]:
                 extra_kv["ssh_port"] = ssh_config["port"]
-            with widgets.spinner("Definindo senhas de acesso (MySQL root / admin Web)..."):
-                install_steps.set_passwords(sql_pw, web_pw)
+            _run_step(
+                "Definindo senhas de acesso (MySQL root / admin Web)...", "Senhas de acesso definidas.",
+                install_steps.set_passwords, sql_pw, web_pw,
+            )
             cred_path = credentials.save_credentials(str(_state_dir()), "issabel5", sql_pw, web_pw, extra=extra_kv)
             widgets.success(f"credenciais salvas em {cred_path} (0600)")
 

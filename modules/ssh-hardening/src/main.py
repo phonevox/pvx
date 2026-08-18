@@ -27,7 +27,7 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
@@ -70,7 +70,7 @@ class SSHHardeningModule(PvxModule):
                 lock_root = True if lock_root is None else lock_root
                 create_user = True if create_user is None else create_user
                 change_port = True if change_port is None else change_port
-            elif is_tty:
+            elif is_tty and not any_flag_given:
                 mode = ask_select(
                     "Como quer configurar o SSH hardening?", [MODE_DEFAULTS, MODE_CUSTOMIZE]
                 )

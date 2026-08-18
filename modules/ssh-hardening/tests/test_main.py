@@ -108,7 +108,7 @@ class WizardCustomizeModeTest(unittest.TestCase):
     @patch("main.apply_module.apply")
     @patch("main.ask_text")
     @patch("main.ask_confirm", return_value=True)
-    @patch("main.ask_select", return_value="Customizar cada opção")
+    @patch("main.ask_select")
     def test_flags_pin_every_item_and_skip_all_follow_up_questions(
         self, mock_select, mock_confirm, mock_text, mock_apply
     ):
@@ -120,10 +120,34 @@ class WizardCustomizeModeTest(unittest.TestCase):
         )
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
+        # bug reportado ao vivo: com todas as flags relevantes já dadas (é assim que o
+        # netinstall invoca isso como subprocesso, herdando um tty real), a pergunta
+        # padrões/customizar não deve nem aparecer -- travava esperando resposta que
+        # nunca vinha, já que quem chamou não é um humano no terminal.
+        mock_select.assert_not_called()
         mock_text.assert_not_called()
         mock_confirm.assert_called_once()  # só a confirmação final
         plan = mock_apply.call_args.args[0]
         self.assertEqual(plan["root_password"], "fixedpass")
+
+    @patch("main.apply_module.apply")
+    @patch("main.ask_select")
+    def test_all_flags_given_never_asks_the_quick_vs_customize_question_even_with_a_tty(
+        self, mock_select, mock_apply
+    ):
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+
+        result = _invoke(
+            [
+                "apply", "--yes", "--lock-root", "--root-password", "x", "--create-user",
+                "--username", "phonevox", "--public-key", "ssh-rsa AAAA...", "--no-allow-password",
+                "--change-port", "--port", "21122",
+            ],
+            is_tty=True,
+        )
+
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_select.assert_not_called()
 
 
 class FinalConfirmationTest(unittest.TestCase):

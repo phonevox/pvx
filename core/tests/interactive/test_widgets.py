@@ -1,3 +1,4 @@
+import time
 import unittest
 from unittest.mock import call, patch
 
@@ -6,6 +7,7 @@ from pvx.interactive.widgets import (
     BANNER,
     banner,
     breadcrumb,
+    check_result,
     clear,
     failed,
     message,
@@ -13,8 +15,11 @@ from pvx.interactive.widgets import (
     print_modules_table,
     spinner,
     state,
+    step,
+    step_with_log,
     success,
 )
+from pvx.interactive.widgets import _ElapsedColumn
 
 
 class ClearTest(unittest.TestCase):
@@ -32,6 +37,78 @@ class SpinnerTest(unittest.TestCase):
         mock_console_cls.return_value.status.assert_called_once_with(
             "Instalando módulo...", spinner_style="#0087ff"
         )
+
+
+class StepTest(unittest.TestCase):
+    # como spinner(), mas cronometra o bloco -- usado onde quem chama precisa
+    # anunciar quanto a etapa demorou (ver widgets.success(f"... ({elapsed}s)")).
+    @patch("pvx.interactive.widgets.Progress")
+    def test_starts_and_stops_progress_around_the_block(self, mock_progress_cls):
+        mock_progress = mock_progress_cls.return_value
+        with step("Instalando pacotes..."):
+            pass
+        mock_progress.start.assert_called_once()
+        mock_progress.add_task.assert_called_once_with("Instalando pacotes...", total=None)
+        mock_progress.stop.assert_called_once()
+
+    @patch("pvx.interactive.widgets.Progress")
+    def test_elapsed_measures_the_block_duration(self, mock_progress_cls):
+        with step("Instalando pacotes...") as s:
+            time.sleep(0.05)
+        self.assertGreaterEqual(s.elapsed, 0.05)
+
+    @patch("pvx.interactive.widgets.theme.current_accent_color", return_value="#0087ff")
+    @patch("pvx.interactive.widgets.Progress")
+    def test_spinner_column_uses_theme_accent_color(self, mock_progress_cls, mock_accent):
+        with step("x"):
+            pass
+        spinner_column = mock_progress_cls.call_args.args[0]
+        self.assertEqual(spinner_column.spinner.style, "#0087ff")
+
+
+class ElapsedColumnTest(unittest.TestCase):
+    # rich.progress.TimeElapsedColumn mostra "0:05:02" (hora sem zero à
+    # esquerda) -- formato fixo HH:MM:SS fica mais fácil de escanear.
+    def test_pads_hours_minutes_and_seconds_to_two_digits(self):
+        task = type("Task", (), {"finished": False, "elapsed": 3723, "finished_time": None})()
+        self.assertEqual(_ElapsedColumn().render(task).plain, "01:02:03")
+
+    def test_shows_placeholder_when_not_started_yet(self):
+        task = type("Task", (), {"finished": False, "elapsed": None, "finished_time": None})()
+        self.assertEqual(_ElapsedColumn().render(task).plain, "--:--:--")
+
+
+class StepWithLogTest(unittest.TestCase):
+    # como step(), mas com um rastro das últimas N linhas de saída em cinza embaixo do
+    # spinner (docker-build-style) -- pra etapas longas onde "rodando..." mudo por
+    # minutos não diz nada sobre o que tá de fato acontecendo.
+    @patch("pvx.interactive.widgets.Live")
+    def test_starts_and_stops_live_around_the_block(self, mock_live_cls):
+        mock_live = mock_live_cls.return_value
+        with step_with_log("Instalando pacotes..."):
+            pass
+        mock_live.__enter__.assert_called_once()
+        mock_live.__exit__.assert_called_once()
+
+    @patch("pvx.interactive.widgets.Live")
+    def test_elapsed_measures_the_block_duration(self, mock_live_cls):
+        with step_with_log("Instalando pacotes...") as s:
+            time.sleep(0.02)
+        self.assertGreaterEqual(s.elapsed, 0.02)
+
+    @patch("pvx.interactive.widgets.Live")
+    def test_feed_refreshes_the_live_display(self, mock_live_cls):
+        mock_live = mock_live_cls.return_value
+        with step_with_log("Instalando pacotes...") as s:
+            s.feed("Preparing transaction...")
+        mock_live.update.assert_called()
+
+    @patch("pvx.interactive.widgets.Live")
+    def test_tail_keeps_only_the_last_n_lines(self, mock_live_cls):
+        with step_with_log("Instalando pacotes...", tail=3) as s:
+            for i in range(5):
+                s.feed(f"linha {i}")
+        self.assertEqual(list(s._lines), ["linha 2", "linha 3", "linha 4"])
 
 
 class BannerTest(unittest.TestCase):
@@ -163,6 +240,32 @@ class StateTest(unittest.TestCase):
     def test_prints_text_in_red_when_not_ok(self, mock_console_cls):
         state("não sincronizado", ok=False)
         printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "bold red")
+
+
+class CheckResultTest(unittest.TestCase):
+    # três níveis (não só ok/not-ok): usado onde uma checagem pode reprovar sem
+    # bloquear o processo (ex.: RAM baixa no preflight do netinstall -- é aviso,
+    # não erro) -- amarelo/símbolo próprio distingue isso de uma falha de verdade.
+    @patch("pvx.interactive.widgets.Console")
+    def test_ok_is_green_with_check_mark(self, mock_console_cls):
+        check_result("root: ok", "ok")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "✓ root: ok")
+        self.assertEqual(printed.spans[0].style, "bold green")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_warn_is_yellow_with_a_different_mark(self, mock_console_cls):
+        check_result("RAM: atenção (768 MB)", "warn")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "! RAM: atenção (768 MB)")
+        self.assertEqual(printed.spans[0].style, "bold yellow")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_error_is_red_with_the_failed_mark(self, mock_console_cls):
+        check_result("instalação prévia: falha", "error")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "✗ instalação prévia: falha")
         self.assertEqual(printed.spans[0].style, "bold red")
 
 

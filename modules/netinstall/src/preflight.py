@@ -52,32 +52,58 @@ def network_reachable(url=defaults.MIRROR_PROBE_URL, timeout=15):
     return result.returncode == 0
 
 
-def check(min_version, force=False):
+def check(min_version, force=False, report=None):
     # bloqueia cedo em vez de deixar um dnf install de centenas de pacotes falhar 20min depois.
+    # report(label, status, detail) é opcional -- preflight não imprime nada, só relata o fato
+    # de cada checagem, na ordem real de execução, pra quem chamou mostrar ao vivo (uma linha
+    # por vez -- ver main.py). status: "ok" | "warn" (reprova mas não bloqueia) | "error"
+    # (bloqueia). "rede" é a única checagem de fato lenta (curl real) -- reporta em duas fases:
+    # ("rede", "pending", None) antes de rodar, resultado de verdade depois.
+    def _report(label, status, detail=None):
+        if report:
+            report(label, status, detail)
+
     errors = []
     warnings = []
 
-    if not is_root():
+    root_ok = is_root()
+    _report("root", "ok" if root_ok else "error")
+    if not root_ok:
         errors.append("netinstall precisa rodar como root (sudo).")
         return errors, warnings  # nada mais faz sentido checar sem root
 
-    if not is_rhel_like():
+    rhel_ok = is_rhel_like()
+    major = version_major() if rhel_ok else 0
+    so_ok = rhel_ok and major >= min_version
+    _report("SO", "ok" if so_ok else "error", f"Rocky/RHEL {major}" if rhel_ok else None)
+    if not rhel_ok:
         errors.append("SO não é RHEL-like (Rocky/CentOS/RHEL) -- não suportado.")
-    elif version_major() < min_version:
+    elif major < min_version:
         errors.append(f"versão do SO abaixo do mínimo suportado ({min_version}+).")
 
+    _report("rede", "pending")
+    net_ok = network_reachable()
+    _report("rede", "ok" if net_ok else "error")
+    if not net_ok:
+        errors.append(f"sem acesso de rede ({defaults.MIRROR_PROBE_URL} não respondeu).")
+
     mem_kb = os_ops.mem_total_kb()
+    ram_ok = not (0 < mem_kb < defaults.MIN_MEM_KB)
+    _report("RAM", "ok" if ram_ok else "warn", f"{mem_kb // 1024} MB" if mem_kb > 0 else None)
     if 0 < mem_kb < defaults.MIN_MEM_KB:
         warnings.append(
             f"RAM+swap baixa ({mem_kb // 1024} MB, recomendado >= {defaults.MIN_MEM_KB // 1024} MB)."
         )
 
-    if already_installed() and not force:
+    installed = already_installed()
+    clean_ok = not installed or force
+    _report(
+        "instalação prévia", "ok" if clean_ok else "error",
+        "detectada, ignorada por --force" if installed and force else ("detectada" if installed else None),
+    )
+    if installed and not force:
         errors.append(
             "esta máquina já parece ter Issabel/Asterisk instalado -- use --force pra continuar mesmo assim."
         )
-
-    if not network_reachable():
-        errors.append(f"sem acesso de rede ({defaults.MIRROR_PROBE_URL} não respondeu).")
 
     return errors, warnings

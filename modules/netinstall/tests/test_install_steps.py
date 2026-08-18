@@ -81,6 +81,17 @@ class AddReposTest(unittest.TestCase):
     def test_no_op_when_pyz_has_no_repo_files(self, mock_pkg, mock_run_cmd, mock_ipv6, mock_extract):
         install_steps.add_repos("/path/to/module.pyz")  # não levanta mesmo sem repos no .pyz
 
+    # pkg_install() já retorna quais pacotes falharam -- ignorar isso deixa o processo
+    # seguir quieto e crashar (confuso) várias etapas depois, num ponto sem relação
+    # nenhuma com o pacote que de fato não instalou (achado ao vivo: crash tentando
+    # rodar /usr/sbin/amportal, causa real era outro pacote falho lá atrás).
+    @patch("install_steps._disable_ipv6")
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", return_value=["epel-release"])
+    def test_raises_naming_the_package_when_epel_fails(self, mock_pkg, mock_run_cmd, mock_ipv6):
+        with self.assertRaisesRegex(RuntimeError, "epel-release"):
+            install_steps.add_repos("/path/to/module.pyz")
+
 
 class PrepareSystemTest(unittest.TestCase):
     @patch("install_steps.os_ops.pkg_install", return_value=[])
@@ -102,6 +113,14 @@ class PrepareSystemTest(unittest.TestCase):
         useradd_calls = [c for c in mock_run_cmd.call_args_list if "useradd" in c.args[0]]
         self.assertEqual(useradd_calls, [])
 
+    @patch("install_steps.os_ops.pkg_install", return_value=["issabel-config_helpers"])
+    @patch("install_steps._user_exists", return_value=True)
+    @patch("install_steps._set_selinux_config_disabled")
+    @patch("install_steps.os_ops.run_cmd")
+    def test_raises_naming_the_package_when_it_fails(self, mock_run_cmd, mock_selinux, mock_exists, mock_pkg):
+        with self.assertRaisesRegex(RuntimeError, "issabel-config_helpers"):
+            install_steps.prepare_system()
+
 
 class EnablePhpRemiTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd")
@@ -111,6 +130,12 @@ class EnablePhpRemiTest(unittest.TestCase):
         mock_pkg.assert_called_once_with(["https://rpms.remirepo.net/enterprise/remi-release-9.rpm"])
         modules_reset = [c for c in mock_run_cmd.call_args_list if c.args[0][:3] == ["dnf", "module", "reset"]]
         self.assertEqual(len(modules_reset), 1)
+
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", return_value=["https://rpms.remirepo.net/enterprise/remi-release-9.rpm"])
+    def test_raises_naming_the_package_when_it_fails(self, mock_pkg, mock_run_cmd):
+        with self.assertRaisesRegex(RuntimeError, "remi-release-9"):
+            install_steps.enable_php_remi(9)
 
 
 class InstallPackagesTest(unittest.TestCase):
@@ -123,6 +148,37 @@ class InstallPackagesTest(unittest.TestCase):
         self.assertNotIn("asterisk$ASTVER", base_call)
         issabel_call = mock_pkg.call_args_list[1].args[0]
         self.assertIn("wanpipe-utils", issabel_call)
+
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", side_effect=[[], ["issabel"]])
+    def test_raises_naming_the_package_when_issabel_list_fails(self, mock_pkg, mock_run_cmd):
+        with self.assertRaisesRegex(RuntimeError, "issabel"):
+            install_steps.install_packages("18")
+
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", return_value=[])
+    def test_forwards_on_line_to_both_package_lists(self, mock_pkg, mock_run_cmd):
+        # é a etapa mais longa (base + Asterisk + Issabel) -- a única com log ao vivo
+        # (docker-build-style) embaixo do spinner, ver widgets.step_with_log().
+        on_line = lambda line: None
+        install_steps.install_packages("18", on_line=on_line)
+        self.assertEqual(mock_pkg.call_args_list[0].kwargs, {"on_line": on_line})
+        self.assertEqual(mock_pkg.call_args_list[1].kwargs, {"on_line": on_line})
+
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", return_value=[])
+    def test_cleans_dnf_cache_by_default(self, mock_pkg, mock_run_cmd):
+        install_steps.install_packages("18")
+        mock_run_cmd.assert_any_call(["dnf", "clean", "all"])
+
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", return_value=[])
+    def test_skip_clean_avoids_wiping_the_dnf_cache(self, mock_pkg, mock_run_cmd):
+        # reinstalar repetido na mesma máquina de teste paga o resync de metadata
+        # inteiro toda vez por causa disso -- útil só numa máquina nova de verdade.
+        install_steps.install_packages("18", skip_clean=True)
+        clean_calls = [c for c in mock_run_cmd.call_args_list if c.args[0] == ["dnf", "clean", "all"]]
+        self.assertEqual(clean_calls, [])
 
 
 class PostInstallTest(unittest.TestCase):

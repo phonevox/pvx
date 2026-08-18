@@ -33,13 +33,76 @@ class RunCmdTest(unittest.TestCase):
         mock_run.return_value = _run_result(returncode=1)
         self.assertFalse(os_ops.run_cmd(["false"]))
 
+    @patch("os_ops.subprocess.run", side_effect=FileNotFoundError())
+    def test_false_when_the_executable_does_not_exist(self, mock_run):
+        # o bash original (`&> /dev/null`, sem checar $?) trata "command not found" como
+        # falha muda -- nunca derruba o script. subprocess.run() levanta FileNotFoundError
+        # nesse caso (diferente de "rodou e retornou erro", já tratado acima); sem capturar
+        # isso aqui, um binário ainda não existente nessa etapa do fluxo (ex.: amportal
+        # antes do issabel-firstboot rodar) crasha o processo inteiro em vez de só falhar.
+        self.assertFalse(os_ops.run_cmd(["/usr/sbin/amportal", "chown"]))
+
+
+def _fake_stdout(text):
+    # simula leitura char a char de um pipe real -- termina com "" (EOF), igual
+    # file.read(1) de verdade.
+    return list(text) + [""]
+
+
+class RunCmdStreamingTest(unittest.TestCase):
+    # on_line dado -- transmite linha por linha (docker-build-style) em vez de esperar
+    # o processo inteiro terminar pra devolver tudo de uma vez (subprocess.run padrão).
+    @patch("os_ops.subprocess.Popen")
+    def test_feeds_each_stdout_line_to_the_callback(self, mock_popen):
+        proc = mock_popen.return_value
+        proc.stdout.read.side_effect = _fake_stdout("linha 1\nlinha 2\n")
+        proc.wait.return_value = None
+        proc.returncode = 0
+        lines = []
+        result = os_ops.run_cmd(["dnf", "install", "-y", "vim"], on_line=lines.append)
+        self.assertTrue(result)
+        self.assertEqual(lines, ["linha 1", "linha 2"])
+        mock_popen.assert_called_once_with(
+            ["dnf", "install", "-y", "vim"], stdout=os_ops.subprocess.PIPE,
+            stderr=os_ops.subprocess.STDOUT, text=True, bufsize=1,
+        )
+
+    @patch("os_ops.subprocess.Popen")
+    def test_treats_a_bare_carriage_return_as_a_line_break_too(self, mock_popen):
+        # dnf atualiza a MESMA linha de progresso via "\r" (sem "\n") -- sem tratar
+        # isso também como quebra, o update só aparece quando o "\n" de verdade vem
+        # (ex.: só quando aquele download termina), escondendo o progresso ao vivo.
+        proc = mock_popen.return_value
+        proc.stdout.read.side_effect = _fake_stdout("10%\r50%\r100%\ndone\n")
+        proc.returncode = 0
+        lines = []
+        os_ops.run_cmd(["dnf", "install", "-y", "vim"], on_line=lines.append)
+        self.assertEqual(lines, ["10%", "50%", "100%", "done"])
+
+    @patch("os_ops.subprocess.Popen")
+    def test_false_on_nonzero_exit(self, mock_popen):
+        proc = mock_popen.return_value
+        proc.stdout.read.side_effect = _fake_stdout("")
+        proc.returncode = 1
+        self.assertFalse(os_ops.run_cmd(["false"], on_line=lambda line: None))
+
+    @patch("os_ops.subprocess.Popen", side_effect=FileNotFoundError())
+    def test_false_when_the_executable_does_not_exist(self, mock_popen):
+        self.assertFalse(os_ops.run_cmd(["/nonexistent"], on_line=lambda line: None))
+
 
 class PkgInstallTest(unittest.TestCase):
     @patch("os_ops.run_cmd", return_value=True)
     def test_batch_install_succeeds_in_one_call(self, mock_run_cmd):
         failed = os_ops.pkg_install(["a", "b", "c"])
         self.assertEqual(failed, [])
-        mock_run_cmd.assert_called_once_with(["dnf", "install", "-y", "a", "b", "c"])
+        mock_run_cmd.assert_called_once_with(["dnf", "install", "-y", "a", "b", "c"], on_line=None)
+
+    @patch("os_ops.run_cmd", return_value=True)
+    def test_forwards_on_line_to_run_cmd(self, mock_run_cmd):
+        on_line = lambda line: None
+        os_ops.pkg_install(["a"], on_line=on_line)
+        mock_run_cmd.assert_called_once_with(["dnf", "install", "-y", "a"], on_line=on_line)
 
     @patch("os_ops.run_cmd")
     def test_falls_back_to_per_package_on_batch_failure(self, mock_run_cmd):
