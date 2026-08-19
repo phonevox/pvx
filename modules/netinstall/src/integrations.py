@@ -10,7 +10,7 @@ def is_module_installed(name):
 def ensure_module_installed(name, pvx_bin="pvx"):
     if is_module_installed(name):
         return True
-    result = subprocess.run([pvx_bin, "module", "install", name, "--yes"], capture_output=True, text=True)
+    result = subprocess.run([pvx_bin, "module", "install", name], capture_output=True, text=True)
     return result.returncode == 0
 
 

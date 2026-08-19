@@ -35,10 +35,14 @@ class EnsureModuleInstalledTest(unittest.TestCase):
     @patch("integrations.is_module_installed", return_value=False)
     @patch("integrations.subprocess.run")
     def test_installs_via_pvx_module_install_when_missing(self, mock_run, mock_installed):
+        # "pvx module install" nunca teve --yes (não é ação destrutiva, ver cli.py) -- só
+        # "uninstall" tem. Passar --yes aqui faz o click de verdade rejeitar a flag e sair
+        # com erro, o que fazia os 3 tweaks (ssh-hardening/firewall/qint) falharem sempre
+        # com "falha ao instalar o módulo X", ao vivo numa instalação real.
         mock_run.return_value = _run_result(returncode=0)
         self.assertTrue(integrations.ensure_module_installed("qint", pvx_bin="pvx"))
         mock_run.assert_called_once_with(
-            ["pvx", "module", "install", "qint", "--yes"], capture_output=True, text=True
+            ["pvx", "module", "install", "qint"], capture_output=True, text=True
         )
 
     @patch("integrations.is_module_installed", return_value=False)
