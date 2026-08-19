@@ -130,6 +130,19 @@ def pause():
     click.pause("")
 
 
+def checkbox_answer(msg, selected):
+    # substitui o "done (N selections)" default do questionary.checkbox() -- não dá pra
+    # customizar isso via parâmetro da lib, então ask_checkbox() apaga a linha padrão
+    # (erase_when_done=True) e chama isto pra imprimir a nossa por cima, no mesmo estilo
+    # qmark+pergunta+resposta do breadcrumb().
+    line = Text()
+    line.append("? ", style=QMARK_COLOR)
+    line.append(f"{msg} ", style="bold")
+    text = ", ".join(str(v) for v in selected) if selected else "nenhum"
+    line.append(text, style=f"{theme.current_accent_color()} bold")
+    Console().print(line, highlight=False)
+
+
 def breadcrumb(text):
     line = Text()
     line.append("? ", style=QMARK_COLOR)

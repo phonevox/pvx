@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import questionary
 
+from pvx.interactive import inputs
 from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_select, ask_text
 
 
@@ -66,6 +67,30 @@ class AskCheckboxTest(unittest.TestCase):
         ask_checkbox("Selecione:", ["a", "b"])
         choices = mock_checkbox.call_args.kwargs["choices"]
         self.assertIsInstance(choices[-1], questionary.Separator)
+
+    @patch("pvx.interactive.inputs.questionary.checkbox")
+    def test_erases_default_done_line_so_it_can_print_its_own(self, mock_checkbox):
+        # questionary não tem parâmetro pra customizar o "done (N selections)" --
+        # erase_when_done repassa pro prompt_toolkit.Application e apaga a linha de
+        # resposta padrão inteira ao sair, sobrando só a nossa (widgets.checkbox_answer).
+        mock_checkbox.return_value.unsafe_ask.return_value = []
+        ask_checkbox("Selecione:", ["a", "b"])
+        self.assertTrue(mock_checkbox.call_args.kwargs["erase_when_done"])
+
+    @patch("pvx.interactive.inputs.widgets.checkbox_answer")
+    @patch("pvx.interactive.inputs.questionary.checkbox")
+    def test_prints_selected_values_instead_of_a_count(self, mock_checkbox, mock_answer):
+        mock_checkbox.return_value.unsafe_ask.return_value = ["a", "b"]
+        ask_checkbox("Selecione:", ["a", "b", "c"])
+        mock_answer.assert_called_once_with("Selecione:", ["a", "b"])
+
+    @patch("pvx.interactive.inputs.widgets.checkbox_answer")
+    @patch("pvx.interactive.inputs.questionary.checkbox")
+    def test_does_not_print_answer_when_user_goes_back(self, mock_checkbox, mock_answer):
+        mock_checkbox.return_value.unsafe_ask.return_value = inputs._BACK
+        result = ask_checkbox("Selecione:", ["a", "b"])
+        self.assertIsNone(result)
+        mock_answer.assert_not_called()
 
 
 class AskConfirmTest(unittest.TestCase):

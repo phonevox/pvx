@@ -30,13 +30,14 @@ class ThemeTest(unittest.TestCase):
         self.assertIn("0087ff", rules["answer"])
 
     def test_selected_checkbox_item_has_no_background_reverse(self):
-        # prompt_toolkit tem um estilo base embutido ("selected", "reverse") que inverte
-        # fundo/texto do item marcado num checkbox -- sem sobrescrever aqui, ele sempre
-        # ganha (nenhuma das duas camadas de style do questionary define "selected").
-        # Achado ao vivo: item marcado saía com o fundo inteiro colorido, sem querer.
+        # prompt_toolkit.styles.defaults.PROMPT_TOOLKIT_STYLE tem ("selected", "reverse")
+        # numa camada abaixo do style do questionary -- merge de style é por atributo, não
+        # substituição total, então só *não definir* "reverse" aqui não cancela o que essa
+        # camada de baixo já setou. Precisa de "noreverse" explícito. Achado ao vivo: item
+        # marcado saía com o fundo inteiro invertido, sem querer.
         rules = dict(THEME_RULES)
         self.assertIn("0087ff", rules["selected"])
-        self.assertNotIn("reverse", rules["selected"])
+        self.assertIn("noreverse", rules["selected"])
 
     def test_theme_is_questionary_style_instance(self):
         self.assertIsInstance(THEME, questionary.Style)
