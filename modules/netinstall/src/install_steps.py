@@ -105,13 +105,22 @@ def post_install():
         os_ops.run_cmd(["systemctl", "stop", "firewalld"])
 
     os_ops.run_cmd(["rm", "-f", "/etc/issabel.conf"])
-    os_ops.run_cmd(["mysql", "-e", "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('')"])
+    # install_db/set_passwords assumem senha root em branco depois daqui (ver
+    # defaults.TEMP_MYSQL_PASSWORD) -- se o reset falhar, os dois quebram em cascata
+    # depois, sem relação óbvia com a causa real (achado investigando o sip.conf).
+    if not os_ops.run_cmd(["mysql", "-e", "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('')"]):
+        raise RuntimeError("falha ao zerar a senha do MySQL root -- install_db/set_passwords dependem dela em branco.")
     os_ops.run_cmd(["mkdir", "--parents", "/var/log/asterisk/cdr-csv"])
     os_ops.run_cmd(["/usr/sbin/amportal", "chown"])
 
 
 def install_db():
-    os_ops.run_cmd(["/usr/src/issabelPBX/framework/install_amp", "--dbuser=root", "--installdb", "--scripted", "--language=en"])
+    ok = os_ops.run_cmd([
+        "/usr/src/issabelPBX/framework/install_amp", "--dbuser=root",
+        "--installdb", "--scripted", "--language=en",
+    ])
+    if not ok:
+        raise RuntimeError("install_amp --installdb falhou -- schema do banco não foi criado.")
 
 
 def set_timezone(tz):
@@ -156,7 +165,11 @@ def _sync_fop2_secret():
 
 def set_passwords(sql_password, web_password):
     ok = os_ops.run_cmd(["/usr/bin/issabel-admin-passwords", "--cli", "init", sql_password, web_password])
-    if ok:
-        # --cli init nunca roda o equivalente a action_changeFop2() (só o dialog legado
-        # roda) -- sem isto o fop2.cfg fica com a senha AMI de fábrica.
-        _sync_fop2_secret()
+    if not ok:
+        # --cli init roda o retrieve_conf por dentro (promove sip.conf e os outros
+        # .confnew) -- uma falha aqui silenciosa deixava esses arquivos sem promover, sem
+        # aviso nenhum (achado investigando o chan_sip não carregar numa instalação real).
+        raise RuntimeError("issabel-admin-passwords --cli init falhou -- senhas/sip.conf não foram configurados.")
+    # --cli init nunca roda o equivalente a action_changeFop2() (só o dialog legado
+    # roda) -- sem isto o fop2.cfg fica com a senha AMI de fábrica.
+    _sync_fop2_secret()
