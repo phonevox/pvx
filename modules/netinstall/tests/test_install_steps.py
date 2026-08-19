@@ -196,6 +196,36 @@ class PostInstallTest(unittest.TestCase):
         disable_calls = [c for c in mock_run_cmd.call_args_list if "firewalld" in " ".join(c.args[0])]
         self.assertEqual(disable_calls, [])
 
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.shutil.which", return_value=None)
+    def test_raises_when_resetting_root_password_to_blank_fails(self, mock_which, mock_run_cmd):
+        # install_db/set_passwords assumem senha root em branco depois deste passo (ver
+        # defaults.TEMP_MYSQL_PASSWORD) -- se o reset falhar aqui, os dois quebram depois
+        # em cascata, sem relação óbvia com a causa real (achado investigando o sip.conf).
+        def fake_run_cmd(args, **kwargs):
+            return args != ["mysql", "-e", "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('')"]
+
+        mock_run_cmd.side_effect = fake_run_cmd
+        with self.assertRaisesRegex(RuntimeError, "senha"):
+            install_steps.post_install()
+
+
+class InstallDbTest(unittest.TestCase):
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    def test_runs_install_amp_scripted(self, mock_run_cmd):
+        install_steps.install_db()
+        mock_run_cmd.assert_called_once_with([
+            "/usr/src/issabelPBX/framework/install_amp", "--dbuser=root",
+            "--installdb", "--scripted", "--language=en",
+        ])
+
+    @patch("install_steps.os_ops.run_cmd", return_value=False)
+    def test_raises_when_install_amp_fails(self, mock_run_cmd):
+        # install_amp cria o schema inteiro do banco -- sem isto o Issabel fica quebrado,
+        # mas o passo era 100% silencioso (_run_step não checava retorno nenhum).
+        with self.assertRaisesRegex(RuntimeError, "install_amp"):
+            install_steps.install_db()
+
 
 class InstallControlPanelTest(unittest.TestCase):
     @patch("install_steps.assets.extract_prefix",
@@ -230,8 +260,12 @@ class SetPasswordsTest(unittest.TestCase):
 
     @patch("install_steps._sync_fop2_secret")
     @patch("install_steps.os_ops.run_cmd", return_value=False)
-    def test_skips_fop2_sync_when_admin_passwords_fails(self, mock_run_cmd, mock_fop2):
-        install_steps.set_passwords("sqlpw", "webpw")
+    def test_raises_when_admin_passwords_fails(self, mock_run_cmd, mock_fop2):
+        # antes disto, uma falha aqui era 100% silenciosa -- _run_step (main.py) reportava
+        # "sucesso" mesmo com o retrieve_conf (rodado por dentro do --cli init) nunca
+        # executando, deixando sip.conf e os outros .confnew sem promover.
+        with self.assertRaisesRegex(RuntimeError, "issabel-admin-passwords"):
+            install_steps.set_passwords("sqlpw", "webpw")
         mock_fop2.assert_not_called()
 
 
