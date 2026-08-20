@@ -27,9 +27,11 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.1.2"
+    version = "0.1.3"
 
     def cli_group(self):
+        logger = self.get_logger()
+
         @click.group(name="ssh-hardening")
         def group():
             pass
@@ -120,6 +122,7 @@ class SSHHardeningModule(PvxModule):
                     change_port, port,
                 )
             except ValueError as e:
+                logger.error(f"plano inválido: {e}")
                 raise click.ClickException(str(e))
 
             if plan is None:
@@ -161,6 +164,7 @@ class SSHHardeningModule(PvxModule):
                 )
             else:
                 outcome = "ssh-hardening aplicado. reinicie o sshd (ou a máquina) pra entrar em vigor."
+            logger.info(outcome)
 
             if is_tty:
                 widgets.message(outcome)

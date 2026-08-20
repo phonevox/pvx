@@ -452,6 +452,29 @@ class ApplyCommandTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.output)
         mock_failed.assert_called_once_with("SFTP falhou")
 
+    @patch("main.QintModule.get_logger")
+    @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.deploy.compute_conflicts", return_value=[])
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_logs_success(self, mock_load, mock_conflicts, mock_available, mock_apply, mock_get_logger):
+        mock_apply.return_value = {"applied": True, "reloaded": True}
+        _invoke(["apply", "--yes"])
+        logger = mock_get_logger.return_value
+        logger.info.assert_called_once()
+        self.assertIn("recarregado", logger.info.call_args.args[0].lower())
+
+    @patch("main.QintModule.get_logger")
+    @patch("main.apply_module.apply", side_effect=RuntimeError("SFTP falhou"))
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.deploy.compute_conflicts", return_value=[])
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_logs_failure(self, mock_load, mock_conflicts, mock_available, mock_apply, mock_get_logger):
+        _invoke(["apply", "--yes"])
+        logger = mock_get_logger.return_value
+        logger.error.assert_called_once()
+        self.assertIn("SFTP falhou", logger.error.call_args.args[0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,9 +59,11 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.6"
+    version = "0.1.7"
 
     def cli_group(self):
+        logger = self.get_logger()
+
         @click.group(name="firewall")
         def group():
             pass
@@ -228,9 +230,11 @@ class FirewallModule(PvxModule):
                 with widgets.spinner("Sincronizando firewall..."):
                     result = sync_module.run(str(_state_dir()), engine=engine, force=force)
             except Exception as e:
+                logger.error(f"sync falhou: {e}")
                 widgets.failed(str(e))
                 return
 
+            logger.info(f"firewall sincronizado (engine: {result['engine']}).")
             widgets.success(f"firewall sincronizado (engine: {result['engine']}).")
             if result["session_ip"] is None:
                 click.echo("aviso: IP da sessão não detectado -- nenhum failsafe foi inserido (rodou com --force).")
@@ -244,6 +248,7 @@ class FirewallModule(PvxModule):
             if dry_run:
                 click.echo(content)
             else:
+                logger.info("serviço pvx-firewall habilitado no boot.")
                 widgets.success("serviço pvx-firewall habilitado no boot.")
 
         return group

@@ -163,6 +163,20 @@ class SyncCommandTest(MainTestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertIn("boom", result.output)
 
+    @patch("main.FirewallModule.get_logger")
+    @patch("main.sync_module.run", return_value={"engine": "iptables", "session_ip": "203.0.113.9"})
+    def test_logs_success(self, mock_run, mock_get_logger):
+        self._invoke(["sync", "--yes"])
+        logger = mock_get_logger.return_value
+        logger.info.assert_called_once()
+        self.assertIn("iptables", logger.info.call_args.args[0])
+
+    @patch("main.FirewallModule.get_logger")
+    @patch("main.sync_module.run", side_effect=RuntimeError("boom"))
+    def test_logs_failure(self, mock_run, mock_get_logger):
+        self._invoke(["sync", "--yes"])
+        mock_get_logger.return_value.error.assert_called_once()
+
 
 class StartOnBootTest(MainTestCase):
     def test_dry_run_prints_unit_content(self):
@@ -176,6 +190,12 @@ class StartOnBootTest(MainTestCase):
         with patch("main.systemd_unit.install", return_value="content"):
             result = self._invoke(["start-on-boot"])
         self.assertEqual(result.exit_code, 0)
+
+    @patch("main.FirewallModule.get_logger")
+    def test_logs_success_when_not_a_dry_run(self, mock_get_logger):
+        with patch("main.systemd_unit.install", return_value="content"):
+            self._invoke(["start-on-boot"])
+        mock_get_logger.return_value.info.assert_called_once()
 
 
 if __name__ == "__main__":

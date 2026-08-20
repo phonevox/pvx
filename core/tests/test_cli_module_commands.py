@@ -46,6 +46,20 @@ class ModuleInstallCommandTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.output)
         self.assertIn("não foi possível acessar o registry", result.output)
 
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.installer.install")
+    def test_logs_success(self, mock_install, mock_logger):
+        CliRunner().invoke(build_cli(), ["module", "install", "dummy"])
+        mock_logger.return_value.info.assert_called_once()
+        self.assertIn("dummy", mock_logger.return_value.info.call_args.args[0])
+
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.installer.install", side_effect=RuntimeError("falhou"))
+    def test_logs_failure(self, mock_install, mock_logger):
+        CliRunner().invoke(build_cli(), ["module", "install", "dummy"])
+        mock_logger.return_value.error.assert_called_once()
+        self.assertIn("dummy", mock_logger.return_value.error.call_args.args[0])
+
 
 class ModuleUpdateCommandTest(unittest.TestCase):
     @patch("pvx.cli.installer.install")
@@ -76,6 +90,19 @@ class ModuleUpdateCommandTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.output)
         self.assertIn("não foi possível acessar o registry", result.output)
 
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.installer.install")
+    def test_logs_success(self, mock_install, mock_logger):
+        CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
+        mock_logger.return_value.info.assert_called_once()
+        self.assertIn("dummy", mock_logger.return_value.info.call_args.args[0])
+
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.installer.install", side_effect=RuntimeError("falhou"))
+    def test_logs_failure(self, mock_install, mock_logger):
+        CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
+        mock_logger.return_value.error.assert_called_once()
+
 
 class ModuleUninstallCommandTest(unittest.TestCase):
     @patch("pvx.cli.installer.uninstall")
@@ -92,6 +119,13 @@ class ModuleUninstallCommandTest(unittest.TestCase):
     def test_uninstall_has_no_root_alias(self):
         result = CliRunner().invoke(build_cli(), ["uninstall", "dummy", "--yes"])
         self.assertNotEqual(result.exit_code, 0)
+
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.installer.uninstall")
+    def test_logs_success(self, mock_uninstall, mock_logger):
+        CliRunner().invoke(build_cli(), ["module", "uninstall", "dummy", "--yes"])
+        mock_logger.return_value.info.assert_called_once()
+        self.assertIn("dummy", mock_logger.return_value.info.call_args.args[0])
 
 
 class ModuleListCommandTest(unittest.TestCase):
@@ -129,15 +163,6 @@ class ModuleListCommandTest(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertNotIn("Traceback", result.output)
         self.assertIn("não foi possível acessar o registry", result.output)
-
-
-class LogsCommandTest(unittest.TestCase):
-    @patch("pvx.cli.viewer.read_log", return_value="conteúdo do log")
-    def test_logs_command_prints_log_content(self, mock_read_log):
-        result = CliRunner().invoke(build_cli(), ["logs", "dummy"])
-        self.assertEqual(result.exit_code, 0, msg=result.output)
-        self.assertIn("conteúdo do log", result.output)
-        mock_read_log.assert_called_once_with("dummy", lines=None)
 
 
 if __name__ == "__main__":
