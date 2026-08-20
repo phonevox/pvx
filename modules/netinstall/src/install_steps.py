@@ -93,10 +93,14 @@ def install_packages(astver, extra_packages=(), on_line=None, skip_clean=False):
 def post_install():
     os_ops.run_cmd(["systemctl", "enable", "mariadb.service"])
     os_ops.run_cmd(["systemctl", "start", "mariadb"])
-    os_ops.run_cmd([
+    # MariaDB novo autentica root via unix_socket (sem senha) -- só até esta chamada, que
+    # troca o auth pra mysql_native_password. Se ela falhar, a senha real do root fica
+    # desconhecida e o reset abaixo (que precisa dessa senha pra autenticar) não funciona.
+    if not os_ops.run_cmd([
         "mysql", "-e",
         f"SET PASSWORD FOR 'root'@'localhost' = PASSWORD('{defaults.TEMP_MYSQL_PASSWORD}')",
-    ])
+    ]):
+        raise RuntimeError("falha ao definir a senha temporária do MySQL root.")
     os_ops.run_cmd(["systemctl", "enable", "httpd"])
 
     # firewalld é OPCIONAL: várias imagens de VPS/cloud não vêm com ele instalado.
@@ -107,8 +111,14 @@ def post_install():
     os_ops.run_cmd(["rm", "-f", "/etc/issabel.conf"])
     # install_db/set_passwords assumem senha root em branco depois daqui (ver
     # defaults.TEMP_MYSQL_PASSWORD) -- se o reset falhar, os dois quebram em cascata
-    # depois, sem relação óbvia com a causa real (achado investigando o sip.conf).
-    if not os_ops.run_cmd(["mysql", "-e", "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('')"]):
+    # depois, sem relação óbvia com a causa real. Precisa autenticar com a senha
+    # temporária de fato (setada acima) -- sem isso o MariaDB recusa a conexão
+    # silenciosamente (achado ao vivo numa instalação real: "Access denied").
+    ok = os_ops.run_cmd([
+        "mysql", f"--password={defaults.TEMP_MYSQL_PASSWORD}", "-e",
+        "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('')",
+    ])
+    if not ok:
         raise RuntimeError("falha ao zerar a senha do MySQL root -- install_db/set_passwords dependem dela em branco.")
     os_ops.run_cmd(["mkdir", "--parents", "/var/log/asterisk/cdr-csv"])
     os_ops.run_cmd(["/usr/sbin/amportal", "chown"])

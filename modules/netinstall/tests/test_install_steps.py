@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import call, patch
 
+import defaults
 import install_steps
 
 
@@ -198,12 +199,36 @@ class PostInstallTest(unittest.TestCase):
 
     @patch("install_steps.os_ops.run_cmd")
     @patch("install_steps.shutil.which", return_value=None)
+    def test_raises_when_setting_the_temp_root_password_fails(self, mock_which, mock_run_cmd):
+        # MariaDB novo autentica root via unix_socket (sem senha) até esta chamada -- se
+        # ela falhar, a senha real do root fica desconhecida e o reset seguinte (que
+        # autentica com essa senha temporária) não tem como funcionar.
+        def fake_run_cmd(args, **kwargs):
+            return f"PASSWORD('{defaults.TEMP_MYSQL_PASSWORD}')" not in " ".join(args)
+
+        mock_run_cmd.side_effect = fake_run_cmd
+        with self.assertRaisesRegex(RuntimeError, "temporária"):
+            install_steps.post_install()
+
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    @patch("install_steps.shutil.which", return_value=None)
+    def test_resets_root_password_authenticating_with_the_temp_password(self, mock_which, mock_run_cmd):
+        # SET PASSWORD troca o root de unix_socket pra mysql_native_password -- a chamada
+        # seguinte precisa autenticar com essa senha de fato, senão o MariaDB recusa a
+        # conexão silenciosamente (achado ao vivo numa instalação real: "Access denied").
+        install_steps.post_install()
+        reset_calls = [c for c in mock_run_cmd.call_args_list if "PASSWORD('')" in " ".join(c.args[0])]
+        self.assertEqual(len(reset_calls), 1)
+        self.assertIn(f"--password={defaults.TEMP_MYSQL_PASSWORD}", reset_calls[0].args[0])
+
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.shutil.which", return_value=None)
     def test_raises_when_resetting_root_password_to_blank_fails(self, mock_which, mock_run_cmd):
         # install_db/set_passwords assumem senha root em branco depois deste passo (ver
         # defaults.TEMP_MYSQL_PASSWORD) -- se o reset falhar aqui, os dois quebram depois
         # em cascata, sem relação óbvia com a causa real (achado investigando o sip.conf).
         def fake_run_cmd(args, **kwargs):
-            return args != ["mysql", "-e", "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('')"]
+            return "PASSWORD('')" not in " ".join(args)
 
         mock_run_cmd.side_effect = fake_run_cmd
         with self.assertRaisesRegex(RuntimeError, "senha"):

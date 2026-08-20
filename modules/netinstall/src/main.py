@@ -169,7 +169,7 @@ COFFEE_ART = r"""
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.14"
+    version = "0.1.15"
 
     def cli_group(self):
         @click.group(name="netinstall")
