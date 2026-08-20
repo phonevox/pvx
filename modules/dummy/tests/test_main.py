@@ -17,6 +17,11 @@ class DummyModuleTest(unittest.TestCase):
         CliRunner().invoke(dummy_module.cli_group(), ["hello"])
         mock_get_logger.return_value.info.assert_called_once()
 
+    @patch("src.main.DummyModule.get_logger")
+    def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
+        dummy_module.cli_group()
+        mock_get_logger.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

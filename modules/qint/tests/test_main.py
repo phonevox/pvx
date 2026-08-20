@@ -475,6 +475,11 @@ class ApplyCommandTest(unittest.TestCase):
         logger.error.assert_called_once()
         self.assertIn("SFTP falhou", logger.error.call_args.args[0])
 
+    @patch("main.QintModule.get_logger")
+    def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
+        cli.cli_group()
+        mock_get_logger.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,11 +59,9 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.7"
+    version = "0.1.8"
 
     def cli_group(self):
-        logger = self.get_logger()
-
         @click.group(name="firewall")
         def group():
             pass
@@ -220,6 +218,7 @@ class FirewallModule(PvxModule):
         @click.option("--yes", is_flag=True)
         def sync_cmd(engine, force, yes):
             _require_root()
+            logger = self.get_logger()
             if not yes and not ask_confirm(
                 "Isso vai reescrever as regras de firewall deste host. Confirma?", default=False
             ):
@@ -248,7 +247,7 @@ class FirewallModule(PvxModule):
             if dry_run:
                 click.echo(content)
             else:
-                logger.info("serviço pvx-firewall habilitado no boot.")
+                self.get_logger().info("serviço pvx-firewall habilitado no boot.")
                 widgets.success("serviço pvx-firewall habilitado no boot.")
 
         return group

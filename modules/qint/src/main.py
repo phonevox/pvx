@@ -55,11 +55,9 @@ def _apply_csv4(base, value, prefix):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.5"
+    version = "0.1.6"
 
     def cli_group(self):
-        logger = self.get_logger()
-
         @click.group(name="qint")
         def group():
             pass
@@ -282,6 +280,7 @@ class QintModule(PvxModule):
             if os.geteuid() != 0:
                 raise click.ClickException("qint precisa rodar como root (sudo).")
 
+            logger = self.get_logger()
             staged = staged_config.load(_config_path())
             if staged is None:
                 raise click.ClickException(

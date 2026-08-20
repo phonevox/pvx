@@ -383,6 +383,11 @@ class LoggingTest(MainTestCase):
         info_messages = " ".join(c.args[0] for c in logger.info.call_args_list)
         self.assertIn("firewall", info_messages)
 
+    @patch("main.NetinstallModule.get_logger")
+    def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
+        cli.cli_group()
+        mock_get_logger.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
