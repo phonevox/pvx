@@ -27,6 +27,7 @@ DEFAULT_LISTS = {
         ("5060/tcp", "SIP"),
         ("5061/tcp", "SIP TLS"),
         ("50007/tcp", "SIP custom"),
+        ("50007/udp", "SIP custom"),
         ("10000-20000/udp", "RTP audio/video"),
     ],
     # portas de administração (MySQL, AMI, Zabbix, SSH -- padrão 22 E o

@@ -13,3 +13,4 @@ modules/firewall/dist/
 modules/netinstall/dist/
 /dist/
 .claude/settings.local.json
+scripts/_*
