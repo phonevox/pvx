@@ -55,7 +55,7 @@ def _apply_csv4(base, value, prefix):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.4"
+    version = "0.1.6"
 
     def cli_group(self):
         @click.group(name="qint")
@@ -280,6 +280,7 @@ class QintModule(PvxModule):
             if os.geteuid() != 0:
                 raise click.ClickException("qint precisa rodar como root (sudo).")
 
+            logger = self.get_logger()
             staged = staged_config.load(_config_path())
             if staged is None:
                 raise click.ClickException(
@@ -331,16 +332,20 @@ class QintModule(PvxModule):
                         str(state_dir / "history.log"),
                     )
             except Exception as e:
+                logger.error(f"qint apply falhou: {e}")
                 widgets.failed(str(e))
                 return
 
             if result["reloaded"]:
-                widgets.success("dialplan recarregado.")
+                outcome = "dialplan recarregado."
+                widgets.success(outcome)
             else:
-                widgets.success(
+                outcome = (
                     "dialplan não foi recarregado (asterisk não encontrado) "
                     "-- rode `asterisk -rx \"dialplan reload\"` manualmente."
                 )
+                widgets.success(outcome)
+            logger.info(f"qint apply ({tipo}): {outcome}")
 
             click.echo("Crie manualmente no Issabel as seguintes destinations:")
             for name, context, label in destinations.destination_specs(tipo):

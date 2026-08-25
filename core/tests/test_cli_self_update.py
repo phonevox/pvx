@@ -51,6 +51,21 @@ class SelfUpdateCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_spinner.assert_called_once()
 
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.self_update.self_update", return_value="0.2.0")
+    @patch("pvx.cli.build_info.describe", return_value=None)
+    def test_logs_success(self, mock_describe, mock_self_update, mock_logger):
+        CliRunner().invoke(build_cli(), ["self-update"])
+        mock_logger.return_value.info.assert_called_once()
+        self.assertIn("0.2.0", mock_logger.return_value.info.call_args.args[0])
+
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.self_update.self_update", side_effect=PermissionError)
+    @patch("pvx.cli.build_info.describe", return_value=None)
+    def test_logs_failure(self, mock_describe, mock_self_update, mock_logger):
+        CliRunner().invoke(build_cli(), ["self-update"])
+        mock_logger.return_value.error.assert_called_once()
+
 
 class SelfUninstallCommandTest(unittest.TestCase):
     @patch("pvx.cli.self_update.uninstall")
@@ -69,6 +84,12 @@ class SelfUninstallCommandTest(unittest.TestCase):
         result = CliRunner().invoke(build_cli(), ["self-uninstall", "--yes", "--purge"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_uninstall.assert_called_once_with(purge=True)
+
+    @patch("pvx.cli._core_logger")
+    @patch("pvx.cli.self_update.uninstall")
+    def test_logs_success(self, mock_uninstall, mock_logger):
+        CliRunner().invoke(build_cli(), ["self-uninstall", "--yes"])
+        mock_logger.return_value.info.assert_called_once()
 
 
 if __name__ == "__main__":

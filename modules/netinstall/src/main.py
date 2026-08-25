@@ -130,18 +130,28 @@ def _preflight_reporter():
     return report
 
 
-def _report_tweak(name, result):
+def _report_tweak(logger, name, result):
     if result["ok"]:
         widgets.success(f"{name} aplicado.")
+        logger.info(f"{name} aplicado.")
     else:
-        widgets.failed(f"{name}: {result.get('stderr') or 'falha desconhecida'}")
+        detail = result.get("stderr") or "falha desconhecida"
+        widgets.failed(f"{name}: {detail}")
+        logger.error(f"{name} falhou: {detail}")
 
 
-def _run_step(message, done_message, fn, *args):
+def _run_step(logger, message, done_message, fn, *args):
     # duração já fica visível ao vivo no spinner (widgets.step -- TimeElapsedColumn),
-    # repetir no sucesso é redundante.
+    # repetir no sucesso é redundante. Log em arquivo é o que sobrevive depois de a
+    # sessão fechar (achado ao vivo: instalação falhou e não sobrou log acionável).
+    logger.info(f"iniciando: {message}")
     with widgets.step(message):
-        fn(*args)
+        try:
+            fn(*args)
+        except Exception as e:
+            logger.error(f"falhou: {message} -- {e}")
+            raise
+    logger.info(f"concluído: {done_message}")
     widgets.success(done_message)
 
 
@@ -169,7 +179,7 @@ COFFEE_ART = r"""
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.14"
+    version = "0.1.16"
 
     def cli_group(self):
         @click.group(name="netinstall")
@@ -216,6 +226,7 @@ class NetinstallModule(PvxModule):
         @click.option("--qint-ocorrencias", default=None)
         @click.option("--qint-motivo-os", default=None)
         def issabel5_cmd(**flags):
+            logger = self.get_logger()
             interactive = _is_interactive()
 
             errors, warnings = preflight.check(
@@ -294,26 +305,36 @@ class NetinstallModule(PvxModule):
             major = preflight.version_major()
 
             _run_step(
+                logger,
                 "Adicionando repositórios (epel, tmux/htop, Issabel 5)...", "Repositórios adicionados.",
                 install_steps.add_repos, pyz_path,
             )
             _run_step(
+                logger,
                 "Preparando o sistema (SELinux, usuário asterisk)...", "Sistema preparado.",
                 install_steps.prepare_system,
             )
             _run_step(
+                logger,
                 f"Habilitando repo Remi + módulo PHP (RHEL/Rocky {major})...", "Repo Remi + PHP habilitados.",
                 install_steps.enable_php_remi, major,
             )
             widgets.message("esta é a etapa mais demorada -- aproveita, relaxa e pega um café.")
             click.echo(COFFEE_ART)
             click.echo()
+            logger.info("iniciando: instalação de pacotes (base + Asterisk + Issabel)")
             with widgets.step_with_log("Instalando pacotes (base + Asterisk + Issabel)...") as s:
-                install_steps.install_packages(
-                    astver, extra_packages, on_line=s.feed, skip_clean=flags["skip_clean"],
-                )
+                try:
+                    install_steps.install_packages(
+                        astver, extra_packages, on_line=s.feed, skip_clean=flags["skip_clean"],
+                    )
+                except Exception as e:
+                    logger.error(f"falhou: instalação de pacotes -- {e}")
+                    raise
+            logger.info("concluído: pacotes instalados")
             widgets.success("Pacotes instalados.")
             _run_step(
+                logger,
                 "Pós-instalação (mariadb, httpd, firewalld, asterisk)...", "Pós-instalação concluída.",
                 install_steps.post_install,
             )
@@ -321,32 +342,38 @@ class NetinstallModule(PvxModule):
             if ssh_config is not None:
                 with widgets.step("Aplicando ssh-hardening..."):
                     result = integrations.run_ssh_hardening(ssh_config)
-                _report_tweak("ssh-hardening", result)
+                _report_tweak(logger, "ssh-hardening", result)
             if "firewall" in tweak_keys:
                 with widgets.step("Sincronizando firewall..."):
                     result = integrations.run_firewall_sync()
-                _report_tweak("firewall", result)
+                _report_tweak(logger, "firewall", result)
             if qint_config is not None:
                 with widgets.step("Aplicando integração qint..."):
                     result = integrations.run_qint(qint_config)
-                _report_tweak("qint", result)
+                _report_tweak(logger, "qint", result)
 
             _run_step(
+                logger,
                 "Instalando o schema do banco de dados...", "Schema do banco instalado.",
                 install_steps.install_db,
             )
             if "operator-panel" in tweak_keys:
                 _run_step(
+                    logger,
                     "Instalando o painel do operador...", "Painel do operador instalado.",
                     install_steps.install_control_panel, pyz_path,
                 )
             tz = flags["timezone"] or defaults.DEFAULT_TIMEZONE
-            _run_step(f"Ajustando timezone ({tz})...", f"Timezone ajustado para {tz}.", install_steps.set_timezone, tz)
+            _run_step(
+                logger, f"Ajustando timezone ({tz})...", f"Timezone ajustado para {tz}.",
+                install_steps.set_timezone, tz,
+            )
 
             extra_kv = {}
             if ssh_config is not None and ssh_config["change_port"]:
                 extra_kv["ssh_port"] = ssh_config["port"]
             _run_step(
+                logger,
                 "Definindo senhas de acesso (MySQL root / admin Web)...", "Senhas de acesso definidas.",
                 install_steps.set_passwords, sql_pw, web_pw,
             )
@@ -355,6 +382,7 @@ class NetinstallModule(PvxModule):
 
             if flags["reboot"]:
                 click.echo("reiniciando o servidor...")
+                logger.info("reiniciando o servidor.")
                 os_ops.run_cmd(["reboot"])
             else:
                 click.echo("--no-reboot -- reinicie manualmente quando quiser.")

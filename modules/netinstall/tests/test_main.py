@@ -21,22 +21,23 @@ def _patched(**overrides):
 
 
 class MainTestCase(unittest.TestCase):
-    def _invoke(self, args, preflight_result=([], []), preflight_side_effect=None):
+    def _invoke(self, args, preflight_result=([], []), preflight_side_effect=None, step_side_effects=None):
+        step_side_effects = step_side_effects or {}
         preflight_patch = (
             patch("main.preflight.check", side_effect=preflight_side_effect) if preflight_side_effect
             else patch("main.preflight.check", return_value=preflight_result)
         )
         with preflight_patch, \
              patch("main.preflight.version_major", return_value=9), \
-             patch("main.install_steps.add_repos"), \
-             patch("main.install_steps.prepare_system"), \
-             patch("main.install_steps.enable_php_remi"), \
+             patch("main.install_steps.add_repos", side_effect=step_side_effects.get("add_repos")), \
+             patch("main.install_steps.prepare_system", side_effect=step_side_effects.get("prepare_system")), \
+             patch("main.install_steps.enable_php_remi", side_effect=step_side_effects.get("enable_php_remi")), \
              patch("main.install_steps.install_packages") as mock_install_packages, \
-             patch("main.install_steps.post_install"), \
-             patch("main.install_steps.install_db"), \
+             patch("main.install_steps.post_install", side_effect=step_side_effects.get("post_install")), \
+             patch("main.install_steps.install_db", side_effect=step_side_effects.get("install_db")), \
              patch("main.install_steps.install_control_panel"), \
              patch("main.install_steps.set_timezone"), \
-             patch("main.install_steps.set_passwords"), \
+             patch("main.install_steps.set_passwords", side_effect=step_side_effects.get("set_passwords")), \
              patch("main.credentials.save_credentials", return_value="/tmp/creds.txt") as mock_creds, \
              patch("main.os_ops.run_cmd") as mock_reboot, \
              patch("main.integrations.run_ssh_hardening", return_value={"ok": True}) as mock_ssh, \
@@ -350,6 +351,42 @@ class ConfirmationTest(MainTestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("cancelada", result.output.lower())
         mocks["firewall"].assert_not_called()
+
+
+class LoggingTest(MainTestCase):
+    # achado ao vivo: netinstall falhou numa instalação real e não sobrou log nenhum
+    # acionável pra diagnosticar depois -- cada passo agora registra início/sucesso/falha
+    # no logger do próprio módulo (self.get_logger()), não só no terminal.
+    @patch("main.NetinstallModule.get_logger")
+    def test_logs_info_for_every_successful_step(self, mock_get_logger):
+        result, _ = self._invoke(BASE_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        logger = mock_get_logger.return_value
+        self.assertTrue(logger.info.called)
+        self.assertFalse(logger.error.called)
+
+    @patch("main.NetinstallModule.get_logger")
+    def test_logs_error_when_a_step_fails(self, mock_get_logger):
+        logger = mock_get_logger.return_value
+        result, _ = self._invoke(
+            BASE_ARGS, step_side_effects={"post_install": RuntimeError("falha real do passo")},
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        logger.error.assert_called_once()
+        self.assertIn("falha real do passo", logger.error.call_args.args[0])
+
+    @patch("main.NetinstallModule.get_logger")
+    def test_logs_tweak_results(self, mock_get_logger):
+        logger = mock_get_logger.return_value
+        result, _ = self._invoke(BASE_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        info_messages = " ".join(c.args[0] for c in logger.info.call_args_list)
+        self.assertIn("firewall", info_messages)
+
+    @patch("main.NetinstallModule.get_logger")
+    def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
+        cli.cli_group()
+        mock_get_logger.assert_not_called()
 
 
 if __name__ == "__main__":

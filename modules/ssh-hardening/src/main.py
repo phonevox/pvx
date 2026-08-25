@@ -27,7 +27,7 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.1.2"
+    version = "0.1.4"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
@@ -53,6 +53,7 @@ class SSHHardeningModule(PvxModule):
             if os.geteuid() != 0:
                 raise click.ClickException("ssh-hardening precisa rodar como root (sudo).")
 
+            logger = self.get_logger()
             is_tty = _is_interactive()
             any_flag_given = quick or any(
                 v is not None
@@ -120,6 +121,7 @@ class SSHHardeningModule(PvxModule):
                     change_port, port,
                 )
             except ValueError as e:
+                logger.error(f"plano inválido: {e}")
                 raise click.ClickException(str(e))
 
             if plan is None:
@@ -161,6 +163,7 @@ class SSHHardeningModule(PvxModule):
                 )
             else:
                 outcome = "ssh-hardening aplicado. reinicie o sshd (ou a máquina) pra entrar em vigor."
+            logger.info(outcome)
 
             if is_tty:
                 widgets.message(outcome)

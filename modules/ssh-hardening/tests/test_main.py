@@ -242,5 +242,31 @@ class InvalidValueTest(unittest.TestCase):
         mock_apply.assert_not_called()
 
 
+class LoggingTest(unittest.TestCase):
+    @patch("main.SSHHardeningModule.get_logger")
+    @patch("main.apply_module.apply")
+    def test_logs_outcome_on_success(self, mock_apply, mock_get_logger):
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        _invoke(["apply", "--quick", "--yes"], is_tty=False)
+        logger = mock_get_logger.return_value
+        logger.info.assert_called_once()
+        self.assertIn("aplicado", logger.info.call_args.args[0].lower())
+
+    @patch("main.SSHHardeningModule.get_logger")
+    @patch("main.apply_module.apply")
+    def test_logs_error_on_invalid_plan(self, mock_apply, mock_get_logger):
+        result = _invoke(
+            ["apply", "--create-user", "--username", "Invalid User", "--yes"], is_tty=False
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        mock_get_logger.return_value.error.assert_called_once()
+        mock_apply.assert_not_called()
+
+    @patch("main.SSHHardeningModule.get_logger")
+    def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
+        cli.cli_group()
+        mock_get_logger.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
