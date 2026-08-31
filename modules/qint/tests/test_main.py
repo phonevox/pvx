@@ -320,6 +320,22 @@ class SetupSummaryConfirmationTest(unittest.TestCase):
         mock_pause.assert_called_once_with()
 
 
+class SetupPausesAfterInformativeOutputTest(unittest.TestCase):
+    @patch("main.widgets.pause")
+    @patch("main.staged_config.load", return_value=None)
+    @patch("main.reachability.is_reachable", return_value=True)
+    @patch("main.ask_text")
+    def test_pauses_when_escaping_right_after_sftp_result_shown(
+        self, mock_text, mock_reachable, mock_load, mock_pause
+    ):
+        # achado ao vivo: depois do teste de SFTP mostrar sucesso/falha, escapar em
+        # qualquer campo seguinte do wizard voltava sem pause -- perdendo esse resultado.
+        mock_text.side_effect = ["root@10.0.0.1", None]
+        result = _invoke_interactive(["setup", "ixcsoft"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+
 _COMPLETE_STAGED = {
     "type": "ixcsoft",
     "sftp_user": "root", "sftp_host": "10.0.0.1", "sftp_port": 22,
@@ -479,6 +495,73 @@ class ApplyCommandTest(unittest.TestCase):
     def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
         cli.cli_group()
         mock_get_logger.assert_not_called()
+
+
+class ApplyPausesWhenInteractiveTest(unittest.TestCase):
+    # achado ao vivo: apply_cmd nunca chamava pause() em NENHUM caminho -- nem cancelar,
+    # nem sobrescrever recusado, nem falha, nem sucesso completo.
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.ask_confirm", return_value=False)
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_pauses_when_declining_confirmation(self, mock_load, mock_confirm, mock_available, mock_apply, mock_pause):
+        result = _invoke_interactive(["apply"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_apply.assert_not_called()
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.deploy.compute_conflicts", return_value=["php"])
+    @patch("main.ask_confirm", side_effect=[True, False])
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_pauses_when_declining_a_directory_overwrite(
+        self, mock_load, mock_confirm, mock_conflicts, mock_available, mock_apply, mock_pause
+    ):
+        result = _invoke_interactive(["apply"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.widgets.failed")
+    @patch("main.apply_module.apply", side_effect=RuntimeError("SFTP falhou"))
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.deploy.compute_conflicts", return_value=[])
+    @patch("main.ask_confirm", return_value=True)
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_pauses_on_apply_exception(
+        self, mock_load, mock_confirm, mock_conflicts, mock_available, mock_apply, mock_failed, mock_pause
+    ):
+        result = _invoke_interactive(["apply"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.deploy.compute_conflicts", return_value=[])
+    @patch("main.ask_confirm", return_value=True)
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_pauses_after_a_full_successful_apply(
+        self, mock_load, mock_confirm, mock_conflicts, mock_available, mock_apply, mock_pause
+    ):
+        mock_apply.return_value = {"applied": True, "reloaded": True}
+        result = _invoke_interactive(["apply", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.apply")
+    @patch("main.reload_.is_asterisk_available", return_value=True)
+    @patch("main.deploy.compute_conflicts", return_value=[])
+    @patch("main.staged_config.load", return_value=_COMPLETE_STAGED)
+    def test_does_not_pause_when_not_interactive(self, mock_load, mock_conflicts, mock_available, mock_apply, mock_pause):
+        mock_apply.return_value = {"applied": True, "reloaded": True}
+        result = _invoke(["apply", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -53,9 +53,200 @@ def _apply_csv4(base, value, prefix):
         base[f"{prefix}_{suffix}"] = resolved
 
 
+def _run_setup(tipo):
+    if tipo is None:
+        label = ask_select("Tipo de integração:", ["IXCSoft", "SGP"])
+        if label is None:
+            return
+        tipo = TYPE_LABELS[label]
+    else:
+        tipo = TYPE_ALIASES.get(tipo, tipo)
+        if tipo not in ("ixcsoft", "sgp"):
+            raise click.ClickException(f"tipo inválido: {tipo} (use ixcsoft/ixc ou sgp)")
+
+    existing = staged_config.load(_config_path())
+    base = dict(existing) if existing and existing.get("type") == tipo else {"type": tipo}
+
+    sftp_default = None
+    if base.get("sftp_user"):
+        sftp_default = f"{base['sftp_user']}@{base['sftp_host']}"
+    while True:
+        sftp_value = ask_text("SFTP (user@host[:port]):", default=sftp_default)
+        if sftp_value is None:
+            return
+        try:
+            parsed = validators.parse_sftp(sftp_value)
+        except ValueError as e:
+            click.echo(str(e))
+            continue
+
+        with widgets.spinner(f"Testando conexão com {parsed['host']}:{parsed['port']}..."):
+            reachable = reachability.is_reachable(parsed["host"], parsed["port"])
+
+        if reachable:
+            widgets.success(f"{parsed['host']}:{parsed['port']} alcançável.")
+        else:
+            widgets.failed(f"não consegui alcançar {parsed['host']}:{parsed['port']}.")
+
+        if reachable or sftp_value == sftp_default:
+            base["sftp_user"], base["sftp_host"], base["sftp_port"] = (
+                parsed["user"], parsed["host"], parsed["port"],
+            )
+            break
+        click.echo("digite de novo pra confirmar mesmo assim, ou corrija.")
+        sftp_default = sftp_value
+
+    for suffix, label in zip(CSV4_SUFFIXES, CSV4_LABELS):
+        key = f"fila_{suffix}"
+        value = ask_text(f"Fila {label}:", default=base.get(key))
+        if value is None:
+            return
+        base[key] = value
+
+    value = ask_text(
+        "ID da Time Condition de saída:", default=base.get("id_timecondition_exitpoint")
+    )
+    if value is None:
+        return
+    base["id_timecondition_exitpoint"] = value
+
+    value = ask_text(
+        "IP/host do Asterisk:", default=base.get("asterisk_ip") or local_ip.guess_local_ip()
+    )
+    if value is None:
+        return
+    base["asterisk_ip"] = value
+
+    while True:
+        value = ask_text("URL do ERP (http(s)://host[:porta]):", default=base.get("erp_url"))
+        if value is None:
+            return
+        if validators.validate_url(value):
+            base["erp_url"] = value
+            break
+        click.echo("URL inválida -- precisa do protocolo, sem path/barra final.")
+
+    hint = " (vazio mantém o atual)" if base.get("token") else ""
+    value = ask_text(f"Token do ERP{hint}:", default="")
+    if value is None:
+        return
+    if value:
+        base["token"] = value
+
+    if tipo == "ixcsoft":
+        value = ask_text(
+            "ID da filial:", default=base.get("id_filial", defaults.TYPE_DEFAULTS["ixcsoft"]["id_filial"])
+        )
+        if value is None:
+            return
+        base["id_filial"] = value
+        if not _ask_csv4_group(base, "id_departamento", "Departamento"):
+            return
+        if not _ask_csv4_group(base, "id_assunto", "Assunto"):
+            return
+    else:
+        value = ask_text("Nome do app:", default=base.get("app", defaults.TYPE_DEFAULTS["sgp"]["app"]))
+        if value is None:
+            return
+        base["app"] = value
+        if not _ask_csv4_group(base, "id_setor", "Setor"):
+            return
+        if not _ask_csv4_group(base, "id_ocorrencia", "Ocorrência"):
+            return
+        if not _ask_csv4_group(base, "id_motivo_os", "Motivo de OS"):
+            return
+
+    click.echo()
+    click.echo("Resumo:")
+    for key in sorted(base):
+        if key == "type":
+            continue
+        display = "***" if key == "token" else base[key]
+        click.echo(f"  {key}: {display}")
+
+    if not ask_confirm("Salvar essa configuração?", default=True):
+        widgets.message("descartado, nada foi salvo.")
+        return
+
+    staged_config.save(_config_path(), defaults.apply_defaults(base))
+    widgets.success(f"config do qint ({tipo}) salva. rode `pvx qint apply` pra aplicar de verdade.")
+
+
+def _run_apply(logger, yes, skip_asterisk_check):
+    staged = staged_config.load(_config_path())
+    if staged is None:
+        raise click.ClickException(
+            "nenhuma config staged. rode `pvx qint prepare <tipo>` ou `pvx qint setup`."
+        )
+
+    missing = defaults.missing_fields(staged)
+    if missing:
+        raise click.ClickException(
+            "faltam campos obrigatórios: " + ", ".join(missing)
+            + " -- rode `pvx qint status` pra ver o que já está preenchido."
+        )
+
+    if not skip_asterisk_check and not reload_.is_asterisk_available():
+        raise click.ClickException(
+            "Asterisk não encontrado nesse host -- qint apply não faz sentido sem ele. "
+            "Use --skip-asterisk-check se tiver certeza (ex.: ambiente de teste)."
+        )
+
+    tipo = staged["type"]
+    click.echo(f"tipo: {tipo}")
+    for key in sorted(staged):
+        if key == "type":
+            continue
+        value = "***" if key == "token" else staged[key]
+        click.echo(f"  {key}: {value}")
+    click.echo(
+        "Isso vai buscar via SFTP, sobrescrever arquivos reais no Asterisk/Issabel "
+        "e recarregar o dialplan. Não há reversão automática."
+    )
+
+    if not yes and not ask_confirm("Confirma aplicar?", default=False):
+        click.echo("Operação cancelada.")
+        return
+
+    for category in deploy.compute_conflicts(defaults.DESTINATION_BASE_DIRS):
+        if not (yes or ask_confirm(f"O destino de '{category}' já existe. Sobrescrever?", default=False)):
+            click.echo("Operação abortada -- nada foi alterado.")
+            return
+
+    state_dir = pvx_config.modules_dir() / "qint" / "state"
+    try:
+        with widgets.spinner("Aplicando integração..."):
+            result = apply_module.apply(
+                staged,
+                staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
+                str(state_dir / "versions"),
+                defaults.DESTINATION_BASE_DIRS,
+                str(state_dir / "history.log"),
+            )
+    except Exception as e:
+        logger.error(f"qint apply falhou: {e}")
+        widgets.failed(str(e))
+        return
+
+    if result["reloaded"]:
+        outcome = "dialplan recarregado."
+    else:
+        outcome = (
+            "dialplan não foi recarregado (asterisk não encontrado) "
+            "-- rode `asterisk -rx \"dialplan reload\"` manualmente."
+        )
+    widgets.success(outcome)
+    logger.info(f"qint apply ({tipo}): {outcome}")
+
+    click.echo("Crie manualmente no Issabel as seguintes destinations:")
+    for name, context, label in destinations.destination_specs(tipo):
+        click.echo(f"  {name} ({context}): {label}")
+    click.echo(f"Aponte a URA de saída pra Time Condition ID {staged['id_timecondition_exitpoint']}.")
+
+
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.6"
+    version = "0.1.7"
 
     def cli_group(self):
         @click.group(name="qint")
@@ -151,124 +342,14 @@ class QintModule(PvxModule):
                     "setup precisa de terminal -- use `pvx qint prepare <tipo> [flags]`."
                 )
 
-            if tipo is None:
-                label = ask_select("Tipo de integração:", ["IXCSoft", "SGP"])
-                if label is None:
-                    return
-                tipo = TYPE_LABELS[label]
+            try:
+                _run_setup(tipo)
+            except click.ClickException:
+                # já pausa centralmente no router (root.py) -- pausar aqui também
+                # dobraria o "pressione enter" na cara do usuário.
+                raise
             else:
-                tipo = TYPE_ALIASES.get(tipo, tipo)
-                if tipo not in ("ixcsoft", "sgp"):
-                    raise click.ClickException(f"tipo inválido: {tipo} (use ixcsoft/ixc ou sgp)")
-
-            existing = staged_config.load(_config_path())
-            base = dict(existing) if existing and existing.get("type") == tipo else {"type": tipo}
-
-            sftp_default = None
-            if base.get("sftp_user"):
-                sftp_default = f"{base['sftp_user']}@{base['sftp_host']}"
-            while True:
-                sftp_value = ask_text("SFTP (user@host[:port]):", default=sftp_default)
-                if sftp_value is None:
-                    return
-                try:
-                    parsed = validators.parse_sftp(sftp_value)
-                except ValueError as e:
-                    click.echo(str(e))
-                    continue
-
-                with widgets.spinner(f"Testando conexão com {parsed['host']}:{parsed['port']}..."):
-                    reachable = reachability.is_reachable(parsed["host"], parsed["port"])
-
-                if reachable:
-                    widgets.success(f"{parsed['host']}:{parsed['port']} alcançável.")
-                else:
-                    widgets.failed(f"não consegui alcançar {parsed['host']}:{parsed['port']}.")
-
-                if reachable or sftp_value == sftp_default:
-                    base["sftp_user"], base["sftp_host"], base["sftp_port"] = (
-                        parsed["user"], parsed["host"], parsed["port"],
-                    )
-                    break
-                click.echo("digite de novo pra confirmar mesmo assim, ou corrija.")
-                sftp_default = sftp_value
-
-            for suffix, label in zip(CSV4_SUFFIXES, CSV4_LABELS):
-                key = f"fila_{suffix}"
-                value = ask_text(f"Fila {label}:", default=base.get(key))
-                if value is None:
-                    return
-                base[key] = value
-
-            value = ask_text(
-                "ID da Time Condition de saída:", default=base.get("id_timecondition_exitpoint")
-            )
-            if value is None:
-                return
-            base["id_timecondition_exitpoint"] = value
-
-            value = ask_text(
-                "IP/host do Asterisk:", default=base.get("asterisk_ip") or local_ip.guess_local_ip()
-            )
-            if value is None:
-                return
-            base["asterisk_ip"] = value
-
-            while True:
-                value = ask_text("URL do ERP (http(s)://host[:porta]):", default=base.get("erp_url"))
-                if value is None:
-                    return
-                if validators.validate_url(value):
-                    base["erp_url"] = value
-                    break
-                click.echo("URL inválida -- precisa do protocolo, sem path/barra final.")
-
-            hint = " (vazio mantém o atual)" if base.get("token") else ""
-            value = ask_text(f"Token do ERP{hint}:", default="")
-            if value is None:
-                return
-            if value:
-                base["token"] = value
-
-            if tipo == "ixcsoft":
-                value = ask_text(
-                    "ID da filial:", default=base.get("id_filial", defaults.TYPE_DEFAULTS["ixcsoft"]["id_filial"])
-                )
-                if value is None:
-                    return
-                base["id_filial"] = value
-                if not _ask_csv4_group(base, "id_departamento", "Departamento"):
-                    return
-                if not _ask_csv4_group(base, "id_assunto", "Assunto"):
-                    return
-            else:
-                value = ask_text("Nome do app:", default=base.get("app", defaults.TYPE_DEFAULTS["sgp"]["app"]))
-                if value is None:
-                    return
-                base["app"] = value
-                if not _ask_csv4_group(base, "id_setor", "Setor"):
-                    return
-                if not _ask_csv4_group(base, "id_ocorrencia", "Ocorrência"):
-                    return
-                if not _ask_csv4_group(base, "id_motivo_os", "Motivo de OS"):
-                    return
-
-            click.echo()
-            click.echo("Resumo:")
-            for key in sorted(base):
-                if key == "type":
-                    continue
-                display = "***" if key == "token" else base[key]
-                click.echo(f"  {key}: {display}")
-
-            if not ask_confirm("Salvar essa configuração?", default=True):
-                widgets.message("descartado, nada foi salvo.")
                 widgets.pause()
-                return
-
-            staged_config.save(_config_path(), defaults.apply_defaults(base))
-            widgets.success(f"config do qint ({tipo}) salva. rode `pvx qint apply` pra aplicar de verdade.")
-            widgets.pause()
 
         @group.command(name="apply")
         @click.option("--yes", is_flag=True)
@@ -281,76 +362,14 @@ class QintModule(PvxModule):
                 raise click.ClickException("qint precisa rodar como root (sudo).")
 
             logger = self.get_logger()
-            staged = staged_config.load(_config_path())
-            if staged is None:
-                raise click.ClickException(
-                    "nenhuma config staged. rode `pvx qint prepare <tipo>` ou `pvx qint setup`."
-                )
-
-            missing = defaults.missing_fields(staged)
-            if missing:
-                raise click.ClickException(
-                    "faltam campos obrigatórios: " + ", ".join(missing)
-                    + " -- rode `pvx qint status` pra ver o que já está preenchido."
-                )
-
-            if not skip_asterisk_check and not reload_.is_asterisk_available():
-                raise click.ClickException(
-                    "Asterisk não encontrado nesse host -- qint apply não faz sentido sem ele. "
-                    "Use --skip-asterisk-check se tiver certeza (ex.: ambiente de teste)."
-                )
-
-            tipo = staged["type"]
-            click.echo(f"tipo: {tipo}")
-            for key in sorted(staged):
-                if key == "type":
-                    continue
-                value = "***" if key == "token" else staged[key]
-                click.echo(f"  {key}: {value}")
-            click.echo(
-                "Isso vai buscar via SFTP, sobrescrever arquivos reais no Asterisk/Issabel "
-                "e recarregar o dialplan. Não há reversão automática."
-            )
-
-            if not yes and not ask_confirm("Confirma aplicar?", default=False):
-                click.echo("Operação cancelada.")
-                return
-
-            for category in deploy.compute_conflicts(defaults.DESTINATION_BASE_DIRS):
-                if not (yes or ask_confirm(f"O destino de '{category}' já existe. Sobrescrever?", default=False)):
-                    click.echo("Operação abortada -- nada foi alterado.")
-                    return
-
-            state_dir = pvx_config.modules_dir() / "qint" / "state"
+            interactive = _is_interactive()
             try:
-                with widgets.spinner("Aplicando integração..."):
-                    result = apply_module.apply(
-                        staged,
-                        staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
-                        str(state_dir / "versions"),
-                        defaults.DESTINATION_BASE_DIRS,
-                        str(state_dir / "history.log"),
-                    )
-            except Exception as e:
-                logger.error(f"qint apply falhou: {e}")
-                widgets.failed(str(e))
-                return
-
-            if result["reloaded"]:
-                outcome = "dialplan recarregado."
-                widgets.success(outcome)
+                _run_apply(logger, yes, skip_asterisk_check)
+            except click.ClickException:
+                raise
             else:
-                outcome = (
-                    "dialplan não foi recarregado (asterisk não encontrado) "
-                    "-- rode `asterisk -rx \"dialplan reload\"` manualmente."
-                )
-                widgets.success(outcome)
-            logger.info(f"qint apply ({tipo}): {outcome}")
-
-            click.echo("Crie manualmente no Issabel as seguintes destinations:")
-            for name, context, label in destinations.destination_specs(tipo):
-                click.echo(f"  {name} ({context}): {label}")
-            click.echo(f"Aponte a URA de saída pra Time Condition ID {staged['id_timecondition_exitpoint']}.")
+                if interactive:
+                    widgets.pause()
 
         @group.command(name="status")
         def status_cmd():
