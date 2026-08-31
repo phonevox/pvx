@@ -229,6 +229,29 @@ class ApplyOutcomeTest(unittest.TestCase):
         self.assertTrue(any("aplicado" in str(c) for c in mock_echo.call_args_list))
 
 
+class NothingToDoTest(unittest.TestCase):
+    # achado ao vivo: plan None (nada marcado) ecoava "Nada a fazer." e voltava
+    # sem pause -- o menu limpava a mensagem antes do usuário ler.
+    @patch("main.widgets.pause")
+    def test_pauses_when_interactive_and_nothing_is_selected(self, mock_pause):
+        result = _invoke(
+            ["apply", "--no-lock-root", "--no-create-user", "--no-change-port"], is_tty=True
+        )
+
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        self.assertIn("Nada a fazer", result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_does_not_pause_when_not_interactive(self, mock_pause):
+        result = _invoke(
+            ["apply", "--no-lock-root", "--no-create-user", "--no-change-port"], is_tty=False
+        )
+
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_pause.assert_not_called()
+
+
 class InvalidValueTest(unittest.TestCase):
     @patch("main.apply_module.apply")
     def test_invalid_username_raises_a_clean_error_no_traceback(self, mock_apply):
