@@ -205,5 +205,98 @@ class BuildCliGroupTest(MainTestCase):
         mock_get_logger.assert_not_called()
 
 
+class PauseAfterMutationTest(MainTestCase):
+    # achado ao vivo: cada comando que muda algo (port/ip accept/deny/remove, sync,
+    # start-on-boot) imprime o resultado e retorna sem pause() -- tela do menu limpa
+    # antes do usuário conseguir ler.
+    @patch("main.widgets.pause")
+    def test_port_accept_pauses_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True):
+            result = self._invoke(["port", "accept", "80/tcp"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_port_deny_pauses_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True):
+            result = self._invoke(["port", "deny", "80/tcp"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_port_remove_pauses_when_interactive(self, mock_pause):
+        self._invoke(["port", "accept", "80/tcp"])
+        with patch("main._is_interactive", return_value=True):
+            result = self._invoke(["port", "remove", "80/tcp"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_ip_accept_pauses_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True):
+            result = self._invoke(["ip", "accept", "203.0.113.9"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_ip_deny_pauses_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.session_ip.detect_session_ip", return_value=None):
+            result = self._invoke(["ip", "deny", "203.0.113.9"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_ip_remove_pauses_when_interactive(self, mock_pause):
+        self._invoke(["ip", "accept", "203.0.113.9"])
+        with patch("main._is_interactive", return_value=True):
+            result = self._invoke(["ip", "remove", "203.0.113.9"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_sync_pauses_on_success_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.sync_module.run", return_value={"engine": "iptables", "session_ip": "203.0.113.9"}):
+            result = self._invoke(["sync", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_sync_pauses_on_failure_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.sync_module.run", side_effect=RuntimeError("boom")):
+            result = self._invoke(["sync", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_sync_pauses_when_declining_confirmation(self, mock_pause):
+        with patch("main._is_interactive", return_value=True), patch("main.ask_confirm", return_value=False):
+            result = self._invoke(["sync"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_start_on_boot_pauses_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True), patch("main.systemd_unit.install", return_value="x"):
+            result = self._invoke(["start-on-boot"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_start_on_boot_dry_run_pauses_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True), patch("main.systemd_unit.install", return_value="x"):
+            result = self._invoke(["start-on-boot", "--dry-run"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_does_not_pause_when_not_interactive(self, mock_pause):
+        result = self._invoke(["port", "accept", "80/tcp"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

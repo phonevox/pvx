@@ -59,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.10"
+    version = "0.1.11"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -87,6 +87,8 @@ class FirewallModule(PvxModule):
                 raise click.ClickException(str(e))
             lists.add_entry(_list_path("port_accept"), spec, comment)
             click.echo(f"porta {spec} liberada.")
+            if _is_interactive():
+                widgets.pause()
 
         @port_group.command(name="deny")
         @click.argument("spec", required=False, default=None)
@@ -105,6 +107,8 @@ class FirewallModule(PvxModule):
                 raise click.ClickException(str(e))
             lists.add_entry(_list_path("port_deny"), spec, comment)
             click.echo(f"porta {spec} bloqueada.")
+            if _is_interactive():
+                widgets.pause()
 
         @port_group.command(name="remove")
         @click.argument("spec", required=False, default=None)
@@ -120,6 +124,8 @@ class FirewallModule(PvxModule):
             if not removed:
                 raise click.ClickException(f"{spec} não está em nenhuma lista de portas.")
             click.echo(f"{spec} removido.")
+            if _is_interactive():
+                widgets.pause()
 
         @port_group.command(name="list")
         def port_list_cmd():
@@ -147,6 +153,8 @@ class FirewallModule(PvxModule):
                 raise click.ClickException(f"CIDR inválido: {cidr}")
             lists.add_entry(_list_path("ip_accept"), cidr, comment)
             click.echo(f"{cidr} adicionado à lista de confiáveis.")
+            if _is_interactive():
+                widgets.pause()
 
         @ip_group.command(name="deny")
         @click.argument("cidr", required=False, default=None)
@@ -170,6 +178,8 @@ class FirewallModule(PvxModule):
                     )
             lists.add_entry(_list_path("ip_deny"), cidr, comment)
             click.echo(f"{cidr} adicionado à lista de bloqueio.")
+            if _is_interactive():
+                widgets.pause()
 
         @ip_group.command(name="remove")
         @click.argument("cidr", required=False, default=None)
@@ -185,6 +195,8 @@ class FirewallModule(PvxModule):
             if not removed:
                 raise click.ClickException(f"{cidr} não está em nenhuma lista de IPs.")
             click.echo(f"{cidr} removido.")
+            if _is_interactive():
+                widgets.pause()
 
         @ip_group.command(name="list")
         def ip_list_cmd():
@@ -223,6 +235,8 @@ class FirewallModule(PvxModule):
                 "Isso vai reescrever as regras de firewall deste host. Confirma?", default=False
             ):
                 click.echo("Operação cancelada.")
+                if _is_interactive():
+                    widgets.pause()
                 return
 
             try:
@@ -231,12 +245,16 @@ class FirewallModule(PvxModule):
             except Exception as e:
                 logger.error(f"sync falhou: {e}")
                 widgets.failed(str(e))
+                if _is_interactive():
+                    widgets.pause()
                 return
 
             logger.info(f"firewall sincronizado (engine: {result['engine']}).")
             widgets.success(f"firewall sincronizado (engine: {result['engine']}).")
             if result["session_ip"] is None:
                 click.echo("aviso: IP da sessão não detectado -- nenhum failsafe foi inserido (rodou com --force).")
+            if _is_interactive():
+                widgets.pause()
 
         @group.command(name="start-on-boot")
         @click.option("--dry-run", is_flag=True)
@@ -249,6 +267,8 @@ class FirewallModule(PvxModule):
             else:
                 self.get_logger().info("serviço pvx-firewall habilitado no boot.")
                 widgets.success("serviço pvx-firewall habilitado no boot.")
+            if _is_interactive():
+                widgets.pause()
 
         return group
 
