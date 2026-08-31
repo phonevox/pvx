@@ -1,3 +1,5 @@
+import subprocess
+
 import os_ops
 
 
@@ -19,3 +21,12 @@ def install_agent(package):
 def enable_and_start(service):
     os_ops.run_cmd(["systemctl", "enable", service])
     return os_ops.run_cmd(["systemctl", "restart", service])
+
+
+def service_status(service):
+    # is-active/is-enabled devolvem o texto real no stdout mesmo com exit code != 0
+    # (ex.: "inactive" sai com código 3) -- por isso subprocess.run direto, não
+    # os_ops.run_cmd (que só devolve bool do returncode).
+    active = subprocess.run(["systemctl", "is-active", service], capture_output=True, text=True).stdout.strip()
+    enabled = subprocess.run(["systemctl", "is-enabled", service], capture_output=True, text=True).stdout.strip()
+    return {"active": active, "enabled": enabled}

@@ -54,7 +54,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -65,7 +65,10 @@ class ZabbixModule(PvxModule):
         @click.option("--server", default=None)
         @click.option("--server-active", default=None)
         @click.option("--hostname", default=None)
-        @click.option("--metadata", "extra_metadata", default=None)
+        @click.option(
+            "--metadata", "extra_metadata", default=None,
+            help="HostMetadata literal, sobrescreve o auto-calculado (sem terminal pra editar).",
+        )
         @click.option("--provider", type=click.Choice(defaults.PROVIDERS), default=None)
         @click.option("--agent-version", type=click.Choice(defaults.AGENT_VARIANTS), default=None)
         @click.option("--test", is_flag=True)
@@ -129,14 +132,20 @@ class ZabbixModule(PvxModule):
             if not test and interactive:
                 test = ask_confirm("Esta é uma máquina de teste?", default=False)
 
-            if extra_metadata is None and interactive:
-                extra_metadata = ask_text("Metadata extra (opcional, livre):", default="")
-
             asterisk_version = system_info.asterisk_version()
-            host_metadata = metadata.build(
-                provider=provider, os_label=os_label, asterisk_version=asterisk_version,
-                test=test, extra=extra_metadata or None,
+            auto_metadata = metadata.build(
+                provider=provider, os_label=os_label, asterisk_version=asterisk_version, test=test,
             )
+            if interactive:
+                # edita o valor inteiro ali mesmo -- sem prompt separado de "extra", já
+                # que na prática o usuário quase sempre só aperta Enter e aceita o
+                # auto-calculado como está.
+                host_metadata = ask_text("HostMetadata (edite se quiser, ou só Enter):", default=auto_metadata)
+                if host_metadata is None:
+                    return
+            else:
+                host_metadata = extra_metadata if extra_metadata else auto_metadata
+            metadata.validate(host_metadata)
 
             click.echo("Resumo:")
             click.echo(f"  Agent: {defaults.AGENT_PACKAGES[agent_version]}")
@@ -187,6 +196,43 @@ class ZabbixModule(PvxModule):
             logger.info(f"zabbix ({agent_version}) instalado -- hostname={hostname} metadata={host_metadata}")
 
             if interactive:
+                widgets.pause()
+
+        @group.command(name="check")
+        def check_cmd():
+            variant_path = _state_dir() / _AGENT_VARIANT_FILENAME
+            if not variant_path.exists():
+                widgets.state("Zabbix NÃO configurado -- rode `pvx zabbix install` primeiro.", ok=False)
+                return
+
+            agent_variant = variant_path.read_text().strip()
+            service = defaults.AGENT_SERVICES[agent_variant]
+            params = config.read_params(defaults.AGENT_CONFIG_PATHS[agent_variant])
+            status = install_steps.service_status(service)
+
+            widgets.state(f"Zabbix configurado ({defaults.AGENT_PACKAGES[agent_variant]})", ok=True)
+            click.echo(f"  Server: {params.get('Server', '-')}")
+            click.echo(f"  ServerActive: {params.get('ServerActive', '-')}")
+            click.echo(f"  Hostname: {params.get('Hostname', '-')}")
+            click.echo(f"  HostMetadata: {params.get('HostMetadata', '-')}")
+            click.echo()
+
+            active_ok = status["active"] == "active"
+            enabled_ok = status["enabled"] == "enabled"
+            widgets.state(f"Serviço {service}: {'ativo' if active_ok else 'inativo'}", ok=active_ok)
+            widgets.state(f"Habilitado no boot: {'sim' if enabled_ok else 'não'}", ok=enabled_ok)
+            click.echo()
+
+            entries = scripts.list_all(str(_state_dir() / defaults.SCRIPTS_STATE_FILENAME))
+            if not entries:
+                click.echo("Scripts customizados: nenhum cadastrado.")
+            else:
+                click.echo(f"Scripts customizados ({len(entries)}):")
+                for key in sorted(entries):
+                    suffix = " (root)" if entries[key].get("needs_root") else ""
+                    click.echo(f"  {key}: {entries[key]['command']}{suffix}")
+
+            if _is_interactive():
                 widgets.pause()
 
         @group.group(name="script")

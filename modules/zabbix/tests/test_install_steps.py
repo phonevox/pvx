@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import install_steps
 
@@ -40,6 +40,25 @@ class EnableAndStartTest(unittest.TestCase):
     def test_returns_false_when_restart_fails_even_if_enable_worked(self, mock_run_cmd):
         mock_run_cmd.side_effect = [True, False]
         self.assertFalse(install_steps.enable_and_start("zabbix-agent2"))
+
+
+class ServiceStatusTest(unittest.TestCase):
+    # is-active/is-enabled devolvem o texto real no stdout (active/inactive/failed,
+    # enabled/disabled) mesmo com exit code != 0 -- por isso usa subprocess.run direto
+    # em vez de os_ops.run_cmd (que só devolve bool do returncode).
+    @patch("install_steps.subprocess.run")
+    def test_reports_active_and_enabled(self, mock_run):
+        mock_run.side_effect = [MagicMock(stdout="active\n"), MagicMock(stdout="enabled\n")]
+        status = install_steps.service_status("zabbix-agent2")
+        self.assertEqual(status, {"active": "active", "enabled": "enabled"})
+        mock_run.assert_any_call(["systemctl", "is-active", "zabbix-agent2"], capture_output=True, text=True)
+        mock_run.assert_any_call(["systemctl", "is-enabled", "zabbix-agent2"], capture_output=True, text=True)
+
+    @patch("install_steps.subprocess.run")
+    def test_reports_inactive_and_disabled(self, mock_run):
+        mock_run.side_effect = [MagicMock(stdout="inactive\n"), MagicMock(stdout="disabled\n")]
+        status = install_steps.service_status("zabbix-agent2")
+        self.assertEqual(status, {"active": "inactive", "enabled": "disabled"})
 
 
 if __name__ == "__main__":

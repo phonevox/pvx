@@ -5,18 +5,22 @@ class MetadataTooLongError(ValueError):
     pass
 
 
-def build(provider, os_label, asterisk_version=None, test=False, extra=None):
+def validate(value):
+    if len(value) > MAX_LENGTH:
+        raise MetadataTooLongError(
+            f"HostMetadata excede {MAX_LENGTH} caracteres ({len(value)}): {value}"
+        )
+
+
+def build(provider, os_label, asterisk_version=None, test=False):
+    # só monta a parte auto-detectada -- o usuário edita o resultado inteiro depois
+    # (ver main.py: ask_text com default=build(...), geralmente só aperta Enter).
     parts = [f"l:{provider}", "os:linux", f"osn:{os_label}"]
     if asterisk_version:
         parts.append(f"av:{asterisk_version}")
     if test:
         parts.append("test:true")
-    if extra:
-        parts.append(extra)
 
     result = " ".join(parts)
-    if len(result) > MAX_LENGTH:
-        raise MetadataTooLongError(
-            f"HostMetadata excede {MAX_LENGTH} caracteres ({len(result)}): {result}"
-        )
+    validate(result)
     return result

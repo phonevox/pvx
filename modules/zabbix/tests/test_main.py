@@ -98,6 +98,31 @@ class InstallHappyPathTest(MainTestCase):
         result, _ = self._invoke(["install", "--yes"], is_tty=False)
         self.assertNotEqual(result.exit_code, 0)
 
+    def test_metadata_flag_overrides_auto_value_in_headless_mode(self):
+        result, mocks = self._invoke(BASE_INSTALL_ARGS + ["--metadata", "l:custom literal:value"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mocks["set_params"].call_args.args[1]["HostMetadata"], "l:custom literal:value")
+
+
+class InteractiveMetadataPromptTest(MainTestCase):
+    def test_metadata_prompt_defaults_to_auto_value_and_user_edit_wins(self):
+        # não deve mais existir um prompt separado de "metadata extra" -- o usuário edita
+        # o valor auto-calculado inteiro ali mesmo (geralmente só aperta Enter).
+        with patch("main.ask_select", side_effect=["ovh", "Agent 2 (recomendado)"]), \
+             patch("main.ask_text", side_effect=[
+                 "vps-x", "zabbix.local", "zabbix.local", "l:ovh os:linux osn:rocky-8.10 custom:value",
+             ]) as mock_text, \
+             patch("main.ask_confirm", side_effect=[False, True]):
+            result, mocks = self._invoke(["install"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+
+        metadata_call = mock_text.call_args_list[-1]
+        self.assertEqual(metadata_call.kwargs["default"], "l:ovh os:linux osn:rocky-8.10")
+        self.assertEqual(
+            mocks["set_params"].call_args.args[1]["HostMetadata"],
+            "l:ovh os:linux osn:rocky-8.10 custom:value",
+        )
+
 
 class InstallFailureTest(MainTestCase):
     def test_raises_when_repo_install_fails(self):
@@ -228,6 +253,60 @@ class ScriptListCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("cpu.custom", result.output)
         self.assertIn("/opt/scripts/cpu.sh", result.output)
+
+
+class CheckCommandTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self._state_dir = Path(self._tmp.name)
+        self._state_patch = patch("main._state_dir", return_value=self._state_dir)
+        self._state_patch.start()
+
+    def tearDown(self):
+        self._state_patch.stop()
+        self._tmp.cleanup()
+
+    def test_reports_not_configured_when_never_installed(self):
+        result = CliRunner().invoke(cli.cli_group(), ["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("não configurado", result.output.lower())
+
+    def _invoke_configured(self, params=None, status=None, entries=None):
+        (self._state_dir / "agent_variant.txt").write_text("agent2")
+        params = params if params is not None else {"Server": "zabbix.local"}
+        status = status if status is not None else {"active": "active", "enabled": "enabled"}
+        entries = entries if entries is not None else {}
+        with patch("main.config.read_params", return_value=params), \
+             patch("main.install_steps.service_status", return_value=status), \
+             patch("main.scripts.list_all", return_value=entries):
+            return CliRunner().invoke(cli.cli_group(), ["check"])
+
+    def test_shows_config_summary(self):
+        result = self._invoke_configured(params={
+            "Server": "zabbix.falevox.com.br", "ServerActive": "zabbix.falevox.com.br",
+            "Hostname": "vps-x", "HostMetadata": "l:ovh os:linux osn:rocky-8.10",
+        })
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("zabbix.falevox.com.br", result.output)
+        self.assertIn("vps-x", result.output)
+        self.assertIn("l:ovh os:linux osn:rocky-8.10", result.output)
+
+    def test_reports_agent_active_and_enabled(self):
+        result = self._invoke_configured(status={"active": "active", "enabled": "enabled"})
+        self.assertIn("ativo", result.output.lower())
+
+    def test_reports_agent_inactive_and_disabled(self):
+        result = self._invoke_configured(status={"active": "inactive", "enabled": "disabled"})
+        self.assertIn("inativo", result.output.lower())
+
+    def test_shows_no_scripts_message_when_empty(self):
+        result = self._invoke_configured(entries={})
+        self.assertIn("nenhum", result.output.lower())
+
+    def test_lists_custom_scripts(self):
+        result = self._invoke_configured(entries={"cpu.custom": {"command": "/opt/cpu.sh", "needs_root": False}})
+        self.assertIn("cpu.custom", result.output)
+        self.assertIn("/opt/cpu.sh", result.output)
 
 
 if __name__ == "__main__":
