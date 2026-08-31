@@ -255,6 +255,16 @@ class ScriptRemoveCommandTest(unittest.TestCase):
         result = self._invoke(["script", "remove", "does-not-exist"])
         self.assertNotEqual(result.exit_code, 0)
 
+    @patch("main.widgets.pause")
+    @patch("main._is_interactive", return_value=True)
+    def test_pauses_when_no_scripts_registered_and_interactive(self, mock_interactive, mock_pause):
+        # mesmo bug do check_cmd: "return" logo depois do echo informativo nunca
+        # chegava no pause() do fim da função.
+        with patch("main.sudoers.write_rules"), patch("main._write_confd_file"):
+            result = CliRunner().invoke(cli.cli_group(), ["script", "remove"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
 
 class ScriptListCommandTest(unittest.TestCase):
     def setUp(self):
@@ -296,6 +306,22 @@ class CheckCommandTest(unittest.TestCase):
         result = CliRunner().invoke(cli.cli_group(), ["check"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
+
+    @patch("main.widgets.pause")
+    @patch("main._is_interactive", return_value=True)
+    def test_pauses_when_not_configured_and_interactive(self, mock_interactive, mock_pause):
+        # achado ao vivo: o "return" antecipado desse caminho nunca chegava no pause() do
+        # fim da função -- tela do menu voltava vazia antes do usuário conseguir ler.
+        result = CliRunner().invoke(cli.cli_group(), ["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main._is_interactive", return_value=False)
+    def test_does_not_pause_when_not_configured_and_not_interactive(self, mock_interactive, mock_pause):
+        result = CliRunner().invoke(cli.cli_group(), ["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_not_called()
 
     def _invoke_configured(self, params=None, status=None, entries=None):
         (self._state_dir / "agent_variant.txt").write_text("agent2")

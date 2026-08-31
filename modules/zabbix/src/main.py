@@ -54,7 +54,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.2"
+    version = "0.1.3"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -205,6 +205,8 @@ class ZabbixModule(PvxModule):
             variant_path = _state_dir() / _AGENT_VARIANT_FILENAME
             if not variant_path.exists():
                 widgets.state("Zabbix NÃO configurado -- rode `pvx zabbix install` primeiro.", ok=False)
+                if _is_interactive():
+                    widgets.pause()
                 return
 
             agent_variant = variant_path.read_text().strip()
@@ -291,6 +293,8 @@ class ZabbixModule(PvxModule):
                 existing = scripts.list_all(state_path)
                 if not existing:
                     click.echo("nenhum script cadastrado.")
+                    if interactive:
+                        widgets.pause()
                     return
                 key = ask_select("Remover qual script?", list(existing))
                 if key is None:
