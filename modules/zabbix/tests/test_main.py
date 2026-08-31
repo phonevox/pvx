@@ -150,6 +150,45 @@ class InteractiveMetadataPromptTest(MainTestCase):
         )
 
 
+class AutoDetectFeedbackTest(MainTestCase):
+    # achado ao vivo: detect_provider() bate na rede (ipinfo.io) e demora --
+    # sem spinner, o menu parecia travado até as opções aparecerem.
+    @patch("main.widgets.success")
+    @patch("main.widgets.spinner")
+    def test_provider_detection_uses_a_spinner_and_reports_the_result(self, mock_spinner, mock_success):
+        with patch("main.ask_select", side_effect=["local", "Agent 2 (recomendado)"]), \
+             patch("main.ask_text", side_effect=["detected-host", "zabbix.local", "zabbix.local", ""]), \
+             patch("main.ask_confirm", side_effect=[False, True]):
+            result, _ = self._invoke(["install"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_spinner.assert_any_call("Detectando provider...")
+        self.assertTrue(any("local" in str(c) for c in mock_success.call_args_list))
+
+    @patch("main.widgets.success")
+    @patch("main.widgets.spinner")
+    def test_hostname_detection_uses_a_spinner_and_reports_the_result(self, mock_spinner, mock_success):
+        with patch("main.ask_select", side_effect=["local", "Agent 2 (recomendado)"]), \
+             patch("main.ask_text", side_effect=["detected-host", "zabbix.local", "zabbix.local", ""]), \
+             patch("main.ask_confirm", side_effect=[False, True]):
+            result, _ = self._invoke(["install"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_spinner.assert_any_call("Detectando hostname...")
+        self.assertTrue(any("detected-host" in str(c) for c in mock_success.call_args_list))
+
+    @patch("main.widgets.success")
+    @patch("main.widgets.spinner")
+    def test_no_detection_feedback_when_provider_given_via_flag(self, mock_spinner, mock_success):
+        with patch("main.ask_select", return_value="Agent 2 (recomendado)"), \
+             patch("main.ask_text", side_effect=["zabbix.local", "zabbix.local", ""]), \
+             patch("main.ask_confirm", side_effect=[False, True]):
+            result, _ = self._invoke(
+                BASE_INSTALL_ARGS + ["--provider", "aws", "--hostname", "x"], is_tty=True
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertFalse(any(c == (("Detectando provider...",), {}) for c in mock_spinner.call_args_list))
+        self.assertFalse(any(c == (("Detectando hostname...",), {}) for c in mock_spinner.call_args_list))
+
+
 class InstallFailureTest(MainTestCase):
     def test_raises_when_repo_install_fails(self):
         result, _ = self._invoke(BASE_INSTALL_ARGS, repo_ok=False)

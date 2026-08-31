@@ -54,7 +54,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.3"
+    version = "0.1.4"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -85,8 +85,10 @@ class ZabbixModule(PvxModule):
             os_label = system_info.os_label(os_release)
 
             if provider is None:
-                detected_provider = system_info.detect_provider()
+                with widgets.spinner("Detectando provider..."):
+                    detected_provider = system_info.detect_provider()
                 if interactive:
+                    widgets.success(f"provider detectado: {detected_provider}")
                     provider = ask_select("Provider (location):", list(defaults.PROVIDERS), default=detected_provider)
                     if provider is None:
                         return
@@ -106,8 +108,10 @@ class ZabbixModule(PvxModule):
                     agent_version = "agent2"
 
             if hostname is None:
-                detected_hostname = system_info.detect_hostname(provider)
+                with widgets.spinner("Detectando hostname..."):
+                    detected_hostname = system_info.detect_hostname(provider)
                 if interactive:
+                    widgets.success(f"hostname detectado: {detected_hostname}")
                     hostname = ask_text("Hostname (identificação no Zabbix):", default=detected_hostname)
                     if hostname is None:
                         return
