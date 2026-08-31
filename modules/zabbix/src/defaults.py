@@ -11,7 +11,9 @@ AGENT_CONFIG_PATHS = {
     "agent": "/etc/zabbix/zabbix_agentd.conf",
 }
 AGENT_CONFD_DIRS = {
-    "agent2": "/etc/zabbix/zabbix_agent2.conf.d",
+    # agent2 usa "zabbix_agent2.d" (sem "conf." no meio) -- é o nome real que o
+    # pacote RPM já publica no Include= default do próprio zabbix_agent2.conf.
+    "agent2": "/etc/zabbix/zabbix_agent2.d",
     "agent": "/etc/zabbix/zabbix_agentd.conf.d",
 }
 

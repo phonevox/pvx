@@ -1,3 +1,6 @@
+import os
+
+
 def read_params(path):
     try:
         lines = open(path).read().splitlines()
@@ -24,6 +27,11 @@ def ensure_include(path, confd_dir):
         content = open(path).read()
     except OSError:
         raise FileNotFoundError(f"arquivo de configuração não encontrado: {path}")
+
+    # zabbix_agent2 recusa subir se o diretório do glob não existir de verdade
+    # ("cannot include ...: no such file or directory") -- criar aqui é o que garante
+    # isso pra qualquer distro, mesmo quando o pacote não pré-cria o dir.
+    os.makedirs(confd_dir, exist_ok=True)
 
     if directive in content:
         return

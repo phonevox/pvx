@@ -54,7 +54,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.4"
+    version = "0.1.5"
 
     def cli_group(self):
         @click.group(name="zabbix")
