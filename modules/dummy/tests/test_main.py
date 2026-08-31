@@ -23,5 +23,21 @@ class DummyModuleTest(unittest.TestCase):
         mock_get_logger.assert_not_called()
 
 
+class HelloPausesWhenInteractiveTest(unittest.TestCase):
+    # achado ao vivo: hello nunca pausava -- no menu, o "hello from dummy"
+    # some antes do usuário conseguir ler.
+    @patch("src.main.widgets.pause")
+    @patch("src.main._is_interactive", return_value=True)
+    def test_pauses_when_interactive(self, mock_interactive, mock_pause):
+        CliRunner().invoke(dummy_module.cli_group(), ["hello"])
+        mock_pause.assert_called_once_with()
+
+    @patch("src.main.widgets.pause")
+    @patch("src.main._is_interactive", return_value=False)
+    def test_does_not_pause_when_not_interactive(self, mock_interactive, mock_pause):
+        CliRunner().invoke(dummy_module.cli_group(), ["hello"])
+        mock_pause.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
