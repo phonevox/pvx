@@ -54,7 +54,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -154,7 +154,9 @@ class ZabbixModule(PvxModule):
             click.echo(f"  Hostname: {hostname}")
             click.echo(f"  HostMetadata: {host_metadata}")
             if not yes and not ask_confirm("Prosseguir com a instalação?", default=False):
-                click.echo("Operação cancelada.")
+                widgets.message("nada foi alterado.")
+                if interactive:
+                    widgets.pause()
                 return
 
             with widgets.spinner("Adicionando repositório do Zabbix..."):

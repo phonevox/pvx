@@ -104,6 +104,32 @@ class InstallHappyPathTest(MainTestCase):
         self.assertEqual(mocks["set_params"].call_args.args[1]["HostMetadata"], "l:custom literal:value")
 
 
+class InstallDeclineConfirmationTest(MainTestCase):
+    # achado ao vivo: decliner o "Prosseguir?" só ecoava "Operação cancelada." e voltava
+    # pro menu direto -- sem pause(), a tela limpa antes do usuário conseguir ler.
+    @patch("main.widgets.pause")
+    @patch("main.widgets.message")
+    @patch("main.ask_confirm", return_value=False)
+    @patch("main.ask_text", side_effect=["vps-x", "zabbix.local", "l:ovh os:linux osn:rocky-8.10"])
+    @patch("main.ask_select", side_effect=["ovh", "Agent 2 (recomendado)"])
+    def test_shows_message_and_pauses_when_interactive(
+        self, mock_select, mock_text, mock_confirm, mock_message, mock_pause
+    ):
+        result, mocks = self._invoke(["install", "--server", "zabbix.local"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_message.assert_called_once_with("nada foi alterado.")
+        mock_pause.assert_called_once_with()
+        mocks["repo"].assert_not_called()
+
+    @patch("main.widgets.pause")
+    @patch("main.widgets.message")
+    @patch("main.ask_confirm", return_value=False)
+    def test_does_not_pause_when_not_interactive(self, mock_confirm, mock_message, mock_pause):
+        result, mocks = self._invoke(["install", "--server", "zabbix.local"], is_tty=False)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_not_called()
+
+
 class InteractiveMetadataPromptTest(MainTestCase):
     def test_metadata_prompt_defaults_to_auto_value_and_user_edit_wins(self):
         # não deve mais existir um prompt separado de "metadata extra" -- o usuário edita
