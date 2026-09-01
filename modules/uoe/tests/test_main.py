@@ -6,7 +6,7 @@ from click.testing import CliRunner
 
 import pbackup_ops
 import uoe_client
-from main import _read_password_file, cli
+from main import _read_password_file, _resolve_script, cli
 
 # conteúdo nunca é checado de verdade (uoe_client.login/register são mockados em
 # todo teste) -- só precisa ser um arquivo real e legível pro _read_password_file.
@@ -32,6 +32,7 @@ BASE_SETUP_ARGS = [
     "--password-file", PASSWORD_FILE,
     "--admin-password-file", PASSWORD_FILE,
     "--script", "issabel",
+    "--issabel-config-only",
     "--cron-minute", "25",
     "--cron-hour", "2",
 ]
@@ -43,6 +44,57 @@ class ReadPasswordFileTest(unittest.TestCase):
 
     def test_none_when_no_path_given(self):
         self.assertIsNone(_read_password_file(None))
+
+
+class ResolveScriptTest(unittest.TestCase):
+    # pedido ao vivo: rótulos "IssabelPBX"/"MagnusBilling"/"Definir script..."
+    # (não mais "Issabel (config + gravações)"/"Comando customizado"), e
+    # escolher IssabelPBX abre um submenu -- só config (padrão) ou +gravações.
+    def test_headless_with_issabel_flag_defaults_to_config_only(self):
+        script, custom, recordings = _resolve_script("issabel", None, None, interactive=False)
+        self.assertEqual(script, "issabel")
+        self.assertFalse(recordings)
+
+    def test_headless_respects_explicit_recordings_flag(self):
+        script, custom, recordings = _resolve_script("issabel", None, True, interactive=False)
+        self.assertTrue(recordings)
+
+    def test_magnus_never_asks_the_issabel_submenu(self):
+        with patch("main.ask_select") as mock_select:
+            script, custom, recordings = _resolve_script("magnus", None, None, interactive=True)
+        self.assertEqual(script, "magnus")
+        self.assertIsNone(recordings)
+        mock_select.assert_not_called()
+
+    def test_interactive_offers_the_new_top_level_labels(self):
+        with patch("main.ask_select", return_value=None) as mock_select:
+            _resolve_script(None, None, None, interactive=True)
+        choices = mock_select.call_args.args[1]
+        self.assertEqual(choices, ["IssabelPBX", "MagnusBilling", "Definir script..."])
+
+    def test_choosing_issabel_opens_the_config_vs_recordings_submenu(self):
+        with patch(
+            "main.ask_select",
+            side_effect=["IssabelPBX", "Somente configurações (padrão)"],
+        ) as mock_select:
+            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        self.assertEqual(script, "issabel")
+        self.assertFalse(recordings)
+        submenu_choices = mock_select.call_args_list[1].args[1]
+        self.assertEqual(submenu_choices, ["Somente configurações (padrão)", "Configurações e gravações"])
+
+    def test_choosing_recordings_in_the_submenu(self):
+        with patch(
+            "main.ask_select",
+            side_effect=["IssabelPBX", "Configurações e gravações"],
+        ):
+            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        self.assertTrue(recordings)
+
+    def test_escaping_the_issabel_submenu_aborts_cleanly(self):
+        with patch("main.ask_select", side_effect=["IssabelPBX", None]):
+            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        self.assertIsNone(script)
 
 
 class SetupCommandTest(unittest.TestCase):

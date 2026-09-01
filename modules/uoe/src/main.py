@@ -16,9 +16,13 @@ import uoe_client
 _STANDARD_ROOT_PATH_LABEL = "Convenção padrão (clientes/idcliente-idcontrato-empresa)"
 _MANUAL_ROOT_PATH_LABEL = "Definir manualmente..."
 _SCRIPT_LABELS = {
-    "Issabel (config + gravações)": "issabel",
+    "IssabelPBX": "issabel",
     "MagnusBilling": "magnus",
-    "Comando customizado": "custom",
+    "Definir script...": "custom",
+}
+_ISSABEL_MODE_LABELS = {
+    "Somente configurações (padrão)": False,
+    "Configurações e gravações": True,
 }
 
 
@@ -121,7 +125,7 @@ def _resolve_root_path(root_path, id_cliente, id_contrato, empresa, interactive)
     return f"clientes/{id_cliente}-{id_contrato}-{empresa}"
 
 
-def _resolve_script(script, custom_command, interactive):
+def _resolve_script(script, custom_command, issabel_recordings, interactive):
     if script is None:
         if not interactive:
             raise click.ClickException(
@@ -129,20 +133,32 @@ def _resolve_script(script, custom_command, interactive):
             )
         label = ask_select("Script pra rodar na cron:", list(_SCRIPT_LABELS))
         if label is None:
-            return None, None
+            return None, None, None
         script = _SCRIPT_LABELS[label]
 
     if script not in backup_scripts.SCRIPTS:
         raise click.ClickException(f"script inválido: {script} (opções: {', '.join(backup_scripts.SCRIPTS)}).")
+
+    if script == "issabel" and issabel_recordings is None:
+        if interactive:
+            mode_label = ask_select(
+                "IssabelPBX -- o que enviar:", list(_ISSABEL_MODE_LABELS),
+                default="Somente configurações (padrão)",
+            )
+            if mode_label is None:
+                return None, None, None
+            issabel_recordings = _ISSABEL_MODE_LABELS[mode_label]
+        else:
+            issabel_recordings = False
 
     if script == "custom" and custom_command is None:
         if not interactive:
             raise click.ClickException("--script custom exige --custom-command (com {TOKEN} literal).")
         custom_command = ask_text("Comando completo (use {TOKEN} onde o token deve entrar):")
         if custom_command is None:
-            return None, None
+            return None, None, None
 
-    return script, custom_command
+    return script, custom_command, issabel_recordings
 
 
 def _resolve_schedule(minute, hour, interactive):
@@ -228,7 +244,9 @@ def _run_setup(logger, opts, interactive):
             raise click.ClickException(f"falha no login de '{username}': {e}")
     widgets.success("token obtido.")
 
-    script, custom_command = _resolve_script(opts["script"], opts["custom_command"], interactive)
+    script, custom_command, issabel_recordings = _resolve_script(
+        opts["script"], opts["custom_command"], opts["issabel_recordings"], interactive,
+    )
     if script is None:
         return
 
@@ -238,6 +256,7 @@ def _run_setup(logger, opts, interactive):
 
     command = backup_scripts.build_command(
         script, token, pbackup_root=pbackup_root, custom_template=custom_command,
+        issabel_recordings=issabel_recordings,
     )
     cron_line = f"{minute} {hour} * * * {command}"
     crontab.write_crontab(crontab.upsert_managed_entry(crontab.read_crontab(), cron_line))
@@ -245,7 +264,7 @@ def _run_setup(logger, opts, interactive):
 
     state.save(_state_path(), {
         "username": username, "token": token, "root_path": root_path,
-        "script": script, "custom_command": custom_command,
+        "script": script, "custom_command": custom_command, "issabel_recordings": issabel_recordings,
         "pbackup_root": pbackup_root, "cron_minute": minute, "cron_hour": hour,
     })
     logger.info(f"uoe setup concluído -- username={username} script={script}")
@@ -273,6 +292,7 @@ def _run_relogin(logger, password_file, interactive):
     command = backup_scripts.build_command(
         saved["script"], token,
         pbackup_root=saved.get("pbackup_root"), custom_template=saved.get("custom_command"),
+        issabel_recordings=saved.get("issabel_recordings", False),
     )
     cron_line = f"{saved['cron_minute']} {saved['cron_hour']} * * * {command}"
     crontab.write_crontab(crontab.upsert_managed_entry(crontab.read_crontab(), cron_line))
@@ -333,7 +353,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class UOEModule(PvxModule):
     name = "uoe"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="uoe")
@@ -350,6 +370,10 @@ class UOEModule(PvxModule):
         @click.option("--admin-password-file", default=None, help="arquivo com a senha do root/superadmin do UOE.")
         @click.option("--skip-register", is_flag=True, help="pula o registro, só loga (cliente já existe).")
         @click.option("--script", type=click.Choice(backup_scripts.SCRIPTS), default=None)
+        @click.option(
+            "--issabel-recordings/--issabel-config-only", default=None,
+            help="só se --script issabel (default: config-only).",
+        )
         @click.option("--custom-command", default=None, help="comando completo com {TOKEN} literal.")
         @click.option("--cron-minute", default=None)
         @click.option("--cron-hour", default=None)
