@@ -23,6 +23,11 @@ def enable_and_start(service):
     return os_ops.run_cmd(["systemctl", "restart", service])
 
 
+def disable_and_stop(service):
+    os_ops.run_cmd(["systemctl", "stop", service])
+    os_ops.run_cmd(["systemctl", "disable", service])
+
+
 def detect_existing_agent(packages):
     # rastro de instalação prévia (pzabbix ou manual) -- checado antes de instalar
     # pra não colidir dois agentes na mesma porta nem sobrescrever sem avisar.

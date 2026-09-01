@@ -13,6 +13,12 @@ def create_user(username):
     return True
 
 
+def delete_user(username):
+    if not user_exists(username):
+        return
+    subprocess.run(["userdel", "-r", username], check=True)
+
+
 def add_to_admin_group(username, group="wheel"):
     subprocess.run(["usermod", "-aG", group, username], check=True)
 

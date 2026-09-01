@@ -59,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.11"
+    version = "0.2.1"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -205,9 +205,9 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="status")
+        @group.command(name="check")
         @click.option("--engine", default=None, type=ENGINE_CHOICE)
-        def status_cmd(engine):
+        def check_cmd(engine):
             result = status_module.get_status(engine=engine)
             click.echo(f"engine: {result['engine']}")
             click.echo(f"IP da sessão: {result['session_ip'] or 'não detectado'}")
@@ -216,19 +216,19 @@ class FirewallModule(PvxModule):
             if result["synced"]:
                 detail = f"sincronizado -- {result['rule_count']} regra(s) ativa(s)"
                 if result["session_ip"] and not result["failsafe_ok"]:
-                    detail += " -- atenção: IP da sessão atual sem failsafe confirmado, rode `sync` de novo"
+                    detail += " -- atenção: IP da sessão atual sem failsafe confirmado, rode `apply` de novo"
                 widgets.state(detail, ok=True)
             else:
-                widgets.state("não sincronizado -- rode `pvx firewall sync` pra aplicar as regras", ok=False)
+                widgets.state("não sincronizado -- rode `pvx firewall apply` pra aplicar as regras", ok=False)
 
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="sync")
+        @group.command(name="apply")
         @click.option("--engine", default=None, type=ENGINE_CHOICE)
         @click.option("--force", is_flag=True, help="prossegue mesmo sem detectar o IP da sessão atual")
         @click.option("--yes", is_flag=True)
-        def sync_cmd(engine, force, yes):
+        def apply_cmd(engine, force, yes):
             _require_root()
             logger = self.get_logger()
             if not yes and not ask_confirm(
@@ -243,7 +243,7 @@ class FirewallModule(PvxModule):
                 with widgets.spinner("Sincronizando firewall..."):
                     result = sync_module.run(str(_state_dir()), engine=engine, force=force)
             except Exception as e:
-                logger.error(f"sync falhou: {e}")
+                logger.error(f"apply falhou: {e}")
                 widgets.failed(str(e))
                 if _is_interactive():
                     widgets.pause()

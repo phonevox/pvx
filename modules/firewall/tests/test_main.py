@@ -34,7 +34,7 @@ class RootCheckTest(MainTestCase):
         with patch("main.status_module.get_status", return_value={
             "engine": "iptables", "rule_count": 0, "session_ip": None, "synced": False, "failsafe_ok": False,
         }):
-            result = self._invoke(["status"], is_root=False)
+            result = self._invoke(["check"], is_root=False)
         self.assertEqual(result.exit_code, 0)
 
 
@@ -119,7 +119,7 @@ class StatusCommandTest(MainTestCase):
             "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
             "synced": True, "failsafe_ok": True,
         }):
-            result = self._invoke(["status"])
+            result = self._invoke(["check"])
         self.assertIn("iptables", result.output)
         self.assertIn("sincronizado", result.output.lower())
         self.assertNotIn("não sincronizado", result.output.lower())
@@ -130,7 +130,7 @@ class StatusCommandTest(MainTestCase):
             "engine": "iptables", "rule_count": 0, "session_ip": "203.0.113.9",
             "synced": False, "failsafe_ok": False,
         }):
-            result = self._invoke(["status"])
+            result = self._invoke(["check"])
         self.assertIn("não sincronizado", result.output.lower())
         self.assertNotIn("falha", result.output.lower())
 
@@ -139,7 +139,7 @@ class StatusCommandTest(MainTestCase):
             "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
             "synced": True, "failsafe_ok": False,
         }):
-            result = self._invoke(["status"])
+            result = self._invoke(["check"])
         self.assertIn("sincronizado", result.output.lower())
         self.assertIn("atenção", result.output.lower())
 
@@ -147,26 +147,26 @@ class StatusCommandTest(MainTestCase):
 class SyncCommandTest(MainTestCase):
     def test_requires_confirmation_without_yes(self):
         with patch("main.ask_confirm", return_value=False):
-            result = self._invoke(["sync"])
+            result = self._invoke(["apply"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("cancelada", result.output.lower())
 
     @patch("main.sync_module.run", return_value={"engine": "iptables", "session_ip": "203.0.113.9"})
     def test_syncs_with_yes_flag(self, mock_run):
-        result = self._invoke(["sync", "--yes"])
+        result = self._invoke(["apply", "--yes"])
         self.assertEqual(result.exit_code, 0)
         mock_run.assert_called_once()
 
     @patch("main.sync_module.run", side_effect=RuntimeError("boom"))
     def test_reports_failure(self, mock_run):
-        result = self._invoke(["sync", "--yes"])
+        result = self._invoke(["apply", "--yes"])
         self.assertEqual(result.exit_code, 0)
         self.assertIn("boom", result.output)
 
     @patch("main.FirewallModule.get_logger")
     @patch("main.sync_module.run", return_value={"engine": "iptables", "session_ip": "203.0.113.9"})
     def test_logs_success(self, mock_run, mock_get_logger):
-        self._invoke(["sync", "--yes"])
+        self._invoke(["apply", "--yes"])
         logger = mock_get_logger.return_value
         logger.info.assert_called_once()
         self.assertIn("iptables", logger.info.call_args.args[0])
@@ -174,7 +174,7 @@ class SyncCommandTest(MainTestCase):
     @patch("main.FirewallModule.get_logger")
     @patch("main.sync_module.run", side_effect=RuntimeError("boom"))
     def test_logs_failure(self, mock_run, mock_get_logger):
-        self._invoke(["sync", "--yes"])
+        self._invoke(["apply", "--yes"])
         mock_get_logger.return_value.error.assert_called_once()
 
 
@@ -258,7 +258,7 @@ class PauseAfterMutationTest(MainTestCase):
     def test_sync_pauses_on_success_when_interactive(self, mock_pause):
         with patch("main._is_interactive", return_value=True), \
              patch("main.sync_module.run", return_value={"engine": "iptables", "session_ip": "203.0.113.9"}):
-            result = self._invoke(["sync", "--yes"])
+            result = self._invoke(["apply", "--yes"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 
@@ -266,14 +266,14 @@ class PauseAfterMutationTest(MainTestCase):
     def test_sync_pauses_on_failure_when_interactive(self, mock_pause):
         with patch("main._is_interactive", return_value=True), \
              patch("main.sync_module.run", side_effect=RuntimeError("boom")):
-            result = self._invoke(["sync", "--yes"])
+            result = self._invoke(["apply", "--yes"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 
     @patch("main.widgets.pause")
     def test_sync_pauses_when_declining_confirmation(self, mock_pause):
         with patch("main._is_interactive", return_value=True), patch("main.ask_confirm", return_value=False):
-            result = self._invoke(["sync"])
+            result = self._invoke(["apply"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 

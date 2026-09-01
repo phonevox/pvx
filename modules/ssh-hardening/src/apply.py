@@ -4,7 +4,7 @@ from pathlib import Path
 
 import sudoers
 import user_setup
-from backup import backup_config
+from backup import backup_config, restore_config
 from sshd_config import set_directive
 from sshd_validate import apply_with_rollback
 
@@ -45,3 +45,30 @@ def apply(plan, config_path, sudoers_dir, state_dir):
     record_path.chmod(0o600)
 
     return {"applied": True, "config_valid": config_valid, "record_path": str(record_path)}
+
+
+def find_latest_record(state_dir):
+    records = sorted(Path(state_dir).glob("apply-*.json"))
+    if not records:
+        return None
+    return json.loads(records[-1].read_text())
+
+
+def revert(record, config_path, sudoers_dir):
+    # só desfaz o que o próprio pvx aplicou -- nunca a senha do root (nenhum hash
+    # anterior foi guardado pra restaurar com segurança).
+    plan = record["plan"]
+    reverted = []
+
+    backup_path = record.get("backup_path")
+    if backup_path and Path(backup_path).exists():
+        restore_config(config_path, backup_path)
+        reverted.append("sshd_config restaurado do backup")
+
+    if plan.get("create_user"):
+        username = plan["username"]
+        user_setup.delete_user(username)
+        sudoers.remove_rule(username, sudoers_dir=sudoers_dir)
+        reverted.append(f"usuário '{username}' e sua regra de sudoers removidos")
+
+    return {"reverted": reverted, "root_password_not_reverted": bool(plan.get("lock_root"))}

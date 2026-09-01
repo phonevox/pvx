@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from user_setup import add_to_admin_group, create_user, set_password, setup_authorized_key, user_exists
+from user_setup import add_to_admin_group, create_user, delete_user, set_password, setup_authorized_key, user_exists
 
 
 class UserExistsTest(unittest.TestCase):
@@ -28,6 +28,20 @@ class CreateUserTest(unittest.TestCase):
         result = create_user("phonevox")
         self.assertTrue(result)
         mock_run.assert_called_once_with(["useradd", "-m", "-s", "/bin/bash", "phonevox"], check=True)
+
+
+class DeleteUserTest(unittest.TestCase):
+    @patch("user_setup.user_exists", return_value=True)
+    @patch("user_setup.subprocess.run")
+    def test_deletes_the_user_and_home_dir(self, mock_run, mock_exists):
+        delete_user("phonevox")
+        mock_run.assert_called_once_with(["userdel", "-r", "phonevox"], check=True)
+
+    @patch("user_setup.user_exists", return_value=False)
+    @patch("user_setup.subprocess.run")
+    def test_skips_when_user_does_not_exist(self, mock_run, mock_exists):
+        delete_user("phonevox")
+        mock_run.assert_not_called()
 
 
 class AddToAdminGroupTest(unittest.TestCase):

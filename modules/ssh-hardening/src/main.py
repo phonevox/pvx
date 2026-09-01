@@ -9,6 +9,7 @@ from pvx.interactive.inputs import ask_confirm, ask_select, ask_text
 from pvx.modules.base import PvxModule
 
 import apply as apply_module
+import user_setup
 from plan import DEFAULT_PORT, DEFAULT_PUBLIC_KEY, DEFAULT_ROOT_PASSWORD, DEFAULT_USERNAME, build_plan
 
 CONFIG_PATH = "/etc/ssh/sshd_config"
@@ -27,14 +28,14 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.1.5"
+    version = "0.2.0"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
         def group():
             pass
 
-        @group.command(name="apply")
+        @group.command(name="setup")
         @click.option("--quick", is_flag=True, help="usa os padrões da Phonevox, não pergunta nada")
         @click.option("--yes", is_flag=True, help="pula a confirmação final")
         @click.option("--lock-root/--no-lock-root", default=None)
@@ -46,7 +47,7 @@ class SSHHardeningModule(PvxModule):
         @click.option("--user-password", default=None)
         @click.option("--change-port/--no-change-port", default=None)
         @click.option("--port", default=None)
-        def apply_cmd(
+        def setup_cmd(
             quick, yes, lock_root, root_password, create_user, username, public_key,
             allow_password, user_password, change_port, port,
         ):
@@ -172,6 +173,77 @@ class SSHHardeningModule(PvxModule):
                 widgets.pause()
             else:
                 click.echo(outcome)
+
+        @group.command(name="check")
+        def check_cmd():
+            is_tty = _is_interactive()
+            state_dir = str(config.modules_dir() / "ssh-hardening" / "state")
+            record = apply_module.find_latest_record(state_dir)
+
+            if record is None:
+                widgets.state("ssh-hardening NÃO configurado -- rode `pvx ssh-hardening setup` primeiro.", ok=False)
+                if is_tty:
+                    widgets.pause()
+                return
+
+            plan = record["plan"]
+            widgets.state("ssh-hardening configurado:", ok=True)
+            if plan.get("lock_root"):
+                click.echo("  root: login via SSH bloqueado")
+            if plan.get("create_user"):
+                username = plan["username"]
+                exists = user_setup.user_exists(username)
+                click.echo(f"  usuário dedicado: {username} ({'existe' if exists else 'NÃO existe mais'})")
+            if plan.get("change_port"):
+                click.echo(f"  porta SSH: {plan['port']}")
+            click.echo(f"  última aplicação válida: {'sim' if record.get('config_valid') else 'não'}")
+
+            if is_tty:
+                widgets.pause()
+
+        @group.command(name="revert")
+        @click.option("--yes", is_flag=True)
+        def revert_cmd(yes):
+            if os.geteuid() != 0:
+                raise click.ClickException("ssh-hardening precisa rodar como root (sudo).")
+
+            logger = self.get_logger()
+            is_tty = _is_interactive()
+            state_dir = str(config.modules_dir() / "ssh-hardening" / "state")
+            record = apply_module.find_latest_record(state_dir)
+
+            if record is None:
+                click.echo("nada aplicado pelo pvx -- nada a reverter.")
+                if is_tty:
+                    widgets.pause()
+                return
+
+            plan = record["plan"]
+            click.echo("Isso vai desfazer só o que o pvx ssh-hardening aplicou:")
+            if record.get("backup_path"):
+                click.echo("  - restaura o sshd_config de antes da aplicação")
+            if plan.get("create_user"):
+                click.echo(f"  - remove o usuário '{plan['username']}' e sua regra de sudoers")
+            if plan.get("lock_root"):
+                click.echo("  aviso: a senha do root NÃO será revertida (não temos o hash anterior).")
+
+            if not yes and not ask_confirm("Confirma a reversão?", default=False):
+                widgets.message("nada foi alterado.")
+                if is_tty:
+                    widgets.pause()
+                return
+
+            result = apply_module.revert(record, CONFIG_PATH, SUDOERS_DIR)
+            if result["reverted"]:
+                for item in result["reverted"]:
+                    widgets.success(item)
+                logger.info(f"ssh-hardening revertido: {'; '.join(result['reverted'])}")
+                click.echo("reinicie o sshd (ou a máquina) pra as mudanças revertidas entrarem em vigor.")
+            else:
+                click.echo("nada encontrado pra reverter (backup ausente e nenhum usuário criado).")
+
+            if is_tty:
+                widgets.pause()
 
         return group
 

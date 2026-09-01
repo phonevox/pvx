@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from sudoers import build_rule, install_rule, validate_rule_syntax
+from sudoers import build_rule, install_rule, remove_rule, validate_rule_syntax
 
 
 class BuildRuleTest(unittest.TestCase):
@@ -53,6 +53,25 @@ class InstallRuleTest(unittest.TestCase):
 
         self.assertTrue(result)
         mock_chown.assert_not_called()
+
+
+class RemoveRuleTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_removes_an_existing_rule_file(self):
+        rule_path = Path(self._tmp.name) / "phonevox"
+        rule_path.write_text("phonevox ALL=(ALL) NOPASSWD: ALL\n")
+
+        remove_rule("phonevox", sudoers_dir=self._tmp.name)
+
+        self.assertFalse(rule_path.exists())
+
+    def test_is_a_no_op_when_the_rule_never_existed(self):
+        remove_rule("phonevox", sudoers_dir=self._tmp.name)
 
 
 if __name__ == "__main__":

@@ -42,6 +42,14 @@ class EnableAndStartTest(unittest.TestCase):
         self.assertFalse(install_steps.enable_and_start("zabbix-agent2"))
 
 
+class DisableAndStopTest(unittest.TestCase):
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    def test_stops_then_disables_the_service(self, mock_run_cmd):
+        install_steps.disable_and_stop("zabbix-agent2")
+        mock_run_cmd.assert_any_call(["systemctl", "stop", "zabbix-agent2"])
+        mock_run_cmd.assert_any_call(["systemctl", "disable", "zabbix-agent2"])
+
+
 class DetectExistingAgentTest(unittest.TestCase):
     # achado ao vivo: máquinas com o pzabbix (script bash antigo) instalado precisam
     # ser detectadas antes do install sobrescrever/colidir com o pacote já presente.

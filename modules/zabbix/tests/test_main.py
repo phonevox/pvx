@@ -5,10 +5,11 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+import defaults
 from main import cli
 
 BASE_INSTALL_ARGS = [
-    "install", "--server", "zabbix.local", "--yes",
+    "setup", "--server", "zabbix.local", "--yes",
 ]
 
 
@@ -101,7 +102,7 @@ class InstallHappyPathTest(MainTestCase):
         self.assertEqual((self._state_dir / "agent_variant.txt").read_text().strip(), "agent")
 
     def test_requires_server_without_tty_and_without_flag(self):
-        result, _ = self._invoke(["install", "--yes"], is_tty=False)
+        result, _ = self._invoke(["setup", "--yes"], is_tty=False)
         self.assertNotEqual(result.exit_code, 0)
 
     def test_metadata_flag_overrides_auto_value_in_headless_mode(self):
@@ -121,7 +122,7 @@ class InstallDeclineConfirmationTest(MainTestCase):
     def test_shows_message_and_pauses_when_interactive(
         self, mock_select, mock_text, mock_confirm, mock_message, mock_pause
     ):
-        result, mocks = self._invoke(["install", "--server", "zabbix.local"], is_tty=True)
+        result, mocks = self._invoke(["setup", "--server", "zabbix.local"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_message.assert_called_once_with("nada foi alterado.")
         mock_pause.assert_called_once_with()
@@ -131,7 +132,7 @@ class InstallDeclineConfirmationTest(MainTestCase):
     @patch("main.widgets.message")
     @patch("main.ask_confirm", return_value=False)
     def test_does_not_pause_when_not_interactive(self, mock_confirm, mock_message, mock_pause):
-        result, mocks = self._invoke(["install", "--server", "zabbix.local"], is_tty=False)
+        result, mocks = self._invoke(["setup", "--server", "zabbix.local"], is_tty=False)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_not_called()
 
@@ -145,7 +146,7 @@ class InteractiveMetadataPromptTest(MainTestCase):
                  "vps-x", "zabbix.local", "zabbix.local", "l:ovh os:linux osn:rocky-8.10 custom:value",
              ]) as mock_text, \
              patch("main.ask_confirm", side_effect=[False, True]):
-            result, mocks = self._invoke(["install"], is_tty=True)
+            result, mocks = self._invoke(["setup"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
 
         metadata_call = mock_text.call_args_list[-1]
@@ -165,7 +166,7 @@ class AutoDetectFeedbackTest(MainTestCase):
         with patch("main.ask_select", side_effect=["local", "Agent 2 (recomendado)"]), \
              patch("main.ask_text", side_effect=["detected-host", "zabbix.local", "zabbix.local", ""]), \
              patch("main.ask_confirm", side_effect=[False, True]):
-            result, _ = self._invoke(["install"], is_tty=True)
+            result, _ = self._invoke(["setup"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_spinner.assert_any_call("Detectando provider...")
         self.assertTrue(any("local" in str(c) for c in mock_success.call_args_list))
@@ -176,7 +177,7 @@ class AutoDetectFeedbackTest(MainTestCase):
         with patch("main.ask_select", side_effect=["local", "Agent 2 (recomendado)"]), \
              patch("main.ask_text", side_effect=["detected-host", "zabbix.local", "zabbix.local", ""]), \
              patch("main.ask_confirm", side_effect=[False, True]):
-            result, _ = self._invoke(["install"], is_tty=True)
+            result, _ = self._invoke(["setup"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_spinner.assert_any_call("Detectando hostname...")
         self.assertTrue(any("detected-host" in str(c) for c in mock_success.call_args_list))
@@ -201,7 +202,7 @@ class LegacyInstallDetectionTest(MainTestCase):
     def test_warns_and_asks_before_overwriting_an_existing_agent(self):
         with patch("main.ask_confirm", return_value=False):
             result, mocks = self._invoke(
-                ["install", "--server", "zabbix.local"], is_tty=True, existing_agent="zabbix-agent",
+                ["setup", "--server", "zabbix.local"], is_tty=True, existing_agent="zabbix-agent",
             )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("zabbix-agent", result.output)
@@ -212,7 +213,7 @@ class LegacyInstallDetectionTest(MainTestCase):
              patch("main.ask_select", return_value="Agent 2 (recomendado)"), \
              patch("main.ask_text", side_effect=["detected-host", "zabbix.local", "zabbix.local", ""]):
             result, mocks = self._invoke(
-                ["install", "--server", "zabbix.local", "--provider", "local"],
+                ["setup", "--server", "zabbix.local", "--provider", "local"],
                 is_tty=True, existing_agent="zabbix-agent",
             )
         self.assertEqual(result.exit_code, 0, result.output)
@@ -220,7 +221,7 @@ class LegacyInstallDetectionTest(MainTestCase):
 
     def test_headless_requires_yes_flag_when_legacy_agent_is_found(self):
         result, mocks = self._invoke(
-            ["install", "--server", "zabbix.local"], is_tty=False, existing_agent="zabbix-agent",
+            ["setup", "--server", "zabbix.local"], is_tty=False, existing_agent="zabbix-agent",
         )
         self.assertNotEqual(result.exit_code, 0)
         mocks["repo"].assert_not_called()
@@ -261,7 +262,7 @@ class ManualProviderEntryTest(MainTestCase):
     # datacenter novo) -- precisa dar pro técnico digitar a location na mão.
     def test_offers_manual_entry_option_in_the_select(self):
         with patch("main.ask_select", return_value=None) as mock_select:
-            result, mocks = self._invoke(["install"], is_tty=True)
+            result, mocks = self._invoke(["setup"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         choices_arg = mock_select.call_args_list[0].args[1]
         self.assertIn("Definir manualmente...", choices_arg)
@@ -273,7 +274,7 @@ class ManualProviderEntryTest(MainTestCase):
                  "hostinger", "detected-host", "zabbix.local", "zabbix.local", "",
              ]) as mock_text, \
              patch("main.ask_confirm", side_effect=[False, True]):
-            result, _ = self._invoke(["install"], is_tty=True)
+            result, _ = self._invoke(["setup"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         metadata_call = mock_text.call_args_list[-1]
         self.assertIn("l:hostinger", metadata_call.kwargs["default"])
@@ -281,7 +282,7 @@ class ManualProviderEntryTest(MainTestCase):
     def test_escaping_the_manual_provider_prompt_aborts_cleanly(self):
         with patch("main.ask_select", return_value="Definir manualmente..."), \
              patch("main.ask_text", return_value=None):
-            result, mocks = self._invoke(["install"], is_tty=True)
+            result, mocks = self._invoke(["setup"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["repo"].assert_not_called()
 
@@ -318,6 +319,77 @@ class InstallFailureTest(MainTestCase):
         mock_get_logger.return_value.info.assert_called()
 
 
+class RemoveCommandTest(MainTestCase):
+    def _configure(self, variant="agent2"):
+        (self._state_dir / "agent_variant.txt").write_text(variant)
+
+    def test_requires_root(self):
+        result, _ = self._invoke(["remove", "--yes"], is_root=False)
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_reports_nothing_to_remove_when_never_configured(self):
+        result, _ = self._invoke(["remove", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nada a remover", result.output.lower())
+
+    def test_confirmation_mentions_removing_zabbix_and_its_config(self):
+        self._configure()
+        with patch("main.ask_confirm", return_value=False) as mock_confirm:
+            self._invoke(["remove"], is_tty=True)
+        prompt = mock_confirm.call_args.args[0]
+        self.assertIn("Zabbix", prompt)
+        self.assertIn("configurações", prompt.lower())
+
+    def test_declining_confirmation_changes_nothing_and_pauses(self):
+        self._configure()
+        with patch("main.ask_confirm", return_value=False), \
+             patch("main.widgets.pause") as mock_pause, \
+             patch("main.install_steps.disable_and_stop") as mock_stop:
+            result, _ = self._invoke(["remove"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nada foi alterado", result.output.lower())
+        mock_stop.assert_not_called()
+        mock_pause.assert_called_once_with()
+
+    def test_removes_the_service_package_and_pvx_artifacts(self):
+        # remove_agent já é mockado dentro do próprio _invoke (usado pra
+        # detect_existing_agent nos testes de install) -- reusa o mesmo mock
+        # exposto por ele, um patch daqui de fora seria sombreado pelo interno.
+        self._configure("agent2")
+        with patch("main.install_steps.disable_and_stop") as mock_stop, \
+             patch("main.scripts.list_all", return_value={"audit": {"command": "x", "needs_root": True}}), \
+             patch("main.known_scripts.remove_deployed") as mock_remove_deployed, \
+             patch("main.sudoers.remove") as mock_sudoers_remove:
+            result, mocks = self._invoke(["remove", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_stop.assert_called_once_with("zabbix-agent2")
+        mocks["remove_agent"].assert_called_once_with("zabbix-agent2")
+        mock_remove_deployed.assert_called_once_with(defaults.PVX_SCRIPTS_DIR, "audit")
+        mock_sudoers_remove.assert_called_once_with(defaults.SUDOERS_FILE)
+        self.assertFalse((self._state_dir / "agent_variant.txt").exists())
+
+    @patch("main.widgets.pause")
+    def test_pauses_when_interactive_after_success(self, mock_pause):
+        self._configure()
+        with patch("main.install_steps.disable_and_stop"), \
+             patch("main.install_steps.remove_agent"), \
+             patch("main.scripts.list_all", return_value={}), \
+             patch("main.sudoers.remove"):
+            result, _ = self._invoke(["remove", "--yes"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_does_not_pause_when_not_interactive(self, mock_pause):
+        with patch("main.install_steps.disable_and_stop"), \
+             patch("main.install_steps.remove_agent"), \
+             patch("main.scripts.list_all", return_value={}), \
+             patch("main.sudoers.remove"):
+            result, _ = self._invoke(["remove", "--yes"], is_tty=False)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_not_called()
+
+
 class ScriptAddCommandTest(unittest.TestCase):
     def setUp(self):
         self._tmp = TemporaryDirectory()
@@ -340,7 +412,7 @@ class ScriptAddCommandTest(unittest.TestCase):
             return result, mock_sudoers
 
     def test_adds_a_known_script_deploys_it_and_persists_it(self):
-        result, _ = self._invoke(["script", "add", "audit"])
+        result, _ = self._invoke(["scripts", "add", "audit"])
         self.assertEqual(result.exit_code, 0, result.output)
 
         deployed = self._scripts_dir / "audit.sh"
@@ -352,38 +424,38 @@ class ScriptAddCommandTest(unittest.TestCase):
         self.assertEqual(entries["audit"]["command"], f"{deployed} --zabbix")
 
     def test_known_script_needing_root_calls_sudoers_write_rules(self):
-        result, mock_sudoers = self._invoke(["script", "add", "audit"])
+        result, mock_sudoers = self._invoke(["scripts", "add", "audit"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_sudoers.assert_called_once()
         self.assertIn(str(self._scripts_dir / "audit.sh"), mock_sudoers.call_args.args[2][0])
 
     def test_rejects_duplicate_key(self):
-        self._invoke(["script", "add", "audit"])
-        result, _ = self._invoke(["script", "add", "audit"])
+        self._invoke(["scripts", "add", "audit"])
+        result, _ = self._invoke(["scripts", "add", "audit"])
         self.assertNotEqual(result.exit_code, 0)
 
     def test_rejects_key_outside_the_catalog(self):
-        result, _ = self._invoke(["script", "add", "nao-existe"])
+        result, _ = self._invoke(["scripts", "add", "nao-existe"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("audit", result.output)
 
     def test_requires_key_without_tty(self):
-        result, _ = self._invoke(["script", "add"])
+        result, _ = self._invoke(["scripts", "add"])
         self.assertNotEqual(result.exit_code, 0)
 
     def test_asks_from_the_catalog_when_interactive(self):
         with patch("main._is_interactive", return_value=True), \
              patch("main.ask_select", return_value="audit -- auditoria de comprometimento "
                                                      "(mineração, persistência, webshell, abuso de PBX...)") as mock_select:
-            result, _ = self._invoke(["script", "add"])
+            result, _ = self._invoke(["scripts", "add"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_select.assert_called_once()
 
     def test_fails_clearly_when_agent_was_never_installed(self):
         (self._state_dir / "agent_variant.txt").unlink()
-        result, _ = self._invoke(["script", "add", "audit"])
+        result, _ = self._invoke(["scripts", "add", "audit"])
         self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("install", result.output.lower())
+        self.assertIn("setup", result.output.lower())
 
 
 class ScriptRemoveCommandTest(unittest.TestCase):
@@ -407,11 +479,11 @@ class ScriptRemoveCommandTest(unittest.TestCase):
             return CliRunner().invoke(cli.cli_group(), args)
 
     def test_removes_an_existing_script_and_its_deployed_file(self):
-        self._invoke(["script", "add", "audit"])
+        self._invoke(["scripts", "add", "audit"])
         deployed = self._scripts_dir / "audit.sh"
         self.assertTrue(deployed.exists())
 
-        result = self._invoke(["script", "remove", "audit"])
+        result = self._invoke(["scripts", "remove", "audit"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertFalse(deployed.exists())
 
@@ -420,7 +492,7 @@ class ScriptRemoveCommandTest(unittest.TestCase):
         self.assertNotIn("audit", entries)
 
     def test_raises_when_key_does_not_exist(self):
-        result = self._invoke(["script", "remove", "does-not-exist"])
+        result = self._invoke(["scripts", "remove", "does-not-exist"])
         self.assertNotEqual(result.exit_code, 0)
 
     @patch("main.widgets.pause")
@@ -429,7 +501,7 @@ class ScriptRemoveCommandTest(unittest.TestCase):
         # mesmo bug do check_cmd: "return" logo depois do echo informativo nunca
         # chegava no pause() do fim da função.
         with patch("main.sudoers.write_rules"), patch("main._write_confd_file"):
-            result = CliRunner().invoke(cli.cli_group(), ["script", "remove"])
+            result = CliRunner().invoke(cli.cli_group(), ["scripts", "remove"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 
@@ -446,14 +518,14 @@ class ScriptListCommandTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_shows_message_when_empty(self):
-        result = CliRunner().invoke(cli.cli_group(), ["script", "list"])
+        result = CliRunner().invoke(cli.cli_group(), ["scripts", "list"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("nenhum", result.output.lower())
 
     def test_lists_added_scripts(self):
         import scripts as scripts_module
         scripts_module.add(str(self._state_dir / "scripts.json"), "cpu.custom", "/opt/scripts/cpu.sh")
-        result = CliRunner().invoke(cli.cli_group(), ["script", "list"])
+        result = CliRunner().invoke(cli.cli_group(), ["scripts", "list"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("cpu.custom", result.output)
         self.assertIn("/opt/scripts/cpu.sh", result.output)

@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from apply import apply
+from apply import apply, find_latest_record, revert
 from plan import build_plan
 
 
@@ -121,6 +121,89 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(oct(record_path.stat().st_mode)[-3:], "600")
         record = json.loads(record_path.read_text())
         self.assertEqual(record["plan"]["root_password"], "rootpass")
+
+
+class FindLatestRecordTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.state_dir = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_none_when_no_records_exist(self):
+        self.assertIsNone(find_latest_record(str(self.state_dir)))
+
+    def test_returns_the_most_recent_record(self):
+        (self.state_dir / "apply-20260101_000000.json").write_text(json.dumps({"plan": {"old": True}}))
+        (self.state_dir / "apply-20260201_000000.json").write_text(json.dumps({"plan": {"old": False}}))
+        record = find_latest_record(str(self.state_dir))
+        self.assertEqual(record["plan"], {"old": False})
+
+
+class RevertTest(unittest.TestCase):
+    # "só reverte as alterações nossas" -- restaura o sshd_config do backup exato
+    # tirado antes do apply, e desfaz só o que create_user criou. senha do root
+    # nunca é revertida (não guardamos o hash anterior pra restaurar com segurança).
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.config_path = Path(self._tmp.name) / "sshd_config"
+        self.backup_path = Path(self._tmp.name) / "sshd_config.bak"
+        self.sudoers_dir = Path(self._tmp.name) / "sudoers.d"
+        self.sudoers_dir.mkdir()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_restores_config_from_backup(self):
+        self.backup_path.write_text("Port 22\n")
+        self.config_path.write_text("Port 2222\nPermitRootLogin no\n")
+        record = {"plan": {"create_user": False}, "backup_path": str(self.backup_path)}
+
+        result = revert(record, str(self.config_path), str(self.sudoers_dir))
+
+        self.assertEqual(self.config_path.read_text(), "Port 22\n")
+        self.assertIn("sshd_config restaurado", " ".join(result["reverted"]))
+
+    @patch("apply.user_setup.delete_user")
+    def test_deletes_the_created_user_and_its_sudoers_rule(self, mock_delete_user):
+        self.backup_path.write_text("Port 22\n")
+        self.config_path.write_text("Port 22\n")
+        (self.sudoers_dir / "phonevox").write_text("phonevox ALL=(ALL) NOPASSWD: ALL\n")
+        record = {"plan": {"create_user": True, "username": "phonevox"}, "backup_path": str(self.backup_path)}
+
+        revert(record, str(self.config_path), str(self.sudoers_dir))
+
+        mock_delete_user.assert_called_once_with("phonevox")
+        self.assertFalse((self.sudoers_dir / "phonevox").exists())
+
+    def test_does_not_touch_user_when_create_user_was_false(self):
+        self.backup_path.write_text("Port 22\n")
+        self.config_path.write_text("Port 22\n")
+        record = {"plan": {"create_user": False}, "backup_path": str(self.backup_path)}
+
+        with patch("apply.user_setup.delete_user") as mock_delete_user:
+            revert(record, str(self.config_path), str(self.sudoers_dir))
+
+        mock_delete_user.assert_not_called()
+
+    def test_notes_that_the_root_password_is_never_reverted(self):
+        self.backup_path.write_text("Port 22\n")
+        self.config_path.write_text("Port 22\n")
+        record = {"plan": {"lock_root": True, "create_user": False}, "backup_path": str(self.backup_path)}
+
+        result = revert(record, str(self.config_path), str(self.sudoers_dir))
+
+        self.assertTrue(result["root_password_not_reverted"])
+
+    def test_skips_config_restore_when_no_backup_exists(self):
+        self.config_path.write_text("Port 22\n")
+        record = {"plan": {"create_user": False}, "backup_path": None}
+
+        result = revert(record, str(self.config_path), str(self.sudoers_dir))
+
+        self.assertEqual(self.config_path.read_text(), "Port 22\n")
+        self.assertEqual(result["reverted"], [])
 
 
 if __name__ == "__main__":
