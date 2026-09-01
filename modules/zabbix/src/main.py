@@ -38,7 +38,7 @@ def _save_agent_variant(variant):
 def _current_agent_variant():
     path = _state_dir() / _AGENT_VARIANT_FILENAME
     if not path.exists():
-        raise click.ClickException("zabbix ainda não foi instalado -- rode `pvx zabbix install` primeiro.")
+        raise click.ClickException("zabbix ainda não foi instalado -- rode `pvx zabbix setup` primeiro.")
     return path.read_text().strip()
 
 
@@ -56,14 +56,14 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.9"
+    version = "0.2.0"
 
     def cli_group(self):
         @click.group(name="zabbix")
         def group():
             pass
 
-        @group.command(name="install")
+        @group.command(name="setup")
         @click.option("--server", default=None)
         @click.option("--server-active", default=None)
         @click.option("--hostname", default=None)
@@ -75,7 +75,7 @@ class ZabbixModule(PvxModule):
         @click.option("--agent-version", type=click.Choice(defaults.AGENT_VARIANTS), default=None)
         @click.option("--test", is_flag=True)
         @click.option("--yes", is_flag=True)
-        def install_cmd(server, server_active, hostname, extra_metadata, provider, agent_version, test, yes):
+        def setup_cmd(server, server_active, hostname, extra_metadata, provider, agent_version, test, yes):
             if os.geteuid() != 0:
                 raise click.ClickException("zabbix precisa rodar como root (sudo).")
 
@@ -244,6 +244,63 @@ class ZabbixModule(PvxModule):
             if interactive:
                 widgets.pause()
 
+        @group.command(name="remove")
+        @click.option("--yes", is_flag=True)
+        def remove_cmd(yes):
+            if os.geteuid() != 0:
+                raise click.ClickException("zabbix precisa rodar como root (sudo).")
+
+            logger = self.get_logger()
+            interactive = _is_interactive()
+
+            variant_path = _state_dir() / _AGENT_VARIANT_FILENAME
+            if not variant_path.exists():
+                click.echo("zabbix não está configurado pelo pvx -- nada a remover.")
+                if interactive:
+                    widgets.pause()
+                return
+
+            agent_variant = variant_path.read_text().strip()
+            package = defaults.AGENT_PACKAGES[agent_variant]
+            service = defaults.AGENT_SERVICES[agent_variant]
+
+            if not yes and not ask_confirm(
+                f"Isso vai remover o Zabbix ({package}) e as configurações dele nessa máquina. Confirma?",
+                default=False,
+            ):
+                widgets.message("nada foi alterado.")
+                if interactive:
+                    widgets.pause()
+                return
+
+            with widgets.spinner(f"Parando {service}..."):
+                install_steps.disable_and_stop(service)
+
+            with widgets.spinner(f"Removendo {package}..."):
+                install_steps.remove_agent(package)
+
+            state_path = str(_state_dir() / defaults.SCRIPTS_STATE_FILENAME)
+            for key in scripts.list_all(state_path):
+                known_scripts.remove_deployed(defaults.PVX_SCRIPTS_DIR, key)
+            sudoers.remove(defaults.SUDOERS_FILE)
+
+            confd_dir = defaults.AGENT_CONFD_DIRS[agent_variant]
+            try:
+                os.remove(os.path.join(confd_dir, defaults.SCRIPTS_CONF_FILENAME))
+            except FileNotFoundError:
+                pass
+
+            for name in (defaults.SCRIPTS_STATE_FILENAME, _AGENT_VARIANT_FILENAME):
+                try:
+                    (_state_dir() / name).unlink()
+                except FileNotFoundError:
+                    pass
+
+            logger.info(f"zabbix ({agent_variant}) removido.")
+            widgets.success("zabbix removido.")
+            if interactive:
+                widgets.pause()
+
         @group.command(name="check")
         def check_cmd():
             variant_path = _state_dir() / _AGENT_VARIANT_FILENAME
@@ -255,11 +312,11 @@ class ZabbixModule(PvxModule):
                 if existing_package:
                     widgets.state(
                         f"Zabbix ({existing_package}) instalado mas NÃO gerenciado pelo pvx "
-                        "-- rode `pvx zabbix install` pra assumir.",
+                        "-- rode `pvx zabbix setup` pra assumir.",
                         ok=False,
                     )
                 else:
-                    widgets.state("Zabbix NÃO configurado -- rode `pvx zabbix install` primeiro.", ok=False)
+                    widgets.state("Zabbix NÃO configurado -- rode `pvx zabbix setup` primeiro.", ok=False)
                 if legacy_sudo:
                     click.echo(
                         "  aviso: regra sudoers antiga e insegura em /etc/sudoers "
@@ -300,13 +357,13 @@ class ZabbixModule(PvxModule):
                 click.echo()
                 click.echo(
                     "aviso: regra sudoers antiga e insegura ainda presente em /etc/sudoers "
-                    "(%zabbix ALL=(ALL) NOPASSWD: ALL) -- rode `pvx zabbix install` de novo pra limpar."
+                    "(%zabbix ALL=(ALL) NOPASSWD: ALL) -- rode `pvx zabbix setup` de novo pra limpar."
                 )
 
             if _is_interactive():
                 widgets.pause()
 
-        @group.group(name="script")
+        @group.group(name="scripts")
         def script_group():
             pass
 
@@ -322,7 +379,7 @@ class ZabbixModule(PvxModule):
 
             if key is None:
                 if not interactive:
-                    raise click.ClickException(f"informe a chave: `pvx zabbix script add <chave>` ({catalog_hint}).")
+                    raise click.ClickException(f"informe a chave: `pvx zabbix scripts add <chave>` ({catalog_hint}).")
                 choices = [
                     f"{k} -- {v['description']}" for k, v in sorted(known_scripts.CATALOG.items())
                 ]
@@ -360,7 +417,7 @@ class ZabbixModule(PvxModule):
 
             if key is None:
                 if not interactive:
-                    raise click.ClickException("informe a chave: `pvx zabbix script remove <chave>`.")
+                    raise click.ClickException("informe a chave: `pvx zabbix scripts remove <chave>`.")
                 existing = scripts.list_all(state_path)
                 if not existing:
                     click.echo("nenhum script cadastrado.")
