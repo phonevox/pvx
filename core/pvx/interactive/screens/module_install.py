@@ -26,11 +26,13 @@ class ModuleInstallScreen:
             rows = listing.list_modules(discover_installed_modules(), index_url)
         except RuntimeError as e:
             click.echo(str(e))
+            widgets.pause()
             return "BACK"
 
         names = [row["name"] for row in rows]
         if not names:
             click.echo("nenhum módulo disponível nesse registry.")
+            widgets.pause()
             return "BACK"
 
         selected_names = ask_checkbox("Selecione os módulos pra instalar:", names)
@@ -46,4 +48,5 @@ class ModuleInstallScreen:
             else:
                 widgets.success(f"{name} instalado.")
 
+        widgets.pause()
         return "BACK"

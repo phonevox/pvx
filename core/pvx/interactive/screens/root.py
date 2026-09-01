@@ -1,3 +1,5 @@
+import traceback
+
 import click
 import questionary
 
@@ -68,5 +70,13 @@ def _run_auto_menu(group, breadcrumb):
                 # qualquer módulo com comando de argumento obrigatório
                 # crasharia a sessão inteira do menu sem esse guard.
                 widgets.message(str(e))
+                widgets.pause()
+            except Exception:
+                # catch global: qualquer exceção não tratada de um módulo
+                # (ex.: CalledProcessError de um subprocess) não pode
+                # derrubar a sessão inteira do menu -- mostra o traceback
+                # de verdade (em vermelho, precisa saltar aos olhos) e
+                # volta pro mesmo nível, igual o ClickException acima.
+                widgets.crash(traceback.format_exc())
                 widgets.pause()
         widgets.clear()

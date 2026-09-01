@@ -177,6 +177,14 @@ def failed(detail=None):
     _print_outcome(_FAILED_LABEL, "bold red", detail)
 
 
+def crash(traceback_text):
+    # catch global de exceção não tratada -- precisa saltar aos olhos, nunca
+    # se misturar com o resto da saída do terminal.
+    line = Text()
+    line.append(traceback_text, style="red")
+    Console().print(line, highlight=False)
+
+
 def state(text, ok):
     # pra reportar um FATO/estado (ex.: resultado de uma consulta), não o
     # resultado de uma ação -- diferente de success()/failed(), sem rótulo

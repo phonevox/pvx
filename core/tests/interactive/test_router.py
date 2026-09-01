@@ -69,5 +69,52 @@ class RouterTest(unittest.TestCase):
         self.assertEqual(mock_clear.call_count, 3)
 
 
+class RouterCrashTest(unittest.TestCase):
+    # achado ao vivo: uma tela (ex.: ModuleInstallScreen) estourando qualquer
+    # exceção não tratada no próprio render() (não num comando de módulo, que
+    # já tem seu próprio guard) derrubava a sessão inteira -- Router.run()
+    # nunca teve try/except nenhum ao redor do render().
+    @patch("pvx.interactive.router.widgets.pause")
+    @patch("pvx.interactive.router.widgets.crash")
+    def test_screen_crash_shows_crash_and_pops_back_instead_of_killing_the_session(
+        self, mock_crash, mock_pause
+    ):
+        calls = []
+
+        class RootScreen:
+            def __init__(self):
+                self._returns = iter(["broken", "EXIT"])
+
+            def render(self):
+                calls.append("root")
+                return next(self._returns)
+
+        class BrokenScreen:
+            def render(self):
+                raise RuntimeError("algo quebrou de verdade")
+
+        router = Router({"root": RootScreen, "broken": BrokenScreen})
+        router.run("root")
+
+        self.assertEqual(calls, ["root", "root"])
+        self.assertEqual(router.stack, [])
+        mock_crash.assert_called_once()
+        self.assertIn("algo quebrou de verdade", mock_crash.call_args.args[0])
+        mock_pause.assert_called_once()
+
+    @patch("pvx.interactive.router.widgets.pause")
+    @patch("pvx.interactive.router.widgets.crash")
+    def test_crash_on_the_root_screen_itself_ends_the_session_cleanly(self, mock_crash, mock_pause):
+        class BrokenRootScreen:
+            def render(self):
+                raise RuntimeError("boom")
+
+        router = Router({"root": BrokenRootScreen})
+        router.run("root")  # não deve levantar
+
+        self.assertEqual(router.stack, [])
+        mock_crash.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
