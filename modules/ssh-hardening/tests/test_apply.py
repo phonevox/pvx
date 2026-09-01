@@ -37,6 +37,17 @@ class ApplyTest(unittest.TestCase):
         self.assertFalse(result["applied"])
 
     @patch("apply.user_setup.set_password")
+    def test_admin_group_added_is_none_when_no_user_was_created(self, mock_set_password):
+        self._write_valid_config()
+        plan = build_plan(
+            lock_root=True, root_password="rootpass",
+            create_user=False, username=None, public_key=None, allow_password=False, user_password=None,
+            change_port=False, port=None,
+        )
+        result = apply(plan, str(self.config_path), str(self.sudoers_dir), str(self.state_dir))
+        self.assertIsNone(result["admin_group_added"])
+
+    @patch("apply.user_setup.set_password")
     def test_locks_root_sets_password_and_directive(self, mock_set_password):
         self._write_valid_config()
         plan = build_plan(
@@ -60,6 +71,7 @@ class ApplyTest(unittest.TestCase):
     def test_creates_user_and_wires_group_sudoers_and_key(
         self, mock_create_user, mock_add_group, mock_install_rule, mock_setup_key, mock_set_password
     ):
+        mock_add_group.return_value = True
         self._write_valid_config()
         plan = build_plan(
             lock_root=False, root_password=None,
@@ -71,11 +83,78 @@ class ApplyTest(unittest.TestCase):
         result = apply(plan, str(self.config_path), str(self.sudoers_dir), str(self.state_dir))
 
         self.assertTrue(result["applied"])
+        self.assertTrue(result["admin_group_added"])
         mock_create_user.assert_called_once_with("phonevox")
         mock_add_group.assert_called_once_with("phonevox")
         mock_install_rule.assert_called_once_with("phonevox", sudoers_dir=str(self.sudoers_dir))
         mock_setup_key.assert_called_once_with("/home/phonevox", "phonevox", "ssh-rsa AAAA test")
         mock_set_password.assert_called_once_with("phonevox", "userpass")
+
+    @patch("apply.user_setup.create_user")
+    @patch("apply.user_setup.add_to_admin_group", return_value=True)
+    @patch("apply.sudoers.install_rule")
+    @patch("apply.user_setup.setup_authorized_key")
+    @patch("apply.user_setup.install_sudo", return_value=True)
+    @patch("apply.user_setup.sudo_available", return_value=False)
+    def test_installs_sudo_when_missing_before_creating_the_user(
+        self, mock_available, mock_install, mock_setup_key, mock_install_rule, mock_add_group, mock_create_user
+    ):
+        self._write_valid_config()
+        plan = build_plan(
+            lock_root=False, root_password=None,
+            create_user=True, username="phonevox", public_key="ssh-rsa AAAA test", allow_password=False,
+            user_password=None,
+            change_port=False, port=None,
+        )
+
+        result = apply(plan, str(self.config_path), str(self.sudoers_dir), str(self.state_dir))
+
+        mock_install.assert_called_once()
+        self.assertTrue(result["sudo_installed_now"])
+
+    @patch("apply.user_setup.create_user")
+    @patch("apply.user_setup.add_to_admin_group", return_value=True)
+    @patch("apply.sudoers.install_rule")
+    @patch("apply.user_setup.setup_authorized_key")
+    @patch("apply.user_setup.install_sudo")
+    @patch("apply.user_setup.sudo_available", return_value=True)
+    def test_does_not_try_to_install_sudo_when_already_available(
+        self, mock_available, mock_install, mock_setup_key, mock_install_rule, mock_add_group, mock_create_user
+    ):
+        self._write_valid_config()
+        plan = build_plan(
+            lock_root=False, root_password=None,
+            create_user=True, username="phonevox", public_key="ssh-rsa AAAA test", allow_password=False,
+            user_password=None,
+            change_port=False, port=None,
+        )
+
+        result = apply(plan, str(self.config_path), str(self.sudoers_dir), str(self.state_dir))
+
+        mock_install.assert_not_called()
+        self.assertIsNone(result["sudo_installed_now"])
+
+    @patch("apply.user_setup.create_user")
+    @patch("apply.user_setup.add_to_admin_group", return_value=False)
+    @patch("apply.sudoers.install_rule")
+    @patch("apply.user_setup.setup_authorized_key")
+    def test_reports_when_no_admin_group_was_found(
+        self, mock_setup_key, mock_install_rule, mock_add_group, mock_create_user
+    ):
+        # achado ao vivo: Debian não tem wheel -- add_to_admin_group agora sinaliza
+        # isso em vez de crashar, e o resultado precisa carregar essa informação
+        # pro técnico saber (o acesso via sudoers.d já funciona de qualquer jeito).
+        self._write_valid_config()
+        plan = build_plan(
+            lock_root=False, root_password=None,
+            create_user=True, username="phonevox", public_key="ssh-rsa AAAA test", allow_password=False,
+            user_password=None,
+            change_port=False, port=None,
+        )
+
+        result = apply(plan, str(self.config_path), str(self.sudoers_dir), str(self.state_dir))
+
+        self.assertFalse(result["admin_group_added"])
 
     def test_changes_port_directive(self):
         self._write_valid_config()

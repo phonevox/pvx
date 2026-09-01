@@ -1,3 +1,5 @@
+import traceback
+
 from pvx.interactive import widgets
 
 
@@ -10,7 +12,18 @@ class Router:
         self.stack = [self.registry[start_screen_name]()]
         while self.stack:
             widgets.clear()
-            result = self.stack[-1].render()
+            try:
+                result = self.stack[-1].render()
+            except Exception:
+                # catch global: uma tela crashando no próprio render() (não
+                # num comando de módulo -- isso já tem guard próprio no
+                # auto-menu) não pode derrubar a sessão inteira. volta pra
+                # tela anterior em vez de tentar redesenhar a quebrada nesse
+                # mesmo estado (evita loop de crash).
+                widgets.crash(traceback.format_exc())
+                widgets.pause()
+                self.stack.pop()
+                continue
             if result is None:
                 continue
             if result == "EXIT":

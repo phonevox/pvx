@@ -41,6 +41,22 @@ class FakePickyModule(PvxModule):
         return group
 
 
+class FakeCrashingModule(PvxModule):
+    name = "crashy"
+    version = "0.1.0"
+
+    def cli_group(self):
+        @click.group()
+        def group():
+            pass
+
+        @group.command()
+        def boom():
+            raise RuntimeError("algo quebrou de verdade")
+
+        return group
+
+
 class FakeNestedModule(PvxModule):
     name = "nested"
     version = "0.1.0"
@@ -134,6 +150,26 @@ class RootScreenTest(unittest.TestCase):
         result = RootScreen().render()
         self.assertIsNone(result)
         mock_message.assert_called_once()
+        mock_pause.assert_called_once()
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"crashy": FakeCrashingModule()},
+    )
+    @patch("pvx.interactive.screens.root.widgets.pause")
+    @patch("pvx.interactive.screens.root.widgets.crash")
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["crashy", "boom", None])
+    def test_unhandled_exception_shows_crash_instead_of_killing_the_session(
+        self, mock_ask_select, mock_crash, mock_pause, mock_discover
+    ):
+        # achado ao vivo: um módulo estourando qualquer exceção que não seja
+        # ClickException (ex.: CalledProcessError de um subprocess) derrubava
+        # a sessão inteira do menu com traceback cru -- sem cor, fácil de
+        # perder no meio do resto da saída.
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_crash.assert_called_once()
+        self.assertIn("algo quebrou de verdade", mock_crash.call_args.args[0])
         mock_pause.assert_called_once()
 
     @patch(

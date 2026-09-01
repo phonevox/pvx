@@ -3,7 +3,17 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from user_setup import add_to_admin_group, create_user, delete_user, set_password, setup_authorized_key, user_exists
+from user_setup import (
+    add_to_admin_group,
+    create_user,
+    delete_user,
+    detect_admin_group,
+    install_sudo,
+    set_password,
+    setup_authorized_key,
+    sudo_available,
+    user_exists,
+)
 
 
 class UserExistsTest(unittest.TestCase):
@@ -44,11 +54,92 @@ class DeleteUserTest(unittest.TestCase):
         mock_run.assert_not_called()
 
 
+class DetectAdminGroupTest(unittest.TestCase):
+    # achado ao vivo: Debian/Ubuntu não tem grupo wheel (usam sudo) -- usermod
+    # -aG wheel estourava CalledProcessError sem esse fallback.
+    @patch("user_setup.grp.getgrnam")
+    def test_prefers_wheel_when_it_exists(self, mock_getgrnam):
+        mock_getgrnam.side_effect = lambda name: object() if name == "wheel" else _raise_key_error()
+        self.assertEqual(detect_admin_group(), "wheel")
+
+    @patch("user_setup.grp.getgrnam")
+    def test_falls_back_to_sudo_when_wheel_is_absent(self, mock_getgrnam):
+        mock_getgrnam.side_effect = lambda name: object() if name == "sudo" else _raise_key_error()
+        self.assertEqual(detect_admin_group(), "sudo")
+
+    @patch("user_setup.grp.getgrnam", side_effect=KeyError)
+    def test_none_when_neither_group_exists(self, mock_getgrnam):
+        self.assertIsNone(detect_admin_group())
+
+
+def _raise_key_error():
+    raise KeyError("group not found")
+
+
 class AddToAdminGroupTest(unittest.TestCase):
     @patch("user_setup.subprocess.run")
-    def test_adds_user_to_wheel_group_by_default(self, mock_run):
+    def test_adds_user_to_the_given_group(self, mock_run):
+        result = add_to_admin_group("phonevox", group="sudo")
+        self.assertTrue(result)
+        mock_run.assert_called_once_with(["usermod", "-aG", "sudo", "phonevox"], check=True)
+
+    @patch("user_setup.subprocess.run")
+    @patch("user_setup.detect_admin_group", return_value="sudo")
+    def test_auto_detects_group_when_not_given(self, mock_detect, mock_run):
         add_to_admin_group("phonevox")
-        mock_run.assert_called_once_with(["usermod", "-aG", "wheel", "phonevox"], check=True)
+        mock_run.assert_called_once_with(["usermod", "-aG", "sudo", "phonevox"], check=True)
+
+    @patch("user_setup.subprocess.run")
+    @patch("user_setup.detect_admin_group", return_value=None)
+    def test_does_nothing_when_no_admin_group_exists(self, mock_detect, mock_run):
+        result = add_to_admin_group("phonevox")
+        self.assertFalse(result)
+        mock_run.assert_not_called()
+
+
+class SudoAvailableTest(unittest.TestCase):
+    # achado ao vivo: Debian mínimo sem o pacote sudo instalado -- usermod/visudo
+    # nem existem no PATH, crash cru no meio do apply(). checar isso ANTES de
+    # qualquer mudança evita deixar o host num estado pela metade.
+    @patch("user_setup.shutil.which", return_value="/usr/bin/sudo")
+    def test_true_when_sudo_binary_exists(self, mock_which):
+        self.assertTrue(sudo_available())
+
+    @patch("user_setup.shutil.which", return_value=None)
+    def test_false_when_sudo_binary_is_missing(self, mock_which):
+        self.assertFalse(sudo_available())
+
+
+class InstallSudoTest(unittest.TestCase):
+    @patch("user_setup.subprocess.run")
+    @patch("user_setup.sudo_available", return_value=True)
+    def test_does_nothing_when_already_available(self, mock_available, mock_run):
+        self.assertTrue(install_sudo())
+        mock_run.assert_not_called()
+
+    @patch("user_setup.sudo_available", side_effect=[False, True])
+    @patch("user_setup.subprocess.run")
+    @patch("user_setup.shutil.which", side_effect=lambda name: "/usr/bin/apt-get" if name == "apt-get" else None)
+    def test_installs_via_apt_get_on_debian(self, mock_which, mock_run, mock_available):
+        result = install_sudo()
+        self.assertTrue(result)
+        mock_run.assert_called_once_with(["apt-get", "install", "-y", "sudo"], check=False)
+
+    @patch("user_setup.sudo_available", side_effect=[False, True])
+    @patch("user_setup.subprocess.run")
+    @patch("user_setup.shutil.which", side_effect=lambda name: "/usr/bin/dnf" if name == "dnf" else None)
+    def test_installs_via_dnf_when_apt_get_is_absent(self, mock_which, mock_run, mock_available):
+        result = install_sudo()
+        self.assertTrue(result)
+        mock_run.assert_called_once_with(["dnf", "install", "-y", "sudo"], check=False)
+
+    @patch("user_setup.sudo_available", return_value=False)
+    @patch("user_setup.subprocess.run")
+    @patch("user_setup.shutil.which", return_value=None)
+    def test_false_when_no_known_package_manager_is_found(self, mock_which, mock_run, mock_available):
+        result = install_sudo()
+        self.assertFalse(result)
+        mock_run.assert_not_called()
 
 
 class SetPasswordTest(unittest.TestCase):

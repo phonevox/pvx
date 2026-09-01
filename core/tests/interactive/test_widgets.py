@@ -9,6 +9,7 @@ from pvx.interactive.widgets import (
     breadcrumb,
     check_result,
     clear,
+    crash,
     failed,
     message,
     pause,
@@ -222,6 +223,24 @@ class FailedTest(unittest.TestCase):
         failed()
         printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.spans[0].style, "bold red")
+
+
+class CrashTest(unittest.TestCase):
+    # catch global: exceção não tratada em qualquer comando (menu ou CLI
+    # direta) mostra o traceback cru em vermelho em vez de deixar passar em
+    # branco/preto igual qualquer outra saída -- precisa saltar aos olhos.
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_the_full_traceback_text(self, mock_console_cls):
+        tb = "Traceback (most recent call last):\n  File ...\nValueError: boom"
+        crash(tb)
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, tb)
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_is_red(self, mock_console_cls):
+        crash("boom")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "red")
 
 
 class StateTest(unittest.TestCase):

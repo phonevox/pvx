@@ -30,4 +30,5 @@ class ModuleUpdateScreen:
             else:
                 widgets.success(f"{name} atualizado.")
 
+        widgets.pause()
         return "BACK"
