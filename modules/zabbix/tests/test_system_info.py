@@ -64,6 +64,11 @@ class DetectProviderTest(unittest.TestCase):
         self.assertEqual(system_info.detect_provider(), "aws")
 
     @patch("system_info.urllib.request.urlopen")
+    def test_detects_hostinger(self, mock_urlopen):
+        mock_urlopen.return_value = self._mock_response("AS47583 Hostinger International Limited")
+        self.assertEqual(system_info.detect_provider(), "hostinger")
+
+    @patch("system_info.urllib.request.urlopen")
     def test_defaults_to_local_when_unrecognized(self, mock_urlopen):
         mock_urlopen.return_value = self._mock_response("Some Other Host")
         self.assertEqual(system_info.detect_provider(), "local")
@@ -79,6 +84,9 @@ class DetectHostnameTest(unittest.TestCase):
 
     def test_qnax_extracts_srv_pattern(self):
         self.assertEqual(system_info.detect_hostname("qnax", "SRV-1699030926"), "SRV-1699030926")
+
+    def test_hostinger_extracts_srv_pattern(self):
+        self.assertEqual(system_info.detect_hostname("hostinger", "srv965526.hstgr.cloud"), "srv965526")
 
     @patch("system_info.machine_id", return_value="fallback-id")
     def test_ovh_pattern_not_found_falls_back_to_machine_id(self, mock_machine_id):

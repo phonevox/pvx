@@ -24,3 +24,30 @@ def remove(path):
         os.remove(path)
     except FileNotFoundError:
         pass
+
+
+# rastro do pzabbix (script bash antigo): ele acrescentava essa linha direto no
+# /etc/sudoers principal -- acesso root irrestrito pro usuário zabbix, nunca escopado
+# num arquivo em sudoers.d como o pvx faz (ver write_rules() acima).
+LEGACY_FILE = "/etc/sudoers"
+LEGACY_LINE = "%zabbix ALL=(ALL) NOPASSWD: ALL"
+
+
+def detect_legacy_rule(path=LEGACY_FILE):
+    try:
+        content = open(path).read()
+    except OSError:
+        return False
+    return any(line.strip() == LEGACY_LINE for line in content.splitlines())
+
+
+def remove_legacy_rule(path=LEGACY_FILE):
+    try:
+        lines = open(path).read().splitlines()
+    except OSError:
+        return False
+    kept = [line for line in lines if line.strip() != LEGACY_LINE]
+    if len(kept) == len(lines):
+        return False
+    open(path, "w").write("\n".join(kept) + "\n")
+    return True

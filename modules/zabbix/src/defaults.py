@@ -28,4 +28,4 @@ PVX_SCRIPTS_DIR = "/etc/zabbix/pvx-scripts.d"
 SCRIPTS_STATE_FILENAME = "scripts.json"
 SCRIPTS_CONF_FILENAME = "pvx-scripts.conf"
 
-PROVIDERS = ("ovh", "qnax", "aws", "eveo", "local")
+PROVIDERS = ("ovh", "qnax", "aws", "eveo", "hostinger", "local")

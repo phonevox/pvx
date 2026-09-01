@@ -24,7 +24,7 @@ class MainTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def _invoke(self, args, is_tty=False, is_root=True, os_release=None, asterisk_version=None,
-                repo_ok=True, agent_ok=True, start_ok=True):
+                repo_ok=True, agent_ok=True, start_ok=True, existing_agent=None, legacy_sudo=False):
         os_release = os_release or {"ID": "rocky", "VERSION_ID": "8.10"}
         with patch("main.os.geteuid", return_value=0 if is_root else 1000), \
              patch("main._is_interactive", return_value=is_tty), \
@@ -32,6 +32,10 @@ class MainTestCase(unittest.TestCase):
              patch("main.system_info.detect_provider", return_value="local"), \
              patch("main.system_info.detect_hostname", return_value="detected-host"), \
              patch("main.system_info.asterisk_version", return_value=asterisk_version), \
+             patch("main.install_steps.detect_existing_agent", return_value=existing_agent) as mock_detect_existing, \
+             patch("main.install_steps.remove_agent", return_value=True) as mock_remove_agent, \
+             patch("main.sudoers.detect_legacy_rule", return_value=legacy_sudo), \
+             patch("main.sudoers.remove_legacy_rule", return_value=legacy_sudo) as mock_remove_legacy, \
              patch("main.install_steps.install_repo", return_value=repo_ok) as mock_repo, \
              patch("main.install_steps.install_agent", return_value=agent_ok) as mock_agent, \
              patch("main.install_steps.enable_and_start", return_value=start_ok) as mock_start, \
@@ -41,6 +45,8 @@ class MainTestCase(unittest.TestCase):
             return result, {
                 "repo": mock_repo, "agent": mock_agent, "start": mock_start,
                 "set_params": mock_set_params, "ensure_include": mock_ensure_include,
+                "detect_existing": mock_detect_existing, "remove_agent": mock_remove_agent,
+                "remove_legacy": mock_remove_legacy,
             }
 
 
@@ -187,6 +193,102 @@ class AutoDetectFeedbackTest(MainTestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertFalse(any(c == (("Detectando provider...",), {}) for c in mock_spinner.call_args_list))
         self.assertFalse(any(c == (("Detectando hostname...",), {}) for c in mock_spinner.call_args_list))
+
+
+class LegacyInstallDetectionTest(MainTestCase):
+    # retroativo: máquinas com pzabbix (script bash antigo) instalado precisam ser
+    # detectadas antes de sobrescrever/colidir -- técnico não deve ter que pensar nisso.
+    def test_warns_and_asks_before_overwriting_an_existing_agent(self):
+        with patch("main.ask_confirm", return_value=False):
+            result, mocks = self._invoke(
+                ["install", "--server", "zabbix.local"], is_tty=True, existing_agent="zabbix-agent",
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("zabbix-agent", result.output)
+        mocks["repo"].assert_not_called()
+
+    def test_proceeds_when_the_user_confirms_the_overwrite(self):
+        with patch("main.ask_confirm", side_effect=[True, False, True]), \
+             patch("main.ask_select", return_value="Agent 2 (recomendado)"), \
+             patch("main.ask_text", side_effect=["detected-host", "zabbix.local", "zabbix.local", ""]):
+            result, mocks = self._invoke(
+                ["install", "--server", "zabbix.local", "--provider", "local"],
+                is_tty=True, existing_agent="zabbix-agent",
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["repo"].assert_called_once()
+
+    def test_headless_requires_yes_flag_when_legacy_agent_is_found(self):
+        result, mocks = self._invoke(
+            ["install", "--server", "zabbix.local"], is_tty=False, existing_agent="zabbix-agent",
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        mocks["repo"].assert_not_called()
+
+    def test_headless_proceeds_with_yes_flag_even_with_a_legacy_agent(self):
+        result, mocks = self._invoke(BASE_INSTALL_ARGS, is_tty=False, existing_agent="zabbix-agent")
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["repo"].assert_called_once()
+
+    def test_removes_the_old_package_when_switching_agent_variant(self):
+        result, mocks = self._invoke(
+            BASE_INSTALL_ARGS + ["--agent-version", "agent2"], is_tty=False, existing_agent="zabbix-agent",
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["remove_agent"].assert_called_once_with("zabbix-agent")
+
+    def test_does_not_remove_the_package_when_reinstalling_the_same_variant(self):
+        result, mocks = self._invoke(
+            BASE_INSTALL_ARGS + ["--agent-version", "agent2"], is_tty=False, existing_agent="zabbix-agent2",
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["remove_agent"].assert_not_called()
+
+    def test_cleans_up_the_legacy_sudoers_rule_on_overwrite(self):
+        result, mocks = self._invoke(BASE_INSTALL_ARGS, is_tty=False, legacy_sudo=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["remove_legacy"].assert_called_once()
+
+    def test_no_extra_prompt_or_warning_when_nothing_legacy_is_found(self):
+        result, mocks = self._invoke(BASE_INSTALL_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["remove_agent"].assert_not_called()
+        mocks["remove_legacy"].assert_not_called()
+
+
+class ManualProviderEntryTest(MainTestCase):
+    # provider auto-detectado/lista fixa nem sempre cobre a location real (ex.: um
+    # datacenter novo) -- precisa dar pro técnico digitar a location na mão.
+    def test_offers_manual_entry_option_in_the_select(self):
+        with patch("main.ask_select", return_value=None) as mock_select:
+            result, mocks = self._invoke(["install"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        choices_arg = mock_select.call_args_list[0].args[1]
+        self.assertIn("Definir manualmente...", choices_arg)
+        mocks["repo"].assert_not_called()
+
+    def test_typing_a_custom_provider_is_used_as_is(self):
+        with patch("main.ask_select", side_effect=["Definir manualmente...", "Agent 2 (recomendado)"]), \
+             patch("main.ask_text", side_effect=[
+                 "hostinger", "detected-host", "zabbix.local", "zabbix.local", "",
+             ]) as mock_text, \
+             patch("main.ask_confirm", side_effect=[False, True]):
+            result, _ = self._invoke(["install"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        metadata_call = mock_text.call_args_list[-1]
+        self.assertIn("l:hostinger", metadata_call.kwargs["default"])
+
+    def test_escaping_the_manual_provider_prompt_aborts_cleanly(self):
+        with patch("main.ask_select", return_value="Definir manualmente..."), \
+             patch("main.ask_text", return_value=None):
+            result, mocks = self._invoke(["install"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["repo"].assert_not_called()
+
+    def test_cli_flag_accepts_a_provider_outside_the_known_list(self):
+        result, mocks = self._invoke(BASE_INSTALL_ARGS + ["--provider", "hostinger", "--hostname", "x"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("l:hostinger", mocks["set_params"].call_args.args[1]["HostMetadata"])
 
 
 class InstallFailureTest(MainTestCase):
@@ -369,9 +471,29 @@ class CheckCommandTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_reports_not_configured_when_never_installed(self):
-        result = CliRunner().invoke(cli.cli_group(), ["check"])
+        with patch("main.install_steps.detect_existing_agent", return_value=None), \
+             patch("main.sudoers.detect_legacy_rule", return_value=False):
+            result = CliRunner().invoke(cli.cli_group(), ["check"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
+
+    def test_reports_installed_but_unmanaged_when_a_foreign_agent_is_found(self):
+        # retroativo: pzabbix (ou instalação manual) deixa o agent real instalado sem o
+        # marcador do pvx -- "não configurado" seria enganoso aqui.
+        with patch("main.install_steps.detect_existing_agent", return_value="zabbix-agent"), \
+             patch("main.sudoers.detect_legacy_rule", return_value=False):
+            result = CliRunner().invoke(cli.cli_group(), ["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertNotIn("não configurado", result.output.lower())
+        self.assertIn("zabbix-agent", result.output)
+        self.assertIn("não gerenciado", result.output.lower())
+
+    def test_warns_about_the_legacy_sudoers_rule_when_not_configured(self):
+        with patch("main.install_steps.detect_existing_agent", return_value=None), \
+             patch("main.sudoers.detect_legacy_rule", return_value=True):
+            result = CliRunner().invoke(cli.cli_group(), ["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("regra sudoers antiga", result.output.lower())
 
     @patch("main.widgets.pause")
     @patch("main._is_interactive", return_value=True)
@@ -425,6 +547,16 @@ class CheckCommandTest(unittest.TestCase):
         result = self._invoke_configured(entries={"cpu.custom": {"command": "/opt/cpu.sh", "needs_root": False}})
         self.assertIn("cpu.custom", result.output)
         self.assertIn("/opt/cpu.sh", result.output)
+
+    def test_warns_about_the_legacy_sudoers_rule_even_when_managed_by_pvx(self):
+        (self._state_dir / "agent_variant.txt").write_text("agent2")
+        with patch("main.config.read_params", return_value={"Server": "zabbix.local"}), \
+             patch("main.install_steps.service_status", return_value={"active": "active", "enabled": "enabled"}), \
+             patch("main.scripts.list_all", return_value={}), \
+             patch("main.sudoers.detect_legacy_rule", return_value=True):
+            result = CliRunner().invoke(cli.cli_group(), ["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("regra sudoers antiga", result.output.lower())
 
 
 if __name__ == "__main__":

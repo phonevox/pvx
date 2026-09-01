@@ -42,6 +42,29 @@ class EnableAndStartTest(unittest.TestCase):
         self.assertFalse(install_steps.enable_and_start("zabbix-agent2"))
 
 
+class DetectExistingAgentTest(unittest.TestCase):
+    # achado ao vivo: máquinas com o pzabbix (script bash antigo) instalado precisam
+    # ser detectadas antes do install sobrescrever/colidir com o pacote já presente.
+    @patch("install_steps.os_ops.run_cmd")
+    def test_returns_the_first_installed_package(self, mock_run_cmd):
+        mock_run_cmd.side_effect = [False, True]
+        result = install_steps.detect_existing_agent(["zabbix-agent2", "zabbix-agent"])
+        self.assertEqual(result, "zabbix-agent")
+        mock_run_cmd.assert_any_call(["rpm", "-q", "zabbix-agent2"])
+        mock_run_cmd.assert_any_call(["rpm", "-q", "zabbix-agent"])
+
+    @patch("install_steps.os_ops.run_cmd", return_value=False)
+    def test_none_when_nothing_is_installed(self, mock_run_cmd):
+        self.assertIsNone(install_steps.detect_existing_agent(["zabbix-agent2", "zabbix-agent"]))
+
+
+class RemoveAgentTest(unittest.TestCase):
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    def test_removes_the_given_package(self, mock_run_cmd):
+        self.assertTrue(install_steps.remove_agent("zabbix-agent"))
+        mock_run_cmd.assert_called_once_with(["dnf", "remove", "-y", "zabbix-agent"])
+
+
 class ServiceStatusTest(unittest.TestCase):
     # is-active/is-enabled devolvem o texto real no stdout (active/inactive/failed,
     # enabled/disabled) mesmo com exit code != 0 -- por isso usa subprocess.run direto

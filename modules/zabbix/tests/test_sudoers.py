@@ -40,5 +40,40 @@ class RemoveTest(unittest.TestCase):
         sudoers.remove("/does/not/exist")
 
 
+class LegacyRuleTest(unittest.TestCase):
+    # rastro do pzabbix (script bash antigo): ele escrevia essa linha direto no
+    # /etc/sudoers principal, sem escopo nenhum -- acesso root irrestrito.
+    def test_detects_the_old_unscoped_line(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sudoers"
+            path.write_text("root ALL=(ALL) ALL\n%zabbix ALL=(ALL) NOPASSWD: ALL\n")
+            self.assertTrue(sudoers.detect_legacy_rule(str(path)))
+
+    def test_false_when_line_is_absent(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sudoers"
+            path.write_text("root ALL=(ALL) ALL\n")
+            self.assertFalse(sudoers.detect_legacy_rule(str(path)))
+
+    def test_false_when_file_is_unreadable_or_missing(self):
+        self.assertFalse(sudoers.detect_legacy_rule("/does/not/exist"))
+
+    def test_removes_only_the_legacy_line_keeps_the_rest(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sudoers"
+            path.write_text("root ALL=(ALL) ALL\n%zabbix ALL=(ALL) NOPASSWD: ALL\nDefaults secure_path=x\n")
+            self.assertTrue(sudoers.remove_legacy_rule(str(path)))
+            content = path.read_text()
+            self.assertNotIn("%zabbix ALL=(ALL) NOPASSWD: ALL", content)
+            self.assertIn("root ALL=(ALL) ALL", content)
+            self.assertIn("Defaults secure_path=x", content)
+
+    def test_returns_false_when_there_is_nothing_to_remove(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sudoers"
+            path.write_text("root ALL=(ALL) ALL\n")
+            self.assertFalse(sudoers.remove_legacy_rule(str(path)))
+
+
 if __name__ == "__main__":
     unittest.main()

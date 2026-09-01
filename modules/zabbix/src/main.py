@@ -18,6 +18,7 @@ import sudoers
 import system_info
 
 _AGENT_VARIANT_FILENAME = "agent_variant.txt"
+_MANUAL_PROVIDER_LABEL = "Definir manualmente..."
 
 
 def _is_interactive():
@@ -55,7 +56,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.7"
+    version = "0.1.9"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -70,7 +71,7 @@ class ZabbixModule(PvxModule):
             "--metadata", "extra_metadata", default=None,
             help="HostMetadata literal, sobrescreve o auto-calculado (sem terminal pra editar).",
         )
-        @click.option("--provider", type=click.Choice(defaults.PROVIDERS), default=None)
+        @click.option("--provider", default=None, help="location conhecida ou qualquer texto livre.")
         @click.option("--agent-version", type=click.Choice(defaults.AGENT_VARIANTS), default=None)
         @click.option("--test", is_flag=True)
         @click.option("--yes", is_flag=True)
@@ -81,6 +82,27 @@ class ZabbixModule(PvxModule):
             logger = self.get_logger()
             interactive = _is_interactive()
 
+            existing_package = install_steps.detect_existing_agent(defaults.AGENT_PACKAGES.values())
+            legacy_sudo = sudoers.detect_legacy_rule()
+            if existing_package or legacy_sudo:
+                widgets.state("zabbix já parece instalado nessa máquina (possivelmente via pzabbix):", ok=False)
+                if existing_package:
+                    click.echo(f"  - pacote já instalado: {existing_package}")
+                if legacy_sudo:
+                    click.echo(
+                        "  - regra sudoers antiga e insegura em /etc/sudoers "
+                        "(%zabbix ALL=(ALL) NOPASSWD: ALL)"
+                    )
+                if not yes:
+                    if not interactive:
+                        raise click.ClickException(
+                            "zabbix já instalado nessa máquina -- use --yes pra sobrescrever mesmo assim."
+                        )
+                    if not ask_confirm("Sobrescrever a instalação existente?", default=False):
+                        widgets.message("nada foi alterado.")
+                        widgets.pause()
+                        return
+
             os_release = system_info.read_os_release()
             os_major = os_release.get("VERSION_ID", "0").split(".")[0]
             os_label = system_info.os_label(os_release)
@@ -90,9 +112,14 @@ class ZabbixModule(PvxModule):
                     detected_provider = system_info.detect_provider()
                 if interactive:
                     widgets.success(f"provider detectado: {detected_provider}")
-                    provider = ask_select("Provider (location):", list(defaults.PROVIDERS), default=detected_provider)
+                    choices = list(defaults.PROVIDERS) + [_MANUAL_PROVIDER_LABEL]
+                    provider = ask_select("Provider (location):", choices, default=detected_provider)
                     if provider is None:
                         return
+                    if provider == _MANUAL_PROVIDER_LABEL:
+                        provider = ask_text("Digite a location:")
+                        if provider is None:
+                            return
                 else:
                     provider = detected_provider
 
@@ -172,6 +199,13 @@ class ZabbixModule(PvxModule):
             widgets.success("Repositório adicionado.")
 
             package = defaults.AGENT_PACKAGES[agent_version]
+            if existing_package and existing_package != package:
+                # variante diferente da já instalada (ex.: trocando pzabbix/agent
+                # clássico por agent2) -- os dois disputariam a mesma porta 10050.
+                with widgets.spinner(f"Removendo {existing_package} antigo..."):
+                    install_steps.remove_agent(existing_package)
+                widgets.success(f"{existing_package} antigo removido.")
+
             with widgets.spinner(f"Instalando {package}..."):
                 agent_ok = install_steps.install_agent(package)
             if not agent_ok:
@@ -189,6 +223,11 @@ class ZabbixModule(PvxModule):
             })
             config.ensure_include(config_path, confd_dir)
             widgets.success("Configuração aplicada.")
+
+            if legacy_sudo:
+                sudoers.remove_legacy_rule()
+                widgets.success("regra sudoers antiga (insegura) removida de /etc/sudoers.")
+
             _save_agent_variant(agent_version)
 
             service = defaults.AGENT_SERVICES[agent_version]
@@ -208,8 +247,24 @@ class ZabbixModule(PvxModule):
         @group.command(name="check")
         def check_cmd():
             variant_path = _state_dir() / _AGENT_VARIANT_FILENAME
+            legacy_sudo = sudoers.detect_legacy_rule()
             if not variant_path.exists():
-                widgets.state("Zabbix NÃO configurado -- rode `pvx zabbix install` primeiro.", ok=False)
+                # marcador do pvx ausente não significa "não instalado" -- pode ter
+                # vindo do pzabbix (script bash antigo) ou de instalação manual.
+                existing_package = install_steps.detect_existing_agent(defaults.AGENT_PACKAGES.values())
+                if existing_package:
+                    widgets.state(
+                        f"Zabbix ({existing_package}) instalado mas NÃO gerenciado pelo pvx "
+                        "-- rode `pvx zabbix install` pra assumir.",
+                        ok=False,
+                    )
+                else:
+                    widgets.state("Zabbix NÃO configurado -- rode `pvx zabbix install` primeiro.", ok=False)
+                if legacy_sudo:
+                    click.echo(
+                        "  aviso: regra sudoers antiga e insegura em /etc/sudoers "
+                        "(%zabbix ALL=(ALL) NOPASSWD: ALL)"
+                    )
                 if _is_interactive():
                     widgets.pause()
                 return
@@ -240,6 +295,13 @@ class ZabbixModule(PvxModule):
                 for key in sorted(entries):
                     suffix = " (root)" if entries[key].get("needs_root") else ""
                     click.echo(f"  {key}: {entries[key]['command']}{suffix}")
+
+            if legacy_sudo:
+                click.echo()
+                click.echo(
+                    "aviso: regra sudoers antiga e insegura ainda presente em /etc/sudoers "
+                    "(%zabbix ALL=(ALL) NOPASSWD: ALL) -- rode `pvx zabbix install` de novo pra limpar."
+                )
 
             if _is_interactive():
                 widgets.pause()

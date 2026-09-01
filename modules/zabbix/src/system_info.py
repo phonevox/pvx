@@ -45,6 +45,7 @@ _PROVIDER_ORG_KEYWORDS = {
     "ovh": "ovh",
     "qnax": "qnax",
     "amazon": "aws",
+    "hostinger": "hostinger",
 }
 
 
@@ -67,6 +68,7 @@ def detect_provider(timeout=5):
 _HOSTNAME_PATTERNS = {
     "ovh": re.compile(r"^vps-[a-z0-9]+"),
     "qnax": re.compile(r"^SRV-[0-9]+$"),
+    "hostinger": re.compile(r"^srv[0-9]+"),
 }
 
 
