@@ -4,7 +4,7 @@ from unittest.mock import patch
 import questionary
 
 from pvx.interactive import inputs
-from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_select, ask_text
+from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_password, ask_select, ask_text
 
 
 class AskSelectTest(unittest.TestCase):
@@ -123,6 +123,22 @@ class AskTextTest(unittest.TestCase):
         mock_text.return_value.unsafe_ask.return_value = "valor digitado"
         ask_text("Nome:")
         self.assertIs(mock_text.call_args.kwargs["style"], mock_current_style.return_value)
+
+
+class AskPasswordTest(unittest.TestCase):
+    @patch("pvx.interactive.inputs.questionary.password")
+    def test_delegates_to_questionary_password(self, mock_password):
+        mock_password.return_value.unsafe_ask.return_value = "hunter2"
+        result = ask_password("Senha:")
+        self.assertEqual(result, "hunter2")
+        mock_password.assert_called_once()
+
+    @patch("pvx.interactive.inputs.theme.current_style")
+    @patch("pvx.interactive.inputs.questionary.password")
+    def test_uses_current_theme(self, mock_password, mock_current_style):
+        mock_password.return_value.unsafe_ask.return_value = "hunter2"
+        ask_password("Senha:")
+        self.assertIs(mock_password.call_args.kwargs["style"], mock_current_style.return_value)
 
 
 if __name__ == "__main__":
