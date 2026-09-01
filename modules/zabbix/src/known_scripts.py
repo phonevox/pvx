@@ -1,5 +1,4 @@
 import os
-import sys
 from pathlib import Path
 
 # catálogo de scripts que o pvx distribui junto com o módulo (pasta scripts/,
@@ -19,7 +18,11 @@ def _script_source(filename):
     # funciona tanto rodando de module.pyz (zipimport, __loader__.archive
     # aponta pro .pyz real em disco) quanto em dev/teste (SourceFileLoader,
     # arquivo solto em scripts/ ao lado de src/) -- get_data() abstrai os dois.
-    loader = sys.modules[__name__].__loader__
+    # __loader__ direto (global de módulo, não via sys.modules): o loader.py do
+    # core remove o módulo de sys.modules logo após o import (evita colisão de
+    # nome entre módulos diferentes) -- sys.modules[__name__] já não existe mais
+    # quando deploy() roda de verdade.
+    loader = __loader__
     archive = getattr(loader, "archive", None)
     if archive:
         path = os.path.join(archive, "scripts", filename)

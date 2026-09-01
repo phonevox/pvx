@@ -1,5 +1,6 @@
 import os
 import stat
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -43,6 +44,19 @@ class RemoveDeployedTest(unittest.TestCase):
     def test_is_a_no_op_when_file_never_existed(self):
         with TemporaryDirectory() as tmp:
             known_scripts.remove_deployed(tmp, "audit")
+
+
+class SurvivesSysModulesEvictionTest(unittest.TestCase):
+    # achado ao vivo: loader.py do core remove o módulo de sys.modules logo
+    # após importar o entrypoint (evita colisão de nome entre módulos
+    # diferentes) -- deploy() não pode depender de sys.modules[__name__]
+    # continuar existindo depois (KeyError em produção, testes locais não
+    # pegam porque pytest nunca faz essa limpeza).
+    def test_deploy_works_after_module_is_evicted_from_sys_modules(self):
+        sys.modules.pop("known_scripts", None)
+        with TemporaryDirectory() as tmp:
+            path = known_scripts.deploy(tmp, "audit")
+            self.assertTrue(Path(path).exists())
 
 
 if __name__ == "__main__":
