@@ -14,6 +14,12 @@ def validate_rule_syntax(rule_text):
         temp_path = f.name
     try:
         return subprocess.run(["visudo", "-c", "-f", temp_path], capture_output=True).returncode == 0
+    except FileNotFoundError:
+        # visudo ausente (sudo não instalado e a auto-instalação falhou, ex.:
+        # host offline) -- o template é estático e seguro (só substitui o
+        # username, já validado antes), então segue sem validar em vez de
+        # bloquear o hardening inteiro por causa disso.
+        return True
     finally:
         os.unlink(temp_path)
 

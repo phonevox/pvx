@@ -91,6 +91,50 @@ class ApplyTest(unittest.TestCase):
         mock_set_password.assert_called_once_with("phonevox", "userpass")
 
     @patch("apply.user_setup.create_user")
+    @patch("apply.user_setup.add_to_admin_group", return_value=True)
+    @patch("apply.sudoers.install_rule")
+    @patch("apply.user_setup.setup_authorized_key")
+    @patch("apply.user_setup.install_sudo", return_value=True)
+    @patch("apply.user_setup.sudo_available", return_value=False)
+    def test_installs_sudo_when_missing_before_creating_the_user(
+        self, mock_available, mock_install, mock_setup_key, mock_install_rule, mock_add_group, mock_create_user
+    ):
+        self._write_valid_config()
+        plan = build_plan(
+            lock_root=False, root_password=None,
+            create_user=True, username="phonevox", public_key="ssh-rsa AAAA test", allow_password=False,
+            user_password=None,
+            change_port=False, port=None,
+        )
+
+        result = apply(plan, str(self.config_path), str(self.sudoers_dir), str(self.state_dir))
+
+        mock_install.assert_called_once()
+        self.assertTrue(result["sudo_installed_now"])
+
+    @patch("apply.user_setup.create_user")
+    @patch("apply.user_setup.add_to_admin_group", return_value=True)
+    @patch("apply.sudoers.install_rule")
+    @patch("apply.user_setup.setup_authorized_key")
+    @patch("apply.user_setup.install_sudo")
+    @patch("apply.user_setup.sudo_available", return_value=True)
+    def test_does_not_try_to_install_sudo_when_already_available(
+        self, mock_available, mock_install, mock_setup_key, mock_install_rule, mock_add_group, mock_create_user
+    ):
+        self._write_valid_config()
+        plan = build_plan(
+            lock_root=False, root_password=None,
+            create_user=True, username="phonevox", public_key="ssh-rsa AAAA test", allow_password=False,
+            user_password=None,
+            change_port=False, port=None,
+        )
+
+        result = apply(plan, str(self.config_path), str(self.sudoers_dir), str(self.state_dir))
+
+        mock_install.assert_not_called()
+        self.assertIsNone(result["sudo_installed_now"])
+
+    @patch("apply.user_setup.create_user")
     @patch("apply.user_setup.add_to_admin_group", return_value=False)
     @patch("apply.sudoers.install_rule")
     @patch("apply.user_setup.setup_authorized_key")

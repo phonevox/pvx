@@ -22,7 +22,10 @@ def apply(plan, config_path, sudoers_dir, state_dir):
         config_text = set_directive(config_text, "PermitRootLogin", "no")
 
     admin_group_added = None
+    sudo_installed_now = None
     if plan["create_user"]:
+        if not user_setup.sudo_available():
+            sudo_installed_now = user_setup.install_sudo()
         username = plan["username"]
         user_setup.create_user(username)
         admin_group_added = user_setup.add_to_admin_group(username)
@@ -47,7 +50,7 @@ def apply(plan, config_path, sudoers_dir, state_dir):
 
     return {
         "applied": True, "config_valid": config_valid, "record_path": str(record_path),
-        "admin_group_added": admin_group_added,
+        "admin_group_added": admin_group_added, "sudo_installed_now": sudo_installed_now,
     }
 
 

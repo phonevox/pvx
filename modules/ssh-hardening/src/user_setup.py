@@ -1,4 +1,5 @@
 import grp
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -6,6 +7,28 @@ from pathlib import Path
 # checa qual existe de verdade em vez de assumir uma distro (achado ao vivo:
 # usermod -aG wheel crashava num Debian 11).
 _ADMIN_GROUP_CANDIDATES = ("wheel", "sudo")
+
+# achado ao vivo: Debian mínimo não vem com o pacote sudo instalado -- nem
+# visudo existe no PATH nesse caso. instala sozinho em vez de só crashar.
+_SUDO_INSTALL_COMMANDS = {
+    "apt-get": ["apt-get", "install", "-y", "sudo"],
+    "dnf": ["dnf", "install", "-y", "sudo"],
+    "yum": ["yum", "install", "-y", "sudo"],
+}
+
+
+def sudo_available():
+    return shutil.which("sudo") is not None
+
+
+def install_sudo():
+    if sudo_available():
+        return True
+    for manager, command in _SUDO_INSTALL_COMMANDS.items():
+        if shutil.which(manager):
+            subprocess.run(command, check=False)
+            return sudo_available()
+    return False
 
 
 def user_exists(username):

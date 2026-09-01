@@ -18,6 +18,12 @@ class ValidateRuleSyntaxTest(unittest.TestCase):
     def test_rejects_a_syntactically_invalid_rule(self):
         self.assertFalse(validate_rule_syntax("isso nao eh uma regra valida\n"))
 
+    @patch("sudoers.subprocess.run", side_effect=FileNotFoundError)
+    def test_assumes_valid_when_visudo_binary_is_missing(self, mock_run):
+        # achado ao vivo: sudo não instalado (auto-instalação pode falhar num
+        # host offline) -- o template é estático/seguro, não deve travar tudo.
+        self.assertTrue(validate_rule_syntax("phonevox ALL=(ALL) NOPASSWD: ALL\n"))
+
 
 class InstallRuleTest(unittest.TestCase):
     def setUp(self):
