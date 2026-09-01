@@ -27,7 +27,7 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.1.4"
+    version = "0.1.5"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
@@ -126,6 +126,8 @@ class SSHHardeningModule(PvxModule):
 
             if plan is None:
                 click.echo("Nada a fazer.")
+                if is_tty:
+                    widgets.pause()
                 return
 
             if not yes:

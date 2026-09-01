@@ -69,3 +69,9 @@ def ask_text(msg, validator=None, default=None):
         msg, default=default or "", validate=validator, style=theme.current_style()
     )
     return _ask(question)
+
+
+def ask_password(msg):
+    # sem default -- senha nunca deve vir pré-preenchida nem ecoada na tela.
+    question = questionary.password(msg, style=theme.current_style())
+    return _ask(question)

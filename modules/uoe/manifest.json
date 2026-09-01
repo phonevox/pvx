@@ -1,0 +1,10 @@
+{
+  "name": "uoe",
+  "version": "0.1.0",
+  "entrypoint": "main:cli",
+  "description": "Provisiona o backup de uma central na UOE (Upload-Only Endpoint) e gerencia a cron do pbackup.",
+  "author": "pvx",
+  "min_pvx_version": "0.2.0",
+  "checksum_sha256": "",
+  "dependencies": []
+}

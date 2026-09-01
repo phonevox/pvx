@@ -7,7 +7,17 @@ MODULES_DIR="modules"
 STAGE_DIR="dist/registry"
 INDEX_URL="https://registry.phonevox.com.br/pvx/index.json"
 
-ALL_MODULES="dummy firewall qint ssh-hardening netinstall"
+# descoberto de modules/*/manifest.json -- nunca lista fixa (achado ao vivo:
+# zabbix ficou de fora de --all porque a lista hardcoded nunca foi atualizada
+# quando o módulo foi criado).
+all_modules() {
+    for d in "$MODULES_DIR"/*/; do
+        m="$(basename "$d")"
+        case "$m" in _*) continue ;; esac
+        [ -f "$MODULES_DIR/$m/manifest.json" ] && printf '%s ' "$m"
+    done
+}
+ALL_MODULES="$(all_modules)"
 
 usage() {
     cat <<'EOF'
@@ -97,15 +107,30 @@ cmd_stage() {
 import json, urllib.request
 
 data = json.load(urllib.request.urlopen('$INDEX_URL'))
-versions = {}
-for m in '$modules'.split():
-    versions[m] = json.load(open('$MODULES_DIR/' + m + '/manifest.json'))['version']
+base = '$INDEX_URL'.rsplit('/', 1)[0] + '/'
+by_name = {m['name']: m for m in data['modules']}
 
-for m in data['modules']:
-    if m['name'] in versions:
-        v = versions[m['name']]
-        m['latest'] = v
-        m['versions'] = [v]
+# módulo que já existe no índice remoto só tem a versão atualizada; módulo
+# novo (nunca publicado) precisa da entrada inteira criada -- achado ao vivo:
+# a versão anterior só atualizava, nunca adicionava (zabbix sumia do index.json
+# mesmo staged com sucesso, porque não existia ainda no remoto pra 'achar').
+for m in '$modules'.split():
+    manifest = json.load(open('$MODULES_DIR/' + m + '/manifest.json'))
+    v = manifest['version']
+    if m in by_name:
+        by_name[m]['latest'] = v
+        by_name[m]['versions'] = [v]
+    else:
+        entry = {
+            'name': m,
+            'description': manifest.get('description', ''),
+            'latest': v,
+            'versions': [v],
+            'url_template': base + 'modules/{name}/{version}.pyz',
+            'manifest_url': base + 'modules/' + m + '/manifest.json',
+        }
+        data['modules'].append(entry)
+        by_name[m] = entry
 
 json.dump(data, open('$STAGE_DIR/index.json', 'w'), indent=2, ensure_ascii=False)
 "

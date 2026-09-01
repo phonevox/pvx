@@ -389,5 +389,50 @@ class LoggingTest(MainTestCase):
         mock_get_logger.assert_not_called()
 
 
+class PauseOnExitTest(MainTestCase):
+    # achado ao vivo: issabel5_cmd nunca chamava widgets.pause() em NENHUM caminho de
+    # saída -- nem depois de uma instalação inteira bem-sucedida. Como o preflight já
+    # imprime coisa (root/SO/rede/RAM) antes de qualquer return, todo caminho de saída
+    # perde essa informação ao redesenhar o menu.
+    @patch("main.widgets.pause")
+    def test_pauses_after_a_full_successful_install_when_interactive(self, mock_pause):
+        with patch("main._is_interactive", return_value=True):
+            result, _ = self._invoke(BASE_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_does_not_pause_after_a_successful_install_when_not_interactive(self, mock_pause):
+        result, _ = self._invoke(BASE_ARGS)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_not_called()
+
+    @patch("main.widgets.pause")
+    def test_pauses_when_declining_the_final_confirmation(self, mock_pause):
+        args = ["issabel5", "--astver", "18", "--sql-password", "a", "--web-password", "b",
+                "--tweaks", "firewall"]
+        with patch("main._is_interactive", return_value=True), patch("main.ask_confirm", return_value=False):
+            result, _ = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("cancelada", result.output.lower())
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_pauses_when_asterisk_version_prompt_is_escaped(self, mock_pause):
+        args = [a for a in BASE_ARGS if a not in ("--astver", "18")]
+        with patch("main._is_interactive", return_value=True), patch("main.ask_select", return_value=None):
+            result, _ = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    def test_does_not_pause_when_preflight_raises(self, mock_pause):
+        # ClickException já é pausado centralmente pelo router (root.py) -- pausar aqui
+        # também dobraria o "pressione enter" na cara do usuário.
+        result, _ = self._invoke(BASE_ARGS, preflight_result=(["não é RHEL-like"], []))
+        self.assertNotEqual(result.exit_code, 0)
+        mock_pause.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
