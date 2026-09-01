@@ -21,10 +21,11 @@ def apply(plan, config_path, sudoers_dir, state_dir):
         user_setup.set_password("root", plan["root_password"])
         config_text = set_directive(config_text, "PermitRootLogin", "no")
 
+    admin_group_added = None
     if plan["create_user"]:
         username = plan["username"]
         user_setup.create_user(username)
-        user_setup.add_to_admin_group(username)
+        admin_group_added = user_setup.add_to_admin_group(username)
         sudoers.install_rule(username, sudoers_dir=sudoers_dir)
         user_setup.setup_authorized_key(f"/home/{username}", username, plan["public_key"])
         if plan["allow_password"]:
@@ -44,7 +45,10 @@ def apply(plan, config_path, sudoers_dir, state_dir):
     record_path.write_text(json.dumps(record, indent=2))
     record_path.chmod(0o600)
 
-    return {"applied": True, "config_valid": config_valid, "record_path": str(record_path)}
+    return {
+        "applied": True, "config_valid": config_valid, "record_path": str(record_path),
+        "admin_group_added": admin_group_added,
+    }
 
 
 def find_latest_record(state_dir):

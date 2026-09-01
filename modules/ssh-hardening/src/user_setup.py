@@ -1,5 +1,11 @@
+import grp
 import subprocess
 from pathlib import Path
+
+# RHEL/CentOS/Rocky usam wheel; Debian/Ubuntu não têm esse grupo, usam sudo --
+# checa qual existe de verdade em vez de assumir uma distro (achado ao vivo:
+# usermod -aG wheel crashava num Debian 11).
+_ADMIN_GROUP_CANDIDATES = ("wheel", "sudo")
 
 
 def user_exists(username):
@@ -19,8 +25,22 @@ def delete_user(username):
     subprocess.run(["userdel", "-r", username], check=True)
 
 
-def add_to_admin_group(username, group="wheel"):
+def detect_admin_group():
+    for name in _ADMIN_GROUP_CANDIDATES:
+        try:
+            grp.getgrnam(name)
+            return name
+        except KeyError:
+            continue
+    return None
+
+
+def add_to_admin_group(username, group=None):
+    group = group or detect_admin_group()
+    if group is None:
+        return False
     subprocess.run(["usermod", "-aG", group, username], check=True)
+    return True
 
 
 def set_password(username, password):

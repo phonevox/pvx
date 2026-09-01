@@ -35,7 +35,7 @@ class UnattendedSafetyGateTest(unittest.TestCase):
 
     @patch("main.apply_module.apply")
     def test_quick_and_yes_works_without_a_tty(self, mock_apply):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(["setup", "--quick", "--yes"], is_tty=False)
 
@@ -47,7 +47,7 @@ class UnattendedSafetyGateTest(unittest.TestCase):
 
     @patch("main.apply_module.apply")
     def test_explicit_flags_pin_the_plan_without_a_tty(self, mock_apply):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(
             ["setup", "--lock-root", "--no-create-user", "--no-change-port", "--yes"], is_tty=False
@@ -68,7 +68,7 @@ class WizardModeQuestionTest(unittest.TestCase):
     def test_choosing_defaults_skips_every_per_item_question(
         self, mock_select, mock_confirm, mock_text, mock_apply
     ):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(["setup", "--yes"], is_tty=True)
 
@@ -89,7 +89,7 @@ class WizardCustomizeModeTest(unittest.TestCase):
     def test_asks_each_toggle_and_follow_up_values_in_order(
         self, mock_select, mock_confirm, mock_text, mock_apply
     ):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
         # ordem: lock_root?, create_user?, change_port?, confirmação final
         mock_confirm.side_effect = [True, False, True, True]
         # ordem: senha do root, porta nova (create_user=False pula username/chave)
@@ -112,7 +112,7 @@ class WizardCustomizeModeTest(unittest.TestCase):
     def test_flags_pin_every_item_and_skip_all_follow_up_questions(
         self, mock_select, mock_confirm, mock_text, mock_apply
     ):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(
             ["setup", "--lock-root", "--root-password", "fixedpass", "--no-create-user", "--no-change-port"],
@@ -135,7 +135,7 @@ class WizardCustomizeModeTest(unittest.TestCase):
     def test_all_flags_given_never_asks_the_quick_vs_customize_question_even_with_a_tty(
         self, mock_select, mock_apply
     ):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(
             [
@@ -174,7 +174,7 @@ class FinalConfirmationTest(unittest.TestCase):
     def test_yes_flag_skips_final_confirmation_even_with_a_tty(
         self, mock_select, mock_confirm, mock_apply, mock_message, mock_pause
     ):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(["setup", "--yes"], is_tty=True)
 
@@ -191,7 +191,7 @@ class ApplyOutcomeTest(unittest.TestCase):
     def test_success_pauses_with_restart_reminder_when_interactive(
         self, mock_apply, mock_message, mock_pause
     ):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(["setup", "--quick", "--yes"], is_tty=True)
 
@@ -207,7 +207,7 @@ class ApplyOutcomeTest(unittest.TestCase):
     def test_invalid_resulting_config_shows_rollback_message_and_pauses(
         self, mock_apply, mock_message, mock_pause
     ):
-        mock_apply.return_value = {"applied": True, "config_valid": False, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": False, "record_path": "/x", "admin_group_added": None}
 
         result = _invoke(["setup", "--quick", "--yes"], is_tty=True)
 
@@ -217,10 +217,26 @@ class ApplyOutcomeTest(unittest.TestCase):
         mock_pause.assert_called_once_with()
 
     @patch("main.widgets.pause")
+    @patch("main.widgets.message")
+    @patch("main.apply_module.apply")
+    def test_warns_when_no_admin_group_was_found(self, mock_apply, mock_message, mock_pause):
+        # achado ao vivo (Debian 11 sem grupo wheel) -- add_to_admin_group agora
+        # retorna False em vez de crashar; o técnico precisa saber disso.
+        mock_apply.return_value = {
+            "applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": False,
+        }
+
+        result = _invoke(["setup", "--quick", "--yes"], is_tty=True)
+
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        shown = mock_message.call_args.args[0]
+        self.assertIn("wheel/sudo", shown)
+
+    @patch("main.widgets.pause")
     @patch("main.click.echo")
     @patch("main.apply_module.apply")
     def test_does_not_pause_when_run_without_a_tty(self, mock_apply, mock_echo, mock_pause):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(["setup", "--quick", "--yes"], is_tty=False)
 
@@ -269,7 +285,7 @@ class LoggingTest(unittest.TestCase):
     @patch("main.SSHHardeningModule.get_logger")
     @patch("main.apply_module.apply")
     def test_logs_outcome_on_success(self, mock_apply, mock_get_logger):
-        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
         _invoke(["setup", "--quick", "--yes"], is_tty=False)
         logger = mock_get_logger.return_value
         logger.info.assert_called_once()

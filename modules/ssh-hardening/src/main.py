@@ -28,7 +28,7 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.2.0"
+    version = "0.2.1"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
@@ -166,6 +166,12 @@ class SSHHardeningModule(PvxModule):
                 )
             else:
                 outcome = "ssh-hardening aplicado. reinicie o sshd (ou a máquina) pra entrar em vigor."
+                if result["admin_group_added"] is False:
+                    outcome += (
+                        " aviso: nenhum grupo administrativo padrão (wheel/sudo) encontrado nessa "
+                        "distro -- usuário criado sem grupo extra, mas o acesso via sudoers.d já "
+                        "está garantido."
+                    )
             logger.info(outcome)
 
             if is_tty:
