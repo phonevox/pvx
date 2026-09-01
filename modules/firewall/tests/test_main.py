@@ -34,7 +34,7 @@ class RootCheckTest(MainTestCase):
         with patch("main.status_module.get_status", return_value={
             "engine": "iptables", "rule_count": 0, "session_ip": None, "synced": False, "failsafe_ok": False,
         }):
-            result = self._invoke(["status"], is_root=False)
+            result = self._invoke(["check"], is_root=False)
         self.assertEqual(result.exit_code, 0)
 
 
@@ -119,7 +119,7 @@ class StatusCommandTest(MainTestCase):
             "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
             "synced": True, "failsafe_ok": True,
         }):
-            result = self._invoke(["status"])
+            result = self._invoke(["check"])
         self.assertIn("iptables", result.output)
         self.assertIn("sincronizado", result.output.lower())
         self.assertNotIn("não sincronizado", result.output.lower())
@@ -130,7 +130,7 @@ class StatusCommandTest(MainTestCase):
             "engine": "iptables", "rule_count": 0, "session_ip": "203.0.113.9",
             "synced": False, "failsafe_ok": False,
         }):
-            result = self._invoke(["status"])
+            result = self._invoke(["check"])
         self.assertIn("não sincronizado", result.output.lower())
         self.assertNotIn("falha", result.output.lower())
 
@@ -139,7 +139,7 @@ class StatusCommandTest(MainTestCase):
             "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
             "synced": True, "failsafe_ok": False,
         }):
-            result = self._invoke(["status"])
+            result = self._invoke(["check"])
         self.assertIn("sincronizado", result.output.lower())
         self.assertIn("atenção", result.output.lower())
 

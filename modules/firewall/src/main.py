@@ -59,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.1.11"
+    version = "0.2.0"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -205,9 +205,9 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="status")
+        @group.command(name="check")
         @click.option("--engine", default=None, type=ENGINE_CHOICE)
-        def status_cmd(engine):
+        def check_cmd(engine):
             result = status_module.get_status(engine=engine)
             click.echo(f"engine: {result['engine']}")
             click.echo(f"IP da sessão: {result['session_ip'] or 'não detectado'}")
