@@ -15,7 +15,7 @@ def _invoke(args, is_root=True, is_tty=False):
 
 class RootCheckTest(unittest.TestCase):
     def test_refuses_to_run_without_root(self):
-        result = _invoke(["apply", "--quick", "--yes"], is_root=False)
+        result = _invoke(["setup", "--quick", "--yes"], is_root=False)
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("root", result.output.lower())
 
@@ -23,13 +23,13 @@ class RootCheckTest(unittest.TestCase):
 class UnattendedSafetyGateTest(unittest.TestCase):
     @patch("main.apply_module.apply")
     def test_no_tty_and_no_flags_does_nothing(self, mock_apply):
-        result = _invoke(["apply"], is_tty=False)
+        result = _invoke(["setup"], is_tty=False)
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_apply.assert_not_called()
 
     @patch("main.apply_module.apply")
     def test_flags_without_yes_and_without_tty_does_nothing(self, mock_apply):
-        result = _invoke(["apply", "--lock-root"], is_tty=False)
+        result = _invoke(["setup", "--lock-root"], is_tty=False)
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_apply.assert_not_called()
 
@@ -37,7 +37,7 @@ class UnattendedSafetyGateTest(unittest.TestCase):
     def test_quick_and_yes_works_without_a_tty(self, mock_apply):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
 
-        result = _invoke(["apply", "--quick", "--yes"], is_tty=False)
+        result = _invoke(["setup", "--quick", "--yes"], is_tty=False)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         plan = mock_apply.call_args.args[0]
@@ -50,7 +50,7 @@ class UnattendedSafetyGateTest(unittest.TestCase):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
 
         result = _invoke(
-            ["apply", "--lock-root", "--no-create-user", "--no-change-port", "--yes"], is_tty=False
+            ["setup", "--lock-root", "--no-create-user", "--no-change-port", "--yes"], is_tty=False
         )
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
@@ -70,7 +70,7 @@ class WizardModeQuestionTest(unittest.TestCase):
     ):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
 
-        result = _invoke(["apply", "--yes"], is_tty=True)
+        result = _invoke(["setup", "--yes"], is_tty=True)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_confirm.assert_not_called()
@@ -95,7 +95,7 @@ class WizardCustomizeModeTest(unittest.TestCase):
         # ordem: senha do root, porta nova (create_user=False pula username/chave)
         mock_text.side_effect = ["custom-root-pass", "2222"]
 
-        result = _invoke(["apply"], is_tty=True)
+        result = _invoke(["setup"], is_tty=True)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         plan = mock_apply.call_args.args[0]
@@ -115,7 +115,7 @@ class WizardCustomizeModeTest(unittest.TestCase):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
 
         result = _invoke(
-            ["apply", "--lock-root", "--root-password", "fixedpass", "--no-create-user", "--no-change-port"],
+            ["setup", "--lock-root", "--root-password", "fixedpass", "--no-create-user", "--no-change-port"],
             is_tty=True,
         )
 
@@ -139,7 +139,7 @@ class WizardCustomizeModeTest(unittest.TestCase):
 
         result = _invoke(
             [
-                "apply", "--yes", "--lock-root", "--root-password", "x", "--create-user",
+                "setup", "--yes", "--lock-root", "--root-password", "x", "--create-user",
                 "--username", "phonevox", "--public-key", "ssh-rsa AAAA...", "--no-allow-password",
                 "--change-port", "--port", "21122",
             ],
@@ -159,7 +159,7 @@ class FinalConfirmationTest(unittest.TestCase):
     def test_declining_final_confirmation_pauses_with_no_changes_message(
         self, mock_select, mock_confirm, mock_apply, mock_message, mock_pause
     ):
-        result = _invoke(["apply"], is_tty=True)
+        result = _invoke(["setup"], is_tty=True)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_apply.assert_not_called()
@@ -176,7 +176,7 @@ class FinalConfirmationTest(unittest.TestCase):
     ):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
 
-        result = _invoke(["apply", "--yes"], is_tty=True)
+        result = _invoke(["setup", "--yes"], is_tty=True)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_confirm.assert_not_called()
@@ -193,7 +193,7 @@ class ApplyOutcomeTest(unittest.TestCase):
     ):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
 
-        result = _invoke(["apply", "--quick", "--yes"], is_tty=True)
+        result = _invoke(["setup", "--quick", "--yes"], is_tty=True)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         shown = mock_message.call_args.args[0]
@@ -209,7 +209,7 @@ class ApplyOutcomeTest(unittest.TestCase):
     ):
         mock_apply.return_value = {"applied": True, "config_valid": False, "record_path": "/x"}
 
-        result = _invoke(["apply", "--quick", "--yes"], is_tty=True)
+        result = _invoke(["setup", "--quick", "--yes"], is_tty=True)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         shown = mock_message.call_args.args[0]
@@ -222,7 +222,7 @@ class ApplyOutcomeTest(unittest.TestCase):
     def test_does_not_pause_when_run_without_a_tty(self, mock_apply, mock_echo, mock_pause):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
 
-        result = _invoke(["apply", "--quick", "--yes"], is_tty=False)
+        result = _invoke(["setup", "--quick", "--yes"], is_tty=False)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_pause.assert_not_called()
@@ -235,7 +235,7 @@ class NothingToDoTest(unittest.TestCase):
     @patch("main.widgets.pause")
     def test_pauses_when_interactive_and_nothing_is_selected(self, mock_pause):
         result = _invoke(
-            ["apply", "--no-lock-root", "--no-create-user", "--no-change-port"], is_tty=True
+            ["setup", "--no-lock-root", "--no-create-user", "--no-change-port"], is_tty=True
         )
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
@@ -245,7 +245,7 @@ class NothingToDoTest(unittest.TestCase):
     @patch("main.widgets.pause")
     def test_does_not_pause_when_not_interactive(self, mock_pause):
         result = _invoke(
-            ["apply", "--no-lock-root", "--no-create-user", "--no-change-port"], is_tty=False
+            ["setup", "--no-lock-root", "--no-create-user", "--no-change-port"], is_tty=False
         )
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
@@ -256,7 +256,7 @@ class InvalidValueTest(unittest.TestCase):
     @patch("main.apply_module.apply")
     def test_invalid_username_raises_a_clean_error_no_traceback(self, mock_apply):
         result = _invoke(
-            ["apply", "--create-user", "--username", "Invalid User", "--yes"], is_tty=False
+            ["setup", "--create-user", "--username", "Invalid User", "--yes"], is_tty=False
         )
 
         self.assertNotEqual(result.exit_code, 0)
@@ -270,7 +270,7 @@ class LoggingTest(unittest.TestCase):
     @patch("main.apply_module.apply")
     def test_logs_outcome_on_success(self, mock_apply, mock_get_logger):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x"}
-        _invoke(["apply", "--quick", "--yes"], is_tty=False)
+        _invoke(["setup", "--quick", "--yes"], is_tty=False)
         logger = mock_get_logger.return_value
         logger.info.assert_called_once()
         self.assertIn("aplicado", logger.info.call_args.args[0].lower())
@@ -279,7 +279,7 @@ class LoggingTest(unittest.TestCase):
     @patch("main.apply_module.apply")
     def test_logs_error_on_invalid_plan(self, mock_apply, mock_get_logger):
         result = _invoke(
-            ["apply", "--create-user", "--username", "Invalid User", "--yes"], is_tty=False
+            ["setup", "--create-user", "--username", "Invalid User", "--yes"], is_tty=False
         )
         self.assertNotEqual(result.exit_code, 0)
         mock_get_logger.return_value.error.assert_called_once()
@@ -289,6 +289,110 @@ class LoggingTest(unittest.TestCase):
     def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
         cli.cli_group()
         mock_get_logger.assert_not_called()
+
+
+class CheckCommandTest(unittest.TestCase):
+    @patch("main.apply_module.find_latest_record", return_value=None)
+    def test_reports_not_configured_when_never_applied(self, mock_find):
+        result = _invoke(["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("não configurado", result.output.lower())
+
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.find_latest_record", return_value=None)
+    def test_pauses_when_interactive(self, mock_find, mock_pause):
+        _invoke(["check"], is_tty=True)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.find_latest_record", return_value=None)
+    def test_does_not_pause_when_not_interactive(self, mock_find, mock_pause):
+        _invoke(["check"], is_tty=False)
+        mock_pause.assert_not_called()
+
+    @patch("main.user_setup.user_exists", return_value=True)
+    @patch("main.apply_module.find_latest_record")
+    def test_shows_configured_plan_details(self, mock_find, mock_exists):
+        mock_find.return_value = {
+            "plan": {"lock_root": True, "create_user": True, "username": "phonevox", "change_port": True, "port": "2222"},
+            "config_valid": True,
+        }
+        result = _invoke(["check"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("phonevox", result.output)
+        self.assertIn("2222", result.output)
+        self.assertIn("existe", result.output.lower())
+
+    @patch("main.user_setup.user_exists", return_value=False)
+    @patch("main.apply_module.find_latest_record")
+    def test_flags_when_the_dedicated_user_no_longer_exists(self, mock_find, mock_exists):
+        mock_find.return_value = {
+            "plan": {"lock_root": False, "create_user": True, "username": "phonevox", "change_port": False},
+            "config_valid": True,
+        }
+        result = _invoke(["check"])
+        self.assertIn("não existe mais", result.output.lower())
+
+
+class RevertCommandTest(unittest.TestCase):
+    def test_requires_root(self):
+        result = _invoke(["revert", "--yes"], is_root=False)
+        self.assertNotEqual(result.exit_code, 0)
+
+    @patch("main.apply_module.find_latest_record", return_value=None)
+    def test_reports_nothing_to_revert_when_never_applied(self, mock_find):
+        result = _invoke(["revert", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nada a reverter", result.output.lower())
+
+    @patch("main.apply_module.revert")
+    @patch("main.apply_module.find_latest_record")
+    def test_warns_the_root_password_is_never_reverted(self, mock_find, mock_revert):
+        mock_find.return_value = {"plan": {"lock_root": True, "create_user": False}, "backup_path": "/x"}
+        mock_revert.return_value = {"reverted": ["sshd_config restaurado do backup"]}
+        result = _invoke(["revert", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("senha do root", result.output.lower())
+        self.assertIn("não será revertida", result.output.lower())
+
+    @patch("main.apply_module.revert")
+    @patch("main.apply_module.find_latest_record")
+    def test_declining_confirmation_changes_nothing(self, mock_find, mock_revert):
+        mock_find.return_value = {"plan": {"lock_root": False, "create_user": False}, "backup_path": "/x"}
+        with patch("main.ask_confirm", return_value=False):
+            result = _invoke(["revert"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nada foi alterado", result.output.lower())
+        mock_revert.assert_not_called()
+
+    @patch("main.SSHHardeningModule.get_logger")
+    @patch("main.apply_module.revert")
+    @patch("main.apply_module.find_latest_record")
+    def test_yes_flag_skips_confirmation_and_reverts(self, mock_find, mock_revert, mock_get_logger):
+        mock_find.return_value = {"plan": {"lock_root": False, "create_user": True, "username": "phonevox"}, "backup_path": "/x"}
+        mock_revert.return_value = {"reverted": ["usuário 'phonevox' e sua regra de sudoers removidos"]}
+        result = _invoke(["revert", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_revert.assert_called_once()
+        mock_get_logger.return_value.info.assert_called_once()
+
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.revert", return_value={"reverted": []})
+    @patch("main.apply_module.find_latest_record")
+    def test_pauses_when_interactive(self, mock_find, mock_revert, mock_pause):
+        mock_find.return_value = {"plan": {"lock_root": False, "create_user": False}, "backup_path": None}
+        result = _invoke(["revert", "--yes"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.apply_module.revert", return_value={"reverted": []})
+    @patch("main.apply_module.find_latest_record")
+    def test_does_not_pause_when_not_interactive(self, mock_find, mock_revert, mock_pause):
+        mock_find.return_value = {"plan": {"lock_root": False, "create_user": False}, "backup_path": None}
+        result = _invoke(["revert", "--yes"], is_tty=False)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_not_called()
 
 
 if __name__ == "__main__":

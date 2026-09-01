@@ -32,3 +32,10 @@ def install_rule(username, sudoers_dir="/etc/sudoers.d"):
     rule_path.chmod(0o440)
     os.chown(str(rule_path), 0, 0)
     return True
+
+
+def remove_rule(username, sudoers_dir="/etc/sudoers.d"):
+    try:
+        (Path(sudoers_dir) / username).unlink()
+    except FileNotFoundError:
+        pass
