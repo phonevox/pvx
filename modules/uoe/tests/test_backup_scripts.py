@@ -4,8 +4,18 @@ import backup_scripts
 
 
 class BuildCommandTest(unittest.TestCase):
-    def test_issabel_command(self):
+    def test_issabel_command_defaults_to_config_only(self):
         result = backup_scripts.build_command("issabel", token="eyJhbGc", pbackup_root="/root/pbackup")
+        self.assertEqual(
+            result,
+            "bash /root/pbackup/scripts/issabel.sh --configuration "
+            "-t http://uoe.interno.falevox.com.br/v1/upload:/ --token eyJhbGc",
+        )
+
+    def test_issabel_command_with_recordings(self):
+        result = backup_scripts.build_command(
+            "issabel", token="eyJhbGc", pbackup_root="/root/pbackup", issabel_recordings=True,
+        )
         self.assertEqual(
             result,
             "bash /root/pbackup/scripts/issabel.sh --recordings --configuration "
