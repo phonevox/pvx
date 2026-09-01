@@ -11,6 +11,7 @@ from pvx.modules.base import PvxModule
 import config
 import defaults
 import install_steps
+import known_scripts
 import metadata
 import scripts
 import sudoers
@@ -54,7 +55,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.1.5"
+    version = "0.1.6"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -249,36 +250,40 @@ class ZabbixModule(PvxModule):
 
         @script_group.command(name="add")
         @click.argument("key", required=False, default=None)
-        @click.argument("command", required=False, default=None)
-        @click.option("--needs-root", is_flag=True)
-        def script_add_cmd(key, command, needs_root):
+        def script_add_cmd(key):
+            # só scripts do catálogo do pvx (known_scripts.CATALOG) -- nunca comando
+            # arbitrário. quem quiser um script próprio mexe direto na pasta do zabbix.
             logger = self.get_logger()
             interactive = _is_interactive()
             agent_variant = _current_agent_variant()
+            catalog_hint = ", ".join(sorted(known_scripts.CATALOG))
 
             if key is None:
                 if not interactive:
-                    raise click.ClickException("informe a chave: `pvx zabbix script add <chave> <comando>`.")
-                key = ask_text("Chave do item (ex.: disco.custom):")
-                if key is None:
+                    raise click.ClickException(f"informe a chave: `pvx zabbix script add <chave>` ({catalog_hint}).")
+                choices = [
+                    f"{k} -- {v['description']}" for k, v in sorted(known_scripts.CATALOG.items())
+                ]
+                label = ask_select("Script do pvx pra adicionar:", choices)
+                if label is None:
                     return
-            if command is None:
-                if not interactive:
-                    raise click.ClickException("informe o comando: `pvx zabbix script add <chave> <comando>`.")
-                command = ask_text("Comando a executar:")
-                if command is None:
-                    return
-            if not needs_root and interactive:
-                needs_root = ask_confirm("Esse comando precisa de root?", default=False)
+                key = label.split(" -- ")[0]
+
+            if key not in known_scripts.CATALOG:
+                raise click.ClickException(f"script desconhecido: '{key}' (opções: {catalog_hint}).")
+
+            entry = known_scripts.CATALOG[key]
+            dest_path = known_scripts.deploy(defaults.PVX_SCRIPTS_DIR, key)
+            command = f"{dest_path} {entry['args']}".strip()
 
             state_path = str(_state_dir() / defaults.SCRIPTS_STATE_FILENAME)
             try:
-                entries = scripts.add(state_path, key, command, needs_root=needs_root)
+                entries = scripts.add(state_path, key, command, needs_root=entry["needs_root"])
             except KeyError as e:
                 raise click.ClickException(str(e))
 
             _sync_scripts(entries, agent_variant)
-            logger.info(f"script '{key}' adicionado (needs_root={needs_root}).")
+            logger.info(f"script '{key}' adicionado (needs_root={entry['needs_root']}).")
             widgets.success(f"script '{key}' adicionado.")
             if interactive:
                 widgets.pause()
@@ -309,6 +314,7 @@ class ZabbixModule(PvxModule):
             except KeyError as e:
                 raise click.ClickException(str(e))
 
+            known_scripts.remove_deployed(defaults.PVX_SCRIPTS_DIR, key)
             _sync_scripts(entries, agent_variant)
             logger.info(f"script '{key}' removido.")
             widgets.success(f"script '{key}' removido.")

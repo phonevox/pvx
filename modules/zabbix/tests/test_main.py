@@ -223,8 +223,12 @@ class ScriptAddCommandTest(unittest.TestCase):
         (self._state_dir / "agent_variant.txt").write_text("agent2")
         self._state_patch = patch("main._state_dir", return_value=self._state_dir)
         self._state_patch.start()
+        self._scripts_dir = Path(self._tmp.name) / "pvx-scripts.d"
+        self._scripts_patch = patch("main.defaults.PVX_SCRIPTS_DIR", str(self._scripts_dir))
+        self._scripts_patch.start()
 
     def tearDown(self):
+        self._scripts_patch.stop()
         self._state_patch.stop()
         self._tmp.cleanup()
 
@@ -233,34 +237,49 @@ class ScriptAddCommandTest(unittest.TestCase):
             result = CliRunner().invoke(cli.cli_group(), args)
             return result, mock_sudoers
 
-    def test_adds_a_script_and_persists_it(self):
-        result, _ = self._invoke(["script", "add", "cpu.custom", "/opt/scripts/cpu.sh"])
+    def test_adds_a_known_script_deploys_it_and_persists_it(self):
+        result, _ = self._invoke(["script", "add", "audit"])
         self.assertEqual(result.exit_code, 0, result.output)
+
+        deployed = self._scripts_dir / "audit.sh"
+        self.assertTrue(deployed.exists())
+        self.assertIn("#!/bin/bash", deployed.read_text())
 
         import scripts as scripts_module
         entries = scripts_module.list_all(str(self._state_dir / "scripts.json"))
-        self.assertEqual(entries["cpu.custom"]["command"], "/opt/scripts/cpu.sh")
+        self.assertEqual(entries["audit"]["command"], f"{deployed} --zabbix")
 
-    def test_needs_root_calls_sudoers_write_rules_with_the_command(self):
-        result, mock_sudoers = self._invoke(
-            ["script", "add", "disk.custom", "/opt/scripts/disk.sh", "--needs-root"]
-        )
+    def test_known_script_needing_root_calls_sudoers_write_rules(self):
+        result, mock_sudoers = self._invoke(["script", "add", "audit"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_sudoers.assert_called_once()
-        self.assertIn("/opt/scripts/disk.sh", mock_sudoers.call_args.args[2])
+        self.assertIn(str(self._scripts_dir / "audit.sh"), mock_sudoers.call_args.args[2][0])
 
     def test_rejects_duplicate_key(self):
-        self._invoke(["script", "add", "cpu.custom", "/opt/scripts/cpu.sh"])
-        result, _ = self._invoke(["script", "add", "cpu.custom", "/opt/scripts/other.sh"])
+        self._invoke(["script", "add", "audit"])
+        result, _ = self._invoke(["script", "add", "audit"])
         self.assertNotEqual(result.exit_code, 0)
 
-    def test_requires_key_and_command_without_tty(self):
+    def test_rejects_key_outside_the_catalog(self):
+        result, _ = self._invoke(["script", "add", "nao-existe"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("audit", result.output)
+
+    def test_requires_key_without_tty(self):
         result, _ = self._invoke(["script", "add"])
         self.assertNotEqual(result.exit_code, 0)
 
+    def test_asks_from_the_catalog_when_interactive(self):
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_select", return_value="audit -- auditoria de comprometimento "
+                                                     "(mineração, persistência, webshell, abuso de PBX...)") as mock_select:
+            result, _ = self._invoke(["script", "add"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_select.assert_called_once()
+
     def test_fails_clearly_when_agent_was_never_installed(self):
         (self._state_dir / "agent_variant.txt").unlink()
-        result, _ = self._invoke(["script", "add", "cpu.custom", "/opt/scripts/cpu.sh"])
+        result, _ = self._invoke(["script", "add", "audit"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("install", result.output.lower())
 
@@ -272,8 +291,12 @@ class ScriptRemoveCommandTest(unittest.TestCase):
         (self._state_dir / "agent_variant.txt").write_text("agent2")
         self._state_patch = patch("main._state_dir", return_value=self._state_dir)
         self._state_patch.start()
+        self._scripts_dir = Path(self._tmp.name) / "pvx-scripts.d"
+        self._scripts_patch = patch("main.defaults.PVX_SCRIPTS_DIR", str(self._scripts_dir))
+        self._scripts_patch.start()
 
     def tearDown(self):
+        self._scripts_patch.stop()
         self._state_patch.stop()
         self._tmp.cleanup()
 
@@ -281,14 +304,18 @@ class ScriptRemoveCommandTest(unittest.TestCase):
         with patch("main.sudoers.write_rules"), patch("main._write_confd_file"):
             return CliRunner().invoke(cli.cli_group(), args)
 
-    def test_removes_an_existing_script(self):
-        self._invoke(["script", "add", "cpu.custom", "/opt/scripts/cpu.sh"])
-        result = self._invoke(["script", "remove", "cpu.custom"])
+    def test_removes_an_existing_script_and_its_deployed_file(self):
+        self._invoke(["script", "add", "audit"])
+        deployed = self._scripts_dir / "audit.sh"
+        self.assertTrue(deployed.exists())
+
+        result = self._invoke(["script", "remove", "audit"])
         self.assertEqual(result.exit_code, 0, result.output)
+        self.assertFalse(deployed.exists())
 
         import scripts as scripts_module
         entries = scripts_module.list_all(str(self._state_dir / "scripts.json"))
-        self.assertNotIn("cpu.custom", entries)
+        self.assertNotIn("audit", entries)
 
     def test_raises_when_key_does_not_exist(self):
         result = self._invoke(["script", "remove", "does-not-exist"])

@@ -20,6 +20,11 @@ AGENT_CONFD_DIRS = {
 SUDOERS_FILE = "/etc/sudoers.d/pvx-zabbix"
 SUDOERS_USER = "zabbix"
 
+# scripts que o pvx distribui (known_scripts.CATALOG) são copiados pra cá --
+# caminho fixo de sistema, mundo-legível/executável, nunca $HOME (mesma lição
+# do core.pyz: sudo troca $HOME, o agente zabbix roda como usuário próprio).
+PVX_SCRIPTS_DIR = "/etc/zabbix/pvx-scripts.d"
+
 SCRIPTS_STATE_FILENAME = "scripts.json"
 SCRIPTS_CONF_FILENAME = "pvx-scripts.conf"
 
