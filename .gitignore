@@ -13,6 +13,7 @@ modules/firewall/dist/
 modules/netinstall/dist/
 modules/zabbix/dist/
 modules/uoe/dist/
+modules/magnus/dist/
 /dist/
 .claude/settings.local.json
 scripts/_*
