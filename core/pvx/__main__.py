@@ -24,7 +24,11 @@ def main(argv=None):
     else:
         try:
             run_interactive()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, click.exceptions.Abort):
+            # Abort: ctrl-c num prompt dentro de um comando de módulo (ver
+            # root.py/router.py) chega até aqui como Abort, não
+            # KeyboardInterrupt puro (cmd.main() do click já faz essa
+            # conversão) -- mesmo encerramento limpo pros dois casos.
             click.echo("\npvx encerrado.")
 
 

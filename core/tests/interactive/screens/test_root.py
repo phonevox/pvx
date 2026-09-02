@@ -57,6 +57,22 @@ class FakeCrashingModule(PvxModule):
         return group
 
 
+class FakeAbortingModule(PvxModule):
+    name = "aborty"
+    version = "0.1.0"
+
+    def cli_group(self):
+        @click.group()
+        def group():
+            pass
+
+        @group.command()
+        def cancel():
+            raise KeyboardInterrupt()
+
+        return group
+
+
 class FakeNestedModule(PvxModule):
     name = "nested"
     version = "0.1.0"
@@ -171,6 +187,24 @@ class RootScreenTest(unittest.TestCase):
         mock_crash.assert_called_once()
         self.assertIn("algo quebrou de verdade", mock_crash.call_args.args[0])
         mock_pause.assert_called_once()
+
+    @patch(
+        "pvx.interactive.screens.root.discover_installed_modules",
+        return_value={"aborty": FakeAbortingModule()},
+    )
+    @patch("pvx.interactive.screens.root.widgets.crash")
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["aborty", "cancel"])
+    def test_ctrl_c_inside_a_module_command_closes_pvx_instead_of_crashing(
+        self, mock_ask_select, mock_crash, mock_discover
+    ):
+        # achado ao vivo: ctrl-c dentro de um prompt (ask_password) vira
+        # click.exceptions.Abort (via cmd.main() do click) -- o except
+        # Exception genérico tratava isso como crash de módulo (traceback na
+        # tela) em vez de fechar o pvx, que é o comportamento documentado
+        # (NAV_HINT: "ctrl-c fecha o pvx").
+        with self.assertRaises(click.exceptions.Abort):
+            RootScreen().render()
+        mock_crash.assert_not_called()
 
     @patch(
         "pvx.interactive.screens.root.discover_installed_modules",

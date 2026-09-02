@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import click
+
 from pvx.__main__ import main
 
 
@@ -17,6 +19,13 @@ class MainDispatchTest(unittest.TestCase):
 
     @patch("pvx.__main__.run_interactive", side_effect=KeyboardInterrupt)
     def test_ctrl_c_exits_cleanly_without_traceback(self, mock_run_interactive):
+        main(argv=[])  # não deve levantar
+
+    @patch("pvx.__main__.run_interactive", side_effect=click.exceptions.Abort)
+    def test_abort_from_deep_inside_the_menu_exits_cleanly_without_traceback(self, mock_run_interactive):
+        # ctrl-c num prompt (ask_password/ask_text) dentro de um comando de
+        # módulo vira click.exceptions.Abort, não KeyboardInterrupt puro (ver
+        # BaseCommand.main() do click) -- precisa do mesmo tratamento limpo.
         main(argv=[])  # não deve levantar
 
     @patch("pvx.__main__.widgets.crash")

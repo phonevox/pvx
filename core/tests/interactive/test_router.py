@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import click
+
 from pvx.interactive.router import Router
 
 
@@ -114,6 +116,23 @@ class RouterCrashTest(unittest.TestCase):
 
         self.assertEqual(router.stack, [])
         mock_crash.assert_called_once()
+
+
+class RouterAbortTest(unittest.TestCase):
+    # ctrl-c num prompt (ask_password/ask_text) vira click.exceptions.Abort
+    # (via cmd.main() do click, dentro do auto-menu) -- precisa fechar o pvx
+    # inteiro, não ser tratado como "tela crashou" (senão fica preso
+    # mostrando traceback + voltando pro nível anterior em vez de sair).
+    @patch("pvx.interactive.router.widgets.crash")
+    def test_abort_propagates_instead_of_being_shown_as_a_crash(self, mock_crash):
+        class RootScreen:
+            def render(self):
+                raise click.exceptions.Abort()
+
+        router = Router({"root": RootScreen})
+        with self.assertRaises(click.exceptions.Abort):
+            router.run("root")
+        mock_crash.assert_not_called()
 
 
 if __name__ == "__main__":

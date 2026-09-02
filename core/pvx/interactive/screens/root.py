@@ -71,6 +71,13 @@ def _run_auto_menu(group, breadcrumb):
                 # crasharia a sessão inteira do menu sem esse guard.
                 widgets.message(str(e))
                 widgets.pause()
+            except click.exceptions.Abort:
+                # ctrl-c num prompt (ask_password/ask_text) dentro do comando
+                # vira Abort (cmd.main() do click já converte KeyboardInterrupt
+                # com standalone_mode=False) -- isso fecha o pvx inteiro (ver
+                # NAV_HINT: "ctrl-c fecha o pvx"), não é um crash de módulo pra
+                # engolir e continuar o menu.
+                raise
             except Exception:
                 # catch global: qualquer exceção não tratada de um módulo
                 # (ex.: CalledProcessError de um subprocess) não pode
