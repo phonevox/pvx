@@ -1,5 +1,7 @@
 import traceback
 
+import click
+
 from pvx.interactive import widgets
 
 
@@ -14,6 +16,12 @@ class Router:
             widgets.clear()
             try:
                 result = self.stack[-1].render()
+            except click.exceptions.Abort:
+                # ctrl-c propagado de dentro de um comando de módulo (ver
+                # auto_menu em root.py) -- fecha o pvx inteiro, não é uma tela
+                # crashando (senão ficaria preso mostrando traceback e
+                # voltando pra tela anterior em vez de sair de verdade).
+                raise
             except Exception:
                 # catch global: uma tela crashando no próprio render() (não
                 # num comando de módulo -- isso já tem guard próprio no

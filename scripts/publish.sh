@@ -7,6 +7,15 @@ MODULES_DIR="modules"
 STAGE_DIR="dist/registry"
 INDEX_URL="https://registry.phonevox.com.br/pvx/index.json"
 
+# cores só em terminal de verdade e sem NO_COLOR -- printf (não $'...', que não
+# é POSIX) pra gerar o byte de escape, funciona em qualquer sh, não só bash.
+if [ -t 1 ] && [ -z "${NO_COLOR+x}" ]; then
+    C_RESET=$(printf '\033[0m'); C_BOLD=$(printf '\033[1m'); C_DIM=$(printf '\033[2m')
+    C_GREEN=$(printf '\033[32m'); C_YELLOW=$(printf '\033[33m'); C_CYAN=$(printf '\033[36m')
+else
+    C_RESET=""; C_BOLD=""; C_DIM=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""
+fi
+
 # descoberto de modules/*/manifest.json -- nunca lista fixa (achado ao vivo:
 # zabbix ficou de fora de --all porque a lista hardcoded nunca foi atualizada
 # quando o módulo foi criado).
@@ -79,10 +88,14 @@ cmd_diff() {
     for m in $(resolve_modules "$1"); do
         local_v="$(module_version "$m")"
         registry_v="$(registry_version "$m")"
-        if [ "$local_v" = "$registry_v" ]; then
-            printf '%-16s %s (igual ao registry)\n' "$m" "$local_v"
+        if [ "$registry_v" = "-" ]; then
+            printf '%s·%s %-16s %s%s%s  %s(novo, nunca publicado)%s\n' \
+                "$C_CYAN" "$C_RESET" "$m" "$C_CYAN" "$local_v" "$C_RESET" "$C_DIM" "$C_RESET"
+        elif [ "$local_v" = "$registry_v" ]; then
+            printf '%s·%s %-16s %-10s %s(sem alteração)%s\n' "$C_DIM" "$C_RESET" "$m" "$local_v" "$C_DIM" "$C_RESET"
         else
-            printf '%-16s registry: %-10s dev: %s\n' "$m" "$registry_v" "$local_v"
+            printf '%s✓%s %-16s registry: %-10s dev: %s%s%s\n' \
+                "$C_GREEN" "$C_RESET" "$m" "$registry_v" "$C_YELLOW" "$local_v" "$C_RESET"
         fi
     done
 }
@@ -94,13 +107,29 @@ cmd_stage() {
     rm -rf "$STAGE_DIR"
     mkdir -p "$STAGE_DIR/modules"
 
+    updated=0
+    unchanged=0
+
     for m in $modules; do
         (cd "$MODULES_DIR/$m" && sh build.sh >/dev/null)
         version="$(module_version "$m")"
+        registry_v="$(registry_version "$m")"
         mkdir -p "$STAGE_DIR/modules/$m"
         cp "$MODULES_DIR/$m/dist/module.pyz" "$STAGE_DIR/modules/$m/$version.pyz"
         cp "$MODULES_DIR/$m/dist/manifest.json" "$STAGE_DIR/modules/$m/manifest.json"
-        echo "staged: $m -> $version"
+
+        if [ "$registry_v" = "-" ]; then
+            printf '  %s✓%s %-16s %s%s%s  %s(novo no registry)%s\n' \
+                "$C_GREEN" "$C_RESET" "$m" "$C_GREEN" "$version" "$C_RESET" "$C_DIM" "$C_RESET"
+            updated=$((updated + 1))
+        elif [ "$registry_v" = "$version" ]; then
+            printf '  %s·%s %-16s %-10s %s(sem alteração)%s\n' "$C_DIM" "$C_RESET" "$m" "$version" "$C_DIM" "$C_RESET"
+            unchanged=$((unchanged + 1))
+        else
+            printf '  %s✓%s %-16s %s%s -> %s%s  %s(atualizado)%s\n' \
+                "$C_GREEN" "$C_RESET" "$m" "$C_YELLOW" "$registry_v" "$version" "$C_RESET" "$C_DIM" "$C_RESET"
+            updated=$((updated + 1))
+        fi
     done
 
     python3 -c "
@@ -134,7 +163,8 @@ for m in '$modules'.split():
 
 json.dump(data, open('$STAGE_DIR/index.json', 'w'), indent=2, ensure_ascii=False)
 "
-    echo "index.json atualizado em $STAGE_DIR/index.json"
+    printf '%sindex.json atualizado em %s%s\n' "$C_CYAN" "$STAGE_DIR/index.json" "$C_RESET"
+    printf '%s%d atualizado(s), %d sem alteração%s\n' "$C_BOLD" "$updated" "$unchanged" "$C_RESET"
 }
 
 # --- opções compartilhadas de upload/publish ---
@@ -197,7 +227,7 @@ confirm() {
     read -r reply
     case "$reply" in
         y|Y|yes|s|S|sim) return 0 ;;
-        *) echo "cancelado."; exit 1 ;;
+        *) printf '%scancelado.%s\n' "$C_YELLOW" "$C_RESET"; exit 1 ;;
     esac
 }
 
@@ -210,10 +240,10 @@ cmd_upload() {
     [ -n "$dest" ] || { echo "informe --remote-path ou --public-path" >&2; exit 1; }
     cmd_stage "$module_arg"
     echo
-    echo "vai subir $STAGE_DIR/ pra $USER@$HOST:$PORT:$dest"
+    printf '%svai subir%s %s/ pra %s@%s:%s:%s\n' "$C_DIM" "$C_RESET" "$STAGE_DIR" "$USER" "$HOST" "$PORT" "$dest"
     confirm "confirma o upload?"
     sftp_put "$dest"
-    echo "upload concluído."
+    printf '%s✓ upload concluído.%s\n' "$C_GREEN$C_BOLD" "$C_RESET"
 }
 
 # --- modo: publish ---
@@ -225,17 +255,18 @@ cmd_publish() {
     cmd_stage "$module_arg"
     echo
     if [ -n "$REMOTE_PATH" ]; then
-        echo "vai subir $STAGE_DIR/ pra $USER@$HOST:$PORT:$REMOTE_PATH"
-        echo "e copiar pra $PUBLIC_PATH (usuário: $PUBLISH_USER)"
+        printf '%svai subir%s %s/ pra %s@%s:%s:%s\n' "$C_DIM" "$C_RESET" "$STAGE_DIR" "$USER" "$HOST" "$PORT" "$REMOTE_PATH"
+        printf '%se copiar%s pra %s (usuário: %s)\n' "$C_DIM" "$C_RESET" "$PUBLIC_PATH" "$PUBLISH_USER"
         confirm "confirma upload + publish?"
         sftp_put "$REMOTE_PATH"
         ssh_cmd "$PUBLISH_USER" "$HOST" "cp -R $REMOTE_PATH/* $PUBLIC_PATH"
     else
-        echo "vai subir $STAGE_DIR/ direto pra $USER@$HOST:$PORT:$PUBLIC_PATH (sem --remote-path, sem cp -R)"
+        printf '%svai subir%s %s/ direto pra %s@%s:%s:%s (sem --remote-path, sem cp -R)\n' \
+            "$C_DIM" "$C_RESET" "$STAGE_DIR" "$USER" "$HOST" "$PORT" "$PUBLIC_PATH"
         confirm "confirma o publish?"
         sftp_put "$PUBLIC_PATH"
     fi
-    echo "publicado."
+    printf '%s✓ publicado.%s\n' "$C_GREEN$C_BOLD" "$C_RESET"
 }
 
 # --- dispatch ---
