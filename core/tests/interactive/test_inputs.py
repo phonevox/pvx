@@ -1,93 +1,94 @@
 import unittest
 from unittest.mock import patch
 
-import questionary
-
 from pvx.interactive import inputs
 from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_password, ask_select, ask_text
 
 
 class AskSelectTest(unittest.TestCase):
-    @patch("pvx.interactive.inputs.questionary.select")
-    def test_delegates_to_questionary_select(self, mock_select):
-        mock_select.return_value.unsafe_ask.return_value = "escolhido"
+    # ask_select() não passa mais por questionary.select() -- usa um
+    # controle próprio (_ScrollableList + _run_scrollable, ver
+    # test_scrollable_list.py) pra ter viewport limitado com scroll, que o
+    # questionary não suporta. Aqui só testa a integração: escolhas certas
+    # chegam no _ScrollableList, resultado e resumo saem certos.
+    @patch("pvx.interactive.inputs._run_scrollable", return_value="a")
+    def test_delegates_to_run_scrollable(self, mock_run):
         result = ask_select("pvx >", ["a", "b"])
-        self.assertEqual(result, "escolhido")
-        mock_select.assert_called_once()
+        self.assertEqual(result, "a")
+        mock_run.assert_called_once()
 
-    @patch("pvx.interactive.inputs.questionary.select")
-    def test_suppresses_default_instruction_and_appends_hint_separator(self, mock_select):
-        mock_select.return_value.unsafe_ask.return_value = "a"
+    @patch("pvx.interactive.inputs._run_scrollable", return_value="a")
+    def test_builds_a_single_select_state_with_the_given_choices(self, mock_run):
+        ask_select("pvx >", ["a", "b"], default="b")
+        state = mock_run.call_args.args[1]
+        self.assertFalse(state.multi)
+        self.assertEqual([c.value for c in state.choices], ["a", "b"])
+        self.assertEqual(state.pointed_at, 1)
+
+    @patch("pvx.interactive.inputs._run_scrollable", return_value="a")
+    def test_passes_the_nav_hint_text(self, mock_run):
         ask_select("pvx >", ["a", "b"])
+        self.assertEqual(mock_run.call_args.args[2], inputs.NAV_HINT_TEXT)
 
-        _, kwargs = mock_select.call_args
-        self.assertEqual(kwargs["instruction"], "")
-
-        choices = kwargs["choices"]
-        self.assertEqual(choices[:2], ["a", "b"])
-        self.assertIsInstance(choices[-1], questionary.Separator)
-
-    @patch("pvx.interactive.inputs.theme.current_style")
-    @patch("pvx.interactive.inputs.questionary.select")
-    def test_uses_current_theme(self, mock_select, mock_current_style):
-        mock_select.return_value.unsafe_ask.return_value = "a"
+    @patch("pvx.interactive.inputs._run_scrollable", return_value="a")
+    def test_defaults_to_the_windowed_viewport(self, mock_run):
         ask_select("pvx >", ["a", "b"])
-        self.assertIs(mock_select.call_args.kwargs["style"], mock_current_style.return_value)
+        state = mock_run.call_args.args[1]
+        self.assertEqual(state.window_size, inputs._ScrollableList.WINDOW_SIZE)
+
+    @patch("pvx.interactive.inputs._run_scrollable", return_value="a")
+    def test_window_size_none_shows_the_full_classic_list(self, mock_run):
+        # menu raiz pediu de volta a lista clássica sem scroll -- window_size
+        # é o jeito de qualquer chamador optar por isso.
+        ask_select("pvx >", ["a", "b"], window_size=None)
+        state = mock_run.call_args.args[1]
+        self.assertIsNone(state.window_size)
+
+    @patch("pvx.interactive.inputs.widgets.select_answer")
+    @patch("pvx.interactive.inputs._run_scrollable", return_value="b")
+    def test_prints_the_chosen_title_as_the_answer(self, mock_run, mock_answer):
+        # _run_scrollable devolve state.result() no fim -- o pointed_at do
+        # state já reflete a escolha real nesse ponto (default="b" simula
+        # isso sem precisar rodar o Application de verdade).
+        ask_select("pvx >", ["a", "b"], default="b")
+        mock_answer.assert_called_once_with("pvx >", "b")
+
+    @patch("pvx.interactive.inputs.widgets.select_answer")
+    @patch("pvx.interactive.inputs._run_scrollable", return_value=None)
+    def test_does_not_print_an_answer_when_the_user_backs_out(self, mock_run, mock_answer):
+        result = ask_select("pvx >", ["a", "b"])
+        self.assertIsNone(result)
+        mock_answer.assert_not_called()
 
 
 class AskCheckboxTest(unittest.TestCase):
-    @patch("pvx.interactive.inputs.questionary.checkbox")
-    def test_delegates_to_questionary_checkbox(self, mock_checkbox):
-        mock_checkbox.return_value.unsafe_ask.return_value = ["a", "b"]
+    @patch("pvx.interactive.inputs._run_scrollable", return_value=["a"])
+    def test_delegates_to_run_scrollable(self, mock_run):
         result = ask_checkbox("Selecione:", ["a", "b", "c"])
-        self.assertEqual(result, ["a", "b"])
-        mock_checkbox.assert_called_once()
+        self.assertEqual(result, ["a"])
+        mock_run.assert_called_once()
 
-    @patch("pvx.interactive.inputs.questionary.checkbox")
-    def test_marks_defaults_as_pre_checked(self, mock_checkbox):
-        mock_checkbox.return_value.unsafe_ask.return_value = ["a"]
+    @patch("pvx.interactive.inputs._run_scrollable", return_value=[])
+    def test_builds_a_multi_select_state_with_defaults_pre_checked(self, mock_run):
         ask_checkbox("Selecione:", ["a", "b"], defaults=["a"])
-        passed_choices = mock_checkbox.call_args.kwargs["choices"]
-        checked_values = [c.value for c in passed_choices if c.checked]
-        self.assertEqual(checked_values, ["a"])
+        state = mock_run.call_args.args[1]
+        self.assertTrue(state.multi)
+        self.assertEqual(state.selected, {"a"})
 
-    @patch("pvx.interactive.inputs.theme.current_style")
-    @patch("pvx.interactive.inputs.questionary.checkbox")
-    def test_uses_current_theme(self, mock_checkbox, mock_current_style):
-        mock_checkbox.return_value.unsafe_ask.return_value = []
+    @patch("pvx.interactive.inputs._run_scrollable", return_value=[])
+    def test_passes_the_checkbox_nav_hint_text(self, mock_run):
         ask_checkbox("Selecione:", ["a"])
-        self.assertIs(mock_checkbox.call_args.kwargs["style"], mock_current_style.return_value)
-
-    @patch("pvx.interactive.inputs.questionary.checkbox")
-    def test_appends_hint_separator_explaining_the_navigation(self, mock_checkbox):
-        # usuário leigo reclamou de não entender a navegação (breadcrumb sozinho não
-        # deixava claro) -- mesmo padrão de ask_select(), adaptado pro que existe aqui
-        # (espaço marca; sem "q" -- questionary não trata isso na checkbox).
-        mock_checkbox.return_value.unsafe_ask.return_value = []
-        ask_checkbox("Selecione:", ["a", "b"])
-        choices = mock_checkbox.call_args.kwargs["choices"]
-        self.assertIsInstance(choices[-1], questionary.Separator)
-
-    @patch("pvx.interactive.inputs.questionary.checkbox")
-    def test_erases_default_done_line_so_it_can_print_its_own(self, mock_checkbox):
-        # questionary não tem parâmetro pra customizar o "done (N selections)" --
-        # erase_when_done repassa pro prompt_toolkit.Application e apaga a linha de
-        # resposta padrão inteira ao sair, sobrando só a nossa (widgets.checkbox_answer).
-        mock_checkbox.return_value.unsafe_ask.return_value = []
-        ask_checkbox("Selecione:", ["a", "b"])
-        self.assertTrue(mock_checkbox.call_args.kwargs["erase_when_done"])
+        self.assertEqual(mock_run.call_args.args[2], inputs.CHECKBOX_NAV_HINT_TEXT)
 
     @patch("pvx.interactive.inputs.widgets.checkbox_answer")
-    @patch("pvx.interactive.inputs.questionary.checkbox")
-    def test_prints_selected_values_instead_of_a_count(self, mock_checkbox, mock_answer):
-        mock_checkbox.return_value.unsafe_ask.return_value = ["a", "b"]
+    @patch("pvx.interactive.inputs._run_scrollable", return_value=["a", "b"])
+    def test_prints_selected_values_instead_of_a_count(self, mock_run, mock_answer):
         ask_checkbox("Selecione:", ["a", "b", "c"])
         mock_answer.assert_called_once_with("Selecione:", ["a", "b"])
 
     @patch("pvx.interactive.inputs.widgets.checkbox_answer")
-    @patch("pvx.interactive.inputs.questionary.checkbox")
-    def test_does_not_print_answer_when_user_goes_back(self, mock_checkbox, mock_answer):
-        mock_checkbox.return_value.unsafe_ask.return_value = inputs._BACK
+    @patch("pvx.interactive.inputs._run_scrollable", return_value=None)
+    def test_does_not_print_answer_when_user_goes_back(self, mock_run, mock_answer):
         result = ask_checkbox("Selecione:", ["a", "b"])
         self.assertIsNone(result)
         mock_answer.assert_not_called()

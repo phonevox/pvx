@@ -33,7 +33,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         "pvx.interactive.screens.module_update.config.registry_index_url",
         return_value="https://example.com/index.json",
     )
-    @patch("pvx.interactive.screens.module_update.ask_select", return_value="Todos")
+    @patch("pvx.interactive.screens.module_update.ask_select", return_value="todos")
     @patch(
         "pvx.interactive.screens.module_update.discover_installed_modules",
         return_value={"dummy": object(), "other": object()},
@@ -72,7 +72,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         mock_ask_select.assert_not_called()
 
     @patch("pvx.interactive.screens.module_update.installer.install")
-    @patch("pvx.interactive.screens.module_update.ask_select", return_value="Voltar")
+    @patch("pvx.interactive.screens.module_update.ask_select", return_value="voltar")
     @patch(
         "pvx.interactive.screens.module_update.discover_installed_modules",
         return_value={"dummy": object()},

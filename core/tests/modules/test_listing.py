@@ -47,6 +47,25 @@ class ListModulesTest(unittest.TestCase):
 
     @patch(
         "pvx.modules.listing.fetch_index",
+        return_value={"modules": [{"name": "magnus", "latest": "0.1.1"}]},
+    )
+    def test_installed_ahead_of_registry_is_not_shown_as_update_available(self, mock_fetch):
+        # achado ao vivo: deploy direto na VPS (sem passar pelo registry)
+        # deixa a versão instalada mais nova que a publicada -- "atualização
+        # disponível" nesse caso não faz sentido nenhum.
+        rows = listing.list_modules({"magnus": FakeInstalled("0.1.5")}, "https://example.com/index.json")
+        self.assertEqual(rows[0]["status"], "à frente do registry")
+
+    @patch(
+        "pvx.modules.listing.fetch_index",
+        return_value={"modules": [{"name": "dummy", "latest": "not-a-version"}]},
+    )
+    def test_unparseable_version_falls_back_to_up_to_date_instead_of_crashing(self, mock_fetch):
+        rows = listing.list_modules({"dummy": FakeInstalled("1.0.0")}, "https://example.com/index.json")
+        self.assertEqual(rows[0]["status"], "atualizado")
+
+    @patch(
+        "pvx.modules.listing.fetch_index",
         side_effect=urllib.error.URLError("nome não resolvido"),
     )
     def test_registry_unreachable_raises_clean_error(self, mock_fetch):

@@ -130,17 +130,28 @@ def pause():
     click.pause("")
 
 
+def _answer_line(msg, text):
+    line = Text()
+    line.append("? ", style=QMARK_COLOR)
+    line.append(f"{msg} ", style="bold")
+    line.append(text, style=f"{theme.current_accent_color()} bold")
+    return line
+
+
 def checkbox_answer(msg, selected):
     # substitui o "done (N selections)" default do questionary.checkbox() -- não dá pra
     # customizar isso via parâmetro da lib, então ask_checkbox() apaga a linha padrão
     # (erase_when_done=True) e chama isto pra imprimir a nossa por cima, no mesmo estilo
     # qmark+pergunta+resposta do breadcrumb().
-    line = Text()
-    line.append("? ", style=QMARK_COLOR)
-    line.append(f"{msg} ", style="bold")
     text = ", ".join(str(v) for v in selected) if selected else "nenhum"
-    line.append(text, style=f"{theme.current_accent_color()} bold")
-    Console().print(line, highlight=False)
+    Console().print(_answer_line(msg, text), highlight=False)
+
+
+def select_answer(msg, title):
+    # mesmo motivo do checkbox_answer -- ask_select() usa um controle próprio
+    # (viewport com scroll, ver inputs.py), erase_when_done=True apaga o
+    # widget inteiro ao confirmar, isto imprime o resumo de uma linha só.
+    Console().print(_answer_line(msg, str(title) if title is not None else "nenhum"), highlight=False)
 
 
 def breadcrumb(text):
@@ -209,10 +220,24 @@ def check_result(text, level):
     Console().print(line, highlight=False)
 
 
+def _status_style(status, accent):
+    return {
+        "atualizado": "bold green",
+        "atualização disponível": "bold yellow",
+        "à frente do registry": f"bold {accent}",
+        "local": f"bold {accent}",
+        "disponível": theme.SEPARATOR_COLOR,
+    }.get(status, "")
+
+
 def print_modules_table(rows):
+    accent = theme.current_accent_color()
     table = Table()
     for column in ("Módulo", "Instalado", "Disponível", "Status"):
         table.add_column(column)
     for row in rows:
-        table.add_row(row["name"], row["installed_version"], row["latest_version"], row["status"])
+        table.add_row(
+            row["name"], row["installed_version"], row["latest_version"],
+            Text(row["status"], style=_status_style(row["status"], accent)),
+        )
     Console().print(table)
