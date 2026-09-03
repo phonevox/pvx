@@ -252,14 +252,14 @@ def _run_remove(logger, delete_config, interactive):
 
 class AutobloqueadorModule(PvxModule):
     name = "autobloqueador"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="autobloqueador")
         def group():
             pass
 
-        @group.command(name="install")
+        @group.command(name="install", help="registra a central e instala o timer de checagem.")
         @click.option("--url-base", default="auto-blocker.falevox.com.br")
         @click.option("--type", "type_", type=click.Choice(autobloqueador_ops.TYPES), default=None)
         @click.option("--code", default=None, help="código único da instalação (máx 255 caracteres).")
@@ -277,7 +277,7 @@ class AutobloqueadorModule(PvxModule):
                 if interactive:
                     widgets.pause()
 
-        @group.command(name="reconfig")
+        @group.command(name="reconfig", help="gera uma nova key e reaproveita a url_base já salva.")
         @click.option("--type", "type_", type=click.Choice(autobloqueador_ops.TYPES), default=None)
         @click.option("--code", default=None, help="código único da instalação (máx 255 caracteres).")
         @click.option("--crypted-key-file", default=None, help="arquivo com o crypted_key recebido do /register.")
@@ -293,20 +293,20 @@ class AutobloqueadorModule(PvxModule):
                 if interactive:
                     widgets.pause()
 
-        @group.command(name="run")
+        @group.command(name="run", help="consulta o status remoto e bloqueia/libera PM2 ou Asterisk.")
         @click.option("--dry-run", is_flag=True, help="testa sem executar pm2/asterisk.")
         def run_cmd(dry_run):
             _require_root()
             logger = self.get_logger()
             _run_check(logger, dry_run)
 
-        @group.command(name="status")
+        @group.command(name="status", help="mostra a configuração salva e o estado do timer.")
         def status_cmd():
             _run_status()
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="logs")
+        @group.command(name="logs", help="mostra as últimas linhas do log de auditoria.")
         @click.option("--lines", type=int, default=100)
         def logs_cmd(lines):
             content = autobloqueador_ops.tail_log(lines=lines)
@@ -314,7 +314,7 @@ class AutobloqueadorModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="start")
+        @group.command(name="start", help="habilita e inicia o timer.")
         def start_cmd():
             _require_root()
             logger = self.get_logger()
@@ -328,7 +328,7 @@ class AutobloqueadorModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="stop")
+        @group.command(name="stop", help="para e desabilita o timer.")
         def stop_cmd():
             _require_root()
             logger = self.get_logger()
@@ -342,7 +342,7 @@ class AutobloqueadorModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="remove")
+        @group.command(name="remove", help="remove o service/timer (e, se pedido, a configuração salva).")
         @click.option(
             "--delete-config", is_flag=True,
             help="também remove a configuração salva -- --yes sozinho (de outros comandos) nunca implica isso.",

@@ -353,14 +353,14 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class UOEModule(PvxModule):
     name = "uoe"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="uoe")
         def group():
             pass
 
-        @group.command(name="setup")
+        @group.command(name="setup", help="registra a central no UOE e agenda o backup na cron.")
         @click.option("--root-path", default=None)
         @click.option("--id-cliente", default=None)
         @click.option("--id-contrato", default=None)
@@ -388,7 +388,7 @@ class UOEModule(PvxModule):
                 if interactive:
                     widgets.pause()
 
-        @group.command(name="relogin")
+        @group.command(name="relogin", help="renova o token expirado e atualiza a cron.")
         @click.option("--password-file", default=None, help="arquivo com a senha atual do client user.")
         def relogin_cmd(password_file):
             logger = self.get_logger()
@@ -401,7 +401,7 @@ class UOEModule(PvxModule):
                 if interactive:
                     widgets.pause()
 
-        @group.command(name="remove")
+        @group.command(name="remove", help="remove a cron e o estado local (e, se pedido, o usuário remoto).")
         @click.option("--yes", is_flag=True, help="pula a confirmação de remover a cron/estado local.")
         @click.option(
             "--delete-remote-user", is_flag=True,
@@ -419,7 +419,7 @@ class UOEModule(PvxModule):
                 if interactive:
                     widgets.pause()
 
-        @group.command(name="check")
+        @group.command(name="check", help="mostra a config salva e a entrada de cron atual.")
         def check_cmd():
             saved = state.load(_state_path())
             if saved is None:

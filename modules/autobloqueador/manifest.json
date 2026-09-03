@@ -1,8 +1,8 @@
 {
   "name": "autobloqueador",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "entrypoint": "main:cli",
-  "description": "Cliente de bloqueio automático por status remoto (PM2/Asterisk), port do phonevox/auto-blocker-service.",
+  "description": "Cliente de bloqueio autom\u00e1tico por status remoto (PM2/Asterisk), port do phonevox/auto-blocker-service.",
   "author": "pvx",
   "min_pvx_version": "0.2.0",
   "checksum_sha256": "",

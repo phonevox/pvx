@@ -28,14 +28,14 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.2.2"
+    version = "0.2.3"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
         def group():
             pass
 
-        @group.command(name="setup")
+        @group.command(name="setup", help="aplica o hardening (porta, chave, root login, sudoers).")
         @click.option("--quick", is_flag=True, help="usa os padrões da Phonevox, não pergunta nada")
         @click.option("--yes", is_flag=True, help="pula a confirmação final")
         @click.option("--lock-root/--no-lock-root", default=None)
@@ -187,7 +187,7 @@ class SSHHardeningModule(PvxModule):
             else:
                 click.echo(outcome)
 
-        @group.command(name="check")
+        @group.command(name="check", help="mostra o que foi aplicado e se ainda está no lugar.")
         def check_cmd():
             is_tty = _is_interactive()
             state_dir = str(config.modules_dir() / "ssh-hardening" / "state")
@@ -214,7 +214,7 @@ class SSHHardeningModule(PvxModule):
             if is_tty:
                 widgets.pause()
 
-        @group.command(name="revert")
+        @group.command(name="revert", help="desfaz o hardening a partir do backup salvo.")
         @click.option("--yes", is_flag=True)
         def revert_cmd(yes):
             if os.geteuid() != 0:
