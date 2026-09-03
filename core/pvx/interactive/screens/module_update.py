@@ -15,12 +15,12 @@ class ModuleUpdateScreen:
             return "BACK"
 
         selected = ask_select(
-            "pvx > módulos > atualizar >", list(modules.keys()) + ["Todos", "Voltar"]
+            "pvx > módulos > atualizar >", list(modules.keys()) + ["todos", "voltar"]
         )
-        if selected is None or selected == "Voltar":
+        if selected is None or selected == "voltar":
             return "BACK"
 
-        names = list(modules) if selected == "Todos" else [selected]
+        names = list(modules) if selected == "todos" else [selected]
         for name in names:
             try:
                 with widgets.spinner(f"Atualizando {name}..."):

@@ -339,14 +339,14 @@ def _run_issabel5(logger, flags, interactive):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.17"
+    version = "0.1.18"
 
     def cli_group(self):
         @click.group(name="netinstall")
         def group():
             pass
 
-        @group.command(name="issabel5")
+        @group.command(name="issabel5", help="instala o Issabel 5 do zero (Rocky/RHEL).")
         @click.option("--astver", type=click.Choice(defaults.ASTERISK_VERSIONS), default=None)
         @click.option("--addpkgs", multiple=True, type=click.Choice(list(defaults.ADDPKGS)))
         @click.option("--tweaks", multiple=True, type=click.Choice(list(defaults.TWEAKS_CATALOG)))

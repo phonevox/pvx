@@ -56,14 +56,14 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.2.0"
+    version = "0.2.1"
 
     def cli_group(self):
         @click.group(name="zabbix")
         def group():
             pass
 
-        @group.command(name="setup")
+        @group.command(name="setup", help="instala e configura o Zabbix Agent (detecta provider/hostname).")
         @click.option("--server", default=None)
         @click.option("--server-active", default=None)
         @click.option("--hostname", default=None)
@@ -244,7 +244,7 @@ class ZabbixModule(PvxModule):
             if interactive:
                 widgets.pause()
 
-        @group.command(name="remove")
+        @group.command(name="remove", help="desinstala o Zabbix Agent e limpa a configuração.")
         @click.option("--yes", is_flag=True)
         def remove_cmd(yes):
             if os.geteuid() != 0:
@@ -301,7 +301,7 @@ class ZabbixModule(PvxModule):
             if interactive:
                 widgets.pause()
 
-        @group.command(name="check")
+        @group.command(name="check", help="mostra config, status do serviço e scripts cadastrados.")
         def check_cmd():
             variant_path = _state_dir() / _AGENT_VARIANT_FILENAME
             legacy_sudo = sudoers.detect_legacy_rule()
@@ -363,11 +363,11 @@ class ZabbixModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.group(name="scripts")
+        @group.group(name="scripts", help="scripts customizados de monitoramento (UserParameter).")
         def script_group():
             pass
 
-        @script_group.command(name="add")
+        @script_group.command(name="add", help="adiciona um script do catálogo do pvx.")
         @click.argument("key", required=False, default=None)
         def script_add_cmd(key):
             # só scripts do catálogo do pvx (known_scripts.CATALOG) -- nunca comando
@@ -407,7 +407,7 @@ class ZabbixModule(PvxModule):
             if interactive:
                 widgets.pause()
 
-        @script_group.command(name="remove")
+        @script_group.command(name="remove", help="remove um script cadastrado.")
         @click.argument("key", required=False, default=None)
         def script_remove_cmd(key):
             logger = self.get_logger()
@@ -440,7 +440,7 @@ class ZabbixModule(PvxModule):
             if interactive:
                 widgets.pause()
 
-        @script_group.command(name="list")
+        @script_group.command(name="list", help="lista os scripts cadastrados.")
         def script_list_cmd():
             entries = scripts.list_all(str(_state_dir() / defaults.SCRIPTS_STATE_FILENAME))
             if not entries:

@@ -8,12 +8,14 @@ from pvx.interactive.widgets import (
     banner,
     breadcrumb,
     check_result,
+    checkbox_answer,
     clear,
     crash,
     failed,
     message,
     pause,
     print_modules_table,
+    select_answer,
     spinner,
     state,
     step,
@@ -132,6 +134,20 @@ class PrintModulesTableTest(unittest.TestCase):
         table = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(len(table.columns), 4)
 
+    @patch("pvx.interactive.widgets.Console")
+    def test_colors_status_by_meaning(self, mock_console_cls):
+        rows = [
+            {"name": "a", "installed_version": "1.0.0", "latest_version": "1.0.0", "status": "atualizado"},
+            {"name": "b", "installed_version": "1.0.0", "latest_version": "1.1.0", "status": "atualização disponível"},
+            {"name": "c", "installed_version": "1.2.0", "latest_version": "1.1.0", "status": "à frente do registry"},
+        ]
+        print_modules_table(rows)
+        table = mock_console_cls.return_value.print.call_args.args[0]
+        status_cells = table.columns[3]._cells
+        self.assertIn("green", status_cells[0].style)
+        self.assertIn("yellow", status_cells[1].style)
+        self.assertNotEqual(status_cells[0].style, status_cells[2].style)
+
 
 class PauseTest(unittest.TestCase):
     @patch("pvx.interactive.widgets.sys.argv", ["pvx"])
@@ -171,6 +187,34 @@ class BreadcrumbTest(unittest.TestCase):
         printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.plain, "? pvx > módulos > listar")
         self.assertEqual(printed.spans[0].style, "#5f819d")
+
+
+class SelectAnswerTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_qmark_message_and_chosen_title(self, mock_console_cls):
+        select_answer("Type:", "PABX (Asterisk)")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "? Type: PABX (Asterisk)")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_shows_nenhum_when_title_is_none(self, mock_console_cls):
+        select_answer("Type:", None)
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertTrue(printed.plain.endswith("nenhum"))
+
+
+class CheckboxAnswerTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_qmark_message_and_joined_selection(self, mock_console_cls):
+        checkbox_answer("Selecione:", ["a", "b"])
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "? Selecione: a, b")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_shows_nenhum_when_selection_is_empty(self, mock_console_cls):
+        checkbox_answer("Selecione:", [])
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertTrue(printed.plain.endswith("nenhum"))
 
 
 class MessageTest(unittest.TestCase):

@@ -246,7 +246,7 @@ def _run_apply(logger, yes, skip_asterisk_check):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.7"
+    version = "0.1.8"
 
     def cli_group(self):
         @click.group(name="qint")
@@ -332,7 +332,7 @@ class QintModule(PvxModule):
             staged_config.save(_config_path(), defaults.apply_defaults(base))
             click.echo(f"config do qint ({tipo}) atualizada.")
 
-        @group.command(name="setup")
+        @group.command(name="setup", help="configura a integração (IXCSoft/SGP) e gera o staged config.")
         @click.argument("tipo", required=False, default=None)
         def setup_cmd(tipo):
             if os.geteuid() != 0:
@@ -351,7 +351,7 @@ class QintModule(PvxModule):
             else:
                 widgets.pause()
 
-        @group.command(name="apply")
+        @group.command(name="apply", help="aplica o staged config e recarrega o Asterisk.")
         @click.option("--yes", is_flag=True)
         @click.option(
             "--skip-asterisk-check", is_flag=True,
@@ -371,7 +371,7 @@ class QintModule(PvxModule):
                 if interactive:
                     widgets.pause()
 
-        @group.command(name="status")
+        @group.command(name="status", help="mostra a config aplicada e a alcançabilidade do destino.")
         def status_cmd():
             existing = staged_config.load(_config_path())
             if existing is None:

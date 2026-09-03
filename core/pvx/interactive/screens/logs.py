@@ -7,15 +7,15 @@ from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_select
 from pvx.logging_ import viewer
 
-_ALL_LABEL = "Tudo (core + módulos)"
+_ALL_LABEL = "tudo (core + módulos)"
 
 
 class LogsScreen:
     def render(self):
         modules = discover_installed_modules()
-        choices = [_ALL_LABEL, "core", *modules.keys(), "Voltar"]
+        choices = [_ALL_LABEL, "core", *modules.keys(), "voltar"]
         selected = ask_select("pvx > logs >", choices)
-        if selected is None or selected == "Voltar":
+        if selected is None or selected == "voltar":
             return "BACK"
 
         names = viewer.list_log_names() if selected == _ALL_LABEL else [selected]

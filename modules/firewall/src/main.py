@@ -59,18 +59,18 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.1"
+    version = "0.2.2"
 
     def cli_group(self):
         @click.group(name="firewall")
         def group():
             pass
 
-        @group.group(name="port")
+        @group.group(name="port", help="libera/bloqueia portas.")
         def port_group():
             pass
 
-        @port_group.command(name="accept")
+        @port_group.command(name="accept", help="libera uma porta/faixa.")
         @click.argument("spec", required=False, default=None)
         @click.option("--comment", default="")
         def port_accept_cmd(spec, comment):
@@ -90,7 +90,7 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @port_group.command(name="deny")
+        @port_group.command(name="deny", help="bloqueia uma porta/faixa.")
         @click.argument("spec", required=False, default=None)
         @click.option("--comment", default="")
         def port_deny_cmd(spec, comment):
@@ -110,7 +110,7 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @port_group.command(name="remove")
+        @port_group.command(name="remove", help="remove uma porta das listas de liberação/bloqueio.")
         @click.argument("spec", required=False, default=None)
         def port_remove_cmd(spec):
             _require_root()
@@ -127,18 +127,18 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @port_group.command(name="list")
+        @port_group.command(name="list", help="lista as portas liberadas e bloqueadas.")
         def port_list_cmd():
             _echo_list("liberadas:", _read("port_accept"))
             _echo_list("bloqueadas:", _read("port_deny"))
             if _is_interactive():
                 widgets.pause()
 
-        @group.group(name="ip")
+        @group.group(name="ip", help="libera/bloqueia IPs e faixas (CIDR).")
         def ip_group():
             pass
 
-        @ip_group.command(name="accept")
+        @ip_group.command(name="accept", help="adiciona um IP/CIDR à lista de confiáveis.")
         @click.argument("cidr", required=False, default=None)
         @click.option("--comment", default="")
         def ip_accept_cmd(cidr, comment):
@@ -156,7 +156,7 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @ip_group.command(name="deny")
+        @ip_group.command(name="deny", help="adiciona um IP/CIDR à lista de bloqueio.")
         @click.argument("cidr", required=False, default=None)
         @click.option("--comment", default="")
         @click.option("--force", is_flag=True, help="ignora a checagem de auto-bloqueio")
@@ -181,7 +181,7 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @ip_group.command(name="remove")
+        @ip_group.command(name="remove", help="remove um IP das listas de confiáveis/bloqueio.")
         @click.argument("cidr", required=False, default=None)
         def ip_remove_cmd(cidr):
             _require_root()
@@ -198,14 +198,14 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @ip_group.command(name="list")
+        @ip_group.command(name="list", help="lista os IPs confiáveis e bloqueados.")
         def ip_list_cmd():
             _echo_list("confiáveis:", _read("ip_accept"))
             _echo_list("bloqueados:", _read("ip_deny"))
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="check")
+        @group.command(name="check", help="mostra engine, IP da sessão e se está sincronizado.")
         @click.option("--engine", default=None, type=ENGINE_CHOICE)
         def check_cmd(engine):
             result = status_module.get_status(engine=engine)
@@ -224,7 +224,7 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="apply")
+        @group.command(name="apply", help="aplica as listas no firewall de verdade (iptables/firewalld).")
         @click.option("--engine", default=None, type=ENGINE_CHOICE)
         @click.option("--force", is_flag=True, help="prossegue mesmo sem detectar o IP da sessão atual")
         @click.option("--yes", is_flag=True)
@@ -256,7 +256,7 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="start-on-boot")
+        @group.command(name="start-on-boot", help="instala um serviço systemd que reaplica o firewall no boot.")
         @click.option("--dry-run", is_flag=True)
         @click.option("--pvx-bin", default="/usr/local/bin/pvx")
         def start_on_boot_cmd(dry_run, pvx_bin):

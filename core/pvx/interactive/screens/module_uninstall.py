@@ -13,8 +13,8 @@ class ModuleUninstallScreen:
             widgets.pause()
             return "BACK"
 
-        selected = ask_select("pvx > módulos > remover >", list(modules.keys()) + ["Voltar"])
-        if selected is None or selected == "Voltar":
+        selected = ask_select("pvx > módulos > remover >", list(modules.keys()) + ["voltar"])
+        if selected is None or selected == "voltar":
             return "BACK"
 
         if ask_confirm(f"Remover o módulo '{selected}'?", default=False):

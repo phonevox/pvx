@@ -3,6 +3,26 @@ import urllib.error
 from pvx.registry.client import fetch_index
 
 
+def _parse_version(text):
+    try:
+        return tuple(int(p) for p in str(text).split(".")[:3])
+    except (ValueError, AttributeError):
+        return None
+
+
+def _status(installed_version, latest_version):
+    installed_v = _parse_version(installed_version)
+    latest_v = _parse_version(latest_version)
+    if installed_v is None or latest_v is None or installed_v == latest_v:
+        return "atualizado"
+    if installed_v < latest_v:
+        return "atualização disponível"
+    # achado ao vivo: deploy direto na VPS (fora do registry) deixa a
+    # versão instalada mais nova que a publicada -- "atualização
+    # disponível" nesse caso não faz sentido.
+    return "à frente do registry"
+
+
 def list_modules(installed, index_url):
     try:
         index = fetch_index(index_url)
@@ -19,7 +39,7 @@ def list_modules(installed, index_url):
         latest_version = registry_entry["latest"] if registry_entry else "-"
 
         if installed_module and registry_entry:
-            status = "atualizado" if installed_version == latest_version else "atualização disponível"
+            status = _status(installed_version, latest_version)
         elif installed_module:
             status = "local"
         else:

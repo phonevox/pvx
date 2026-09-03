@@ -12,7 +12,7 @@ class LogsScreenTest(unittest.TestCase):
         choices = mock_ask_select.call_args.args[1]
         self.assertIn("core", choices)
         self.assertIn("dummy", choices)
-        self.assertTrue(any("Tudo" in c for c in choices))
+        self.assertTrue(any("tudo" in c for c in choices))
 
     @patch("pvx.interactive.screens.logs.time.sleep", side_effect=KeyboardInterrupt)
     @patch("pvx.interactive.screens.logs.viewer.LogFollower")
@@ -36,7 +36,7 @@ class LogsScreenTest(unittest.TestCase):
         self.assertEqual(LogsScreen().render(), "BACK")
 
     @patch("pvx.interactive.screens.logs.viewer.read_combined_logs")
-    @patch("pvx.interactive.screens.logs.ask_select", return_value="Voltar")
+    @patch("pvx.interactive.screens.logs.ask_select", return_value="voltar")
     @patch("pvx.interactive.screens.logs.discover_installed_modules", return_value={"dummy": object()})
     def test_selecting_voltar_returns_back_without_reading_log(
         self, mock_discover, mock_ask_select, mock_read
@@ -59,7 +59,7 @@ class LogsScreenTest(unittest.TestCase):
             def fake_ask_select(_msg, options):
                 nonlocal choices
                 choices = options
-                return next(c for c in options if "Tudo" in c)
+                return next(c for c in options if "tudo" in c)
 
             mock_ask_select.side_effect = fake_ask_select
             result = LogsScreen().render()

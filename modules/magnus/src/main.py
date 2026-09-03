@@ -139,18 +139,18 @@ def _run_install(logger, yes, interactive):
 
 class MagnusModule(PvxModule):
     name = "magnus"
-    version = "0.1.5"
+    version = "0.1.6"
 
     def cli_group(self):
         @click.group(name="magnus")
         def group():
             pass
 
-        @group.group(name="backup")
+        @group.group(name="backup", help="backup do MagnusBilling: exportar ou importar.")
         def backup_group():
             pass
 
-        @backup_group.command(name="export")
+        @backup_group.command(name="export", help="gera um backup do MagnusBilling (banco, Asterisk, URA).")
         @click.option("--db-user", default=None)
         @click.option("--db-password-file", default=None, help="arquivo com a senha do banco de dados.")
         @click.option(
@@ -168,7 +168,7 @@ class MagnusModule(PvxModule):
                 if interactive:
                     widgets.pause()
 
-        @backup_group.command(name="import")
+        @backup_group.command(name="import", help="restaura um backup no servidor atual (sobrescreve tudo).")
         @click.argument("backup_file", required=False, default=None)
         @click.option("--db-user", default=None)
         @click.option("--db-password-file", default=None, help="arquivo com a senha do banco de dados.")

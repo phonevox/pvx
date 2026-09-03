@@ -1,8 +1,8 @@
 {
   "name": "zabbix",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "entrypoint": "main:cli",
-  "description": "Instala e configura o Zabbix Agent (2 ou clássico), com auto-preenchimento de hostname/provider/metadata pro autoregistro.",
+  "description": "Instala e configura o Zabbix Agent (2 ou cl\u00e1ssico), com auto-preenchimento de hostname/provider/metadata pro autoregistro.",
   "author": "pvx",
   "min_pvx_version": "0.2.0",
   "checksum_sha256": "",

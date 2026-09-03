@@ -8,7 +8,14 @@ from pvx.interactive import widgets
 from pvx.interactive.auto_menu import build_choices
 from pvx.interactive.inputs import ask_select
 
-SCREEN_BY_SYSTEM_CHOICE = {"Módulos": "modules", "Logs": "logs", "Tema": "theme"}
+SCREEN_BY_SYSTEM_CHOICE = {"módulos": "modules", "logs": "logs", "tema": "theme"}
+
+_SYSTEM_DESCRIPTIONS = {
+    "módulos": "instalar, atualizar, remover e listar módulos",
+    "logs": "ver o log do core e de cada módulo, ao vivo",
+    "tema": "trocar a cor de destaque do menu",
+    "sair": "fecha o pvx",
+}
 
 
 class RootScreen:
@@ -16,20 +23,28 @@ class RootScreen:
         widgets.banner()
         modules = discover_installed_modules()
 
-        def indented(value):
-            return questionary.Choice(title=f"  {value}", value=value)
+        def indented(value, description=None):
+            return questionary.Choice(title=f"  {value}", value=value, description=description)
 
-        choices = [questionary.Separator("SYSTEM"), *(indented(c) for c in SCREEN_BY_SYSTEM_CHOICE)]
+        # "sair" fica dentro do grupo Sistema, como último item -- não mais
+        # separado no fim da lista inteira.
+        choices = [
+            questionary.Separator("Sistema"),
+            *(indented(c, _SYSTEM_DESCRIPTIONS[c]) for c in SCREEN_BY_SYSTEM_CHOICE),
+            indented("sair", _SYSTEM_DESCRIPTIONS["sair"]),
+        ]
         if modules:
             choices += [
                 questionary.Separator(" "),
-                questionary.Separator("MODULES"),
+                questionary.Separator("Módulos"),
                 *(indented(name) for name in modules),
             ]
-        choices += [questionary.Separator(" "), "Sair"]
 
-        selected = ask_select("pvx >", choices)
-        if selected is None or selected == "Sair":
+        # sem viewport limitado aqui de propósito -- é o menu mais navegado
+        # de todos, lista curta e fixa, scroll atrapalharia mais que ajuda
+        # (viewport de 5 é pras listas grandes -- módulos instalados, etc.).
+        selected = ask_select("pvx >", choices, window_size=None)
+        if selected is None or selected == "sair":
             return "EXIT"
 
         if selected in SCREEN_BY_SYSTEM_CHOICE:

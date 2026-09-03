@@ -6,16 +6,16 @@ from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_checkbox, ask_select, ask_text
 from pvx.modules import installer, listing
 
-SOURCES = ["Registry oficial", "Outro repositório (URL)", "Voltar"]
+SOURCES = ["registry oficial", "outro repositório (URL)", "voltar"]
 
 
 class ModuleInstallScreen:
     def render(self):
         source = ask_select("pvx > módulos > instalar >", SOURCES)
-        if source is None or source == "Voltar":
+        if source is None or source == "voltar":
             return "BACK"
 
-        if source == "Outro repositório (URL)":
+        if source == "outro repositório (URL)":
             index_url = ask_text("URL do index.json:")
             if index_url is None:
                 return "BACK"

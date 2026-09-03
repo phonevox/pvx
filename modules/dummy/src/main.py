@@ -12,14 +12,14 @@ def _is_interactive():
 
 class DummyModule(PvxModule):
     name = "dummy"
-    version = "0.1.3"
+    version = "0.1.4"
 
     def cli_group(self):
         @click.group()
         def group():
             pass
 
-        @group.command()
+        @group.command(help="ecoa uma mensagem de teste.")
         def hello():
             self.get_logger().info("hello invocado.")
             click.echo("hello from dummy")

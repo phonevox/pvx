@@ -63,7 +63,7 @@ class ModuleUninstallScreenTest(unittest.TestCase):
         mock_ask_select.assert_not_called()
 
     @patch("pvx.interactive.screens.module_uninstall.installer.uninstall")
-    @patch("pvx.interactive.screens.module_uninstall.ask_select", return_value="Voltar")
+    @patch("pvx.interactive.screens.module_uninstall.ask_select", return_value="voltar")
     @patch(
         "pvx.interactive.screens.module_uninstall.discover_installed_modules",
         return_value={"dummy": object()},
