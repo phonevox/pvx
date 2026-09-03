@@ -24,6 +24,7 @@ modules/<nome>/
 │   ├── <unidade>.py      # um arquivo por responsabilidade (ver "Divisão de arquivos")
 │   └── ...
 └── tests/
+    ├── conftest.py         # isolamento de PVX_HOME -- ver "Testes"
     ├── test_main.py
     ├── test_<unidade>.py
     └── test_build.py      # opcional, mas recomendado (ver "Teste de packaging")
@@ -213,6 +214,17 @@ sendo de fato executado toca) — vira teste de regressão padrão
 
 ## Testes
 
+- **`tests/conftest.py` é obrigatório, copiado verbatim de outro módulo**
+  (idêntico em todos, mesma lógica de `build.sh`/`pyproject.toml`): um
+  fixture `autouse` que aponta `PVX_HOME` pra um tmpdir descartável antes de
+  cada teste. Sem isso, qualquer teste que toque `self.get_logger()` (ou
+  qualquer outro caminho que passe por `config.pvx_home()` sem mock
+  profundo) tenta escrever de verdade em `/etc/pvx` — funciona sem querer
+  numa máquina de dev rodando como root, mas quebra com `PermissionError`
+  em qualquer outra (CI, container não-root). Um `conftest.py` na raiz do
+  repo **não pega** aqui — cada módulo tem seu próprio `pyproject.toml`
+  (vira rootdir do pytest), então a descoberta de conftest não sobe até lá;
+  precisa estar dentro de `tests/` do próprio módulo.
 - `unittest` + `click.testing.CliRunner` pra comandos, `unittest.mock.patch`
   pra tudo que é I/O externo (subprocess, filesystem fora de tempdir, rede,
   `main._is_interactive`). Nunca um teste chama um binário/serviço de
