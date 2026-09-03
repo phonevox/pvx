@@ -1,6 +1,5 @@
 import json
 import os
-import pwd
 from pathlib import Path
 
 
@@ -9,14 +8,13 @@ def pvx_home() -> Path:
     if override:
         return Path(override)
 
-    # `sudo` (sem -E) reseta $HOME pro do usuário alvo (root) -- pra quem
-    # chamou via `sudo pvx ...`, o estado por-usuário (módulos/config/logs)
-    # tem que continuar sendo o do usuário real, não o de root.
-    sudo_user = os.environ.get("SUDO_USER")
-    if sudo_user:
-        return Path(pwd.getpwnam(sudo_user).pw_dir) / ".pvx"
-
-    return Path.home() / ".pvx"
+    # pvx é uma ferramenta administrativa, roda como root -- um único
+    # diretório fixo, compartilhado por qualquer usuário que chamar `pvx`
+    # (nunca baseado em $HOME/SUDO_USER: achado ao vivo, SUDO_USER fica
+    # pendurado no ambiente depois de um `sudo`, e um `su` sem `-` logo em
+    # seguida reseta $HOME mas não limpa SUDO_USER -- pvx acabava resolvendo
+    # a home de um TERCEIRO usuário, às vezes ilegível pra quem chamou).
+    return Path("/etc/pvx")
 
 
 def bin_dir() -> Path:

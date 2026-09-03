@@ -1,3 +1,4 @@
+import os
 import sys
 import traceback
 
@@ -6,10 +7,24 @@ import click
 from pvx.cli import cli
 from pvx.interactive import widgets
 from pvx.interactive.router import run_interactive
+from pvx.modules import migration
+
+
+def _migrate_legacy_state():
+    # housekeeping best-effort -- nunca pode travar o uso normal do pvx
+    # (permissão negada, disco cheio, etc. só ficam sem migrar dessa vez).
+    # só root escreve em config.pvx_home() (/etc/pvx).
+    if os.geteuid() != 0:
+        return
+    try:
+        migration.migrate_legacy_modules()
+    except Exception:
+        pass
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    _migrate_legacy_state()
     if argv:
         try:
             cli.main(args=argv, prog_name="pvx")
