@@ -214,15 +214,19 @@ def _run_apply(logger, yes, skip_asterisk_check):
             return
 
     state_dir = pvx_config.modules_dir() / "qint" / "state"
+    # achado ao vivo: apply() busca via SFTP, que pode pedir senha/confirmação de host key
+    # no tty -- um spinner (rich Live, redesenha a tela sozinho) por cima disso escondia
+    # o prompt do usuário, travando sem dar pista do motivo. Sem spinner aqui: SFTP é
+    # interativo por natureza, não dá pra mascarar com um indicador de "carregando".
+    click.echo("Aplicando integração (pode pedir a senha do SFTP)...")
     try:
-        with widgets.spinner("Aplicando integração..."):
-            result = apply_module.apply(
-                staged,
-                staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
-                str(state_dir / "versions"),
-                defaults.DESTINATION_BASE_DIRS,
-                str(state_dir / "history.log"),
-            )
+        result = apply_module.apply(
+            staged,
+            staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
+            str(state_dir / "versions"),
+            defaults.DESTINATION_BASE_DIRS,
+            str(state_dir / "history.log"),
+        )
     except Exception as e:
         logger.error(f"qint apply falhou: {e}")
         widgets.failed(str(e))
@@ -246,7 +250,7 @@ def _run_apply(logger, yes, skip_asterisk_check):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.8"
+    version = "0.1.10"
 
     def cli_group(self):
         @click.group(name="qint")
