@@ -22,8 +22,9 @@ class ReadPasswordFileTest(unittest.TestCase):
 
 
 class BackupExportCommandTest(unittest.TestCase):
-    def _invoke(self, args, is_tty=False):
+    def _invoke(self, args, is_tty=False, auto_detected=(None, None)):
         with patch("main._is_interactive", return_value=is_tty), \
+             patch("main.magnus_ops.detect_db_credentials", return_value=auto_detected), \
              patch(
                  "main.magnus_ops.export_backup",
                  return_value=("/tmp/backup-pxmagnus.02-09-2026.tgz", []),
@@ -41,6 +42,23 @@ class BackupExportCommandTest(unittest.TestCase):
         result, mock_export = self._invoke(["backup", "export", "--db-user", "root"])
         self.assertNotEqual(result.exit_code, 0)
         mock_export.assert_not_called()
+
+    def test_auto_detects_credentials_when_none_given(self):
+        # convenção do MagnusBilling: /root/passwordMysql.log -- tentado
+        # antes de exigir --db-user/--db-password-file.
+        result, mock_export = self._invoke(
+            ["backup", "export"], auto_detected=("root", "s3nha-detectada"),
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with("root", "s3nha-detectada", output_path=None)
+
+    def test_explicit_db_user_skips_auto_detect(self):
+        with patch("main.magnus_ops.detect_db_credentials") as mock_detect:
+            result, mock_export = self._invoke(
+                ["backup", "export", "--db-user", "root", "--db-password-file", PASSWORD_FILE],
+            )
+        mock_detect.assert_not_called()
+        self.assertEqual(result.exit_code, 0, result.output)
 
     def test_happy_path_calls_export_backup(self):
         result, mock_export = self._invoke([
@@ -102,8 +120,9 @@ class BackupExportCommandTest(unittest.TestCase):
 
 
 class BackupImportCommandTest(unittest.TestCase):
-    def _invoke(self, args, is_tty=False, valid_archive=True, validation_errors=None):
+    def _invoke(self, args, is_tty=False, valid_archive=True, validation_errors=None, auto_detected=(None, None)):
         with patch("main._is_interactive", return_value=is_tty), \
+             patch("main.magnus_ops.detect_db_credentials", return_value=auto_detected), \
              patch("main.magnus_ops.is_valid_archive", return_value=valid_archive), \
              patch("main.magnus_ops.extract_archive"), \
              patch("main.magnus_ops.validate_extracted", return_value=validation_errors or []), \
@@ -118,6 +137,13 @@ class BackupImportCommandTest(unittest.TestCase):
         )
         self.assertNotEqual(result.exit_code, 0)
         mock_restore.assert_not_called()
+
+    def test_auto_detects_credentials_when_none_given(self):
+        result, mock_restore = self._invoke(
+            ["backup", "import", "backup.tgz", "--yes"], auto_detected=("root", "s3nha-detectada"),
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_restore.assert_called_once_with(unittest.mock.ANY, "root", "s3nha-detectada")
 
     def test_interactive_prompts_for_the_backup_file_path(self):
         # achado ao vivo: no menu interativo o auto-menu chama o comando sem

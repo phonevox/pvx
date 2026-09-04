@@ -21,13 +21,18 @@ def _is_interactive():
 
 def _read_password_file(path):
     # nunca senha em argumento de linha de comando (fica em ~/.bash_history,
-    # ps aux, etc.) -- mesma convenção de scripts/publish.sh e uoe.
+    # ps aux, etc.) -- mesma convenção de scripts/publish.sh e do módulo autobackup.
     if path is None:
         return None
     return open(path).read().strip()
 
 
 def _resolve_db_credentials(db_user, db_password_file, interactive):
+    if db_user is None and db_password_file is None:
+        auto_user, auto_password = magnus_ops.detect_db_credentials()
+        if auto_user is not None:
+            return auto_user, auto_password
+
     if db_user is None:
         if not interactive:
             raise click.ClickException("informe --db-user.")
@@ -139,7 +144,7 @@ def _run_install(logger, yes, interactive):
 
 class MagnusModule(PvxModule):
     name = "magnus"
-    version = "0.1.6"
+    version = "0.1.7"
 
     def cli_group(self):
         @click.group(name="magnus")
