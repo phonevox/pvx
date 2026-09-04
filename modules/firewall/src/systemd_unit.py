@@ -22,6 +22,16 @@ def render_unit(pvx_bin):
     return _UNIT_TEMPLATE.format(pvx_bin=pvx_bin)
 
 
+def is_enabled():
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-enabled", "pvx-firewall.service"], capture_output=True, text=True,
+        )
+    except OSError:
+        return False
+    return result.stdout.strip() == "enabled"
+
+
 def install(pvx_bin="/usr/local/bin/pvx", unit_path=None, dry_run=False):
     content = render_unit(pvx_bin)
     if dry_run:

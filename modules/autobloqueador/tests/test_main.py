@@ -24,20 +24,23 @@ class ReadPasswordFileTest(unittest.TestCase):
 
 
 class InstallCommandTest(unittest.TestCase):
-    def _invoke(self, args, is_tty=False, configs_exist=False, existing_config=None):
+    def _invoke(self, args, is_tty=False, configs_exist=False, existing_config=None, start_timer_error=None):
         with patch("main.os.geteuid", return_value=0), \
              patch("main._is_interactive", return_value=is_tty), \
              patch("main.autobloqueador_ops.configs_exist", return_value=configs_exist), \
              patch("main.autobloqueador_ops.load_config", return_value=existing_config or BASE_CONFIG), \
              patch("main.autobloqueador_ops.save_config") as mock_save, \
              patch("main.autobloqueador_ops.install_timer") as mock_install_timer, \
+             patch("main.autobloqueador_ops.start_timer", side_effect=start_timer_error) as mock_start_timer, \
              patch("main.autobloqueador_ops.check_and_apply", return_value={
                  "http_code": 200, "last_status": 200, "action": None, "warning": None,
              }), \
              patch("main.autobloqueador_ops.lock"), \
              patch("main.AutobloqueadorModule.get_logger"):
             result = CliRunner().invoke(cli.cli_group(), args)
-            return result, {"save_config": mock_save, "install_timer": mock_install_timer}
+            return result, {
+                "save_config": mock_save, "install_timer": mock_install_timer, "start_timer": mock_start_timer,
+            }
 
     def test_reuses_existing_config_without_asking_anything(self):
         result, mocks = self._invoke(["install"], configs_exist=True)
@@ -88,6 +91,31 @@ class InstallCommandTest(unittest.TestCase):
         mocks["save_config"].assert_called_once_with("https://x.com", "pabx", "c1", "crypted-key-de-teste")
         mocks["install_timer"].assert_called_once()
 
+    def test_install_starts_the_timer_automatically(self):
+        # pedido ao vivo: técnico não devia precisar rodar `pvx autobloqueador
+        # start` manualmente depois do install.
+        result, mocks = self._invoke([
+            "install", "--url-base", "x.com", "--type", "pabx", "--code", "c1",
+            "--crypted-key-file", CRYPTED_KEY_FILE,
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["start_timer"].assert_called_once()
+
+    def test_start_failure_after_a_successful_install_is_not_blamed_on_install(self):
+        # achado na revisão: install_timer() pode ter funcionado direitinho
+        # (units gravadas) e só o start_timer() falhar (ex.: hiccup do
+        # systemd/dbus) -- a mensagem não pode dizer "falha ao instalar",
+        # senão o técnico tenta reinstalar em vez de só rodar `start` de novo.
+        result, mocks = self._invoke(
+            ["install", "--url-base", "x.com", "--type", "pabx", "--code", "c1",
+             "--crypted-key-file", CRYPTED_KEY_FILE],
+            start_timer_error=ops.AutobloqueadorError("dbus indisponível"),
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("falha ao instalar", result.output.lower())
+        self.assertIn("falha ao iniciar", result.output.lower())
+        mocks["install_timer"].assert_called_once()
+
     def test_interactive_prompts_for_missing_fields_and_the_pasted_key(self):
         with patch("main.ask_text", return_value="c1"), \
              patch("main.ask_select", return_value="PABX (Asterisk)"), \
@@ -97,6 +125,22 @@ class InstallCommandTest(unittest.TestCase):
         mocks["save_config"].assert_called_once_with(
             "https://auto-blocker.falevox.com.br", "pabx", "c1", "chave-colada",
         )
+
+    def test_code_prompt_for_pabx_asks_about_contract_id(self):
+        with patch("main.ask_text", return_value="c1") as mock_text, \
+             patch("main.ask_select", return_value="PABX (Asterisk)"), \
+             patch("main.ask_password", return_value="chave"):
+            self._invoke(["install"], is_tty=True)
+        prompt = mock_text.call_args.args[0]
+        self.assertIn("ID do contrato a ser monitorado", prompt)
+
+    def test_code_prompt_for_opa_asks_about_opasuite_key(self):
+        with patch("main.ask_text", return_value="c1") as mock_text, \
+             patch("main.ask_select", return_value="OPA (PM2)"), \
+             patch("main.ask_password", return_value="chave"):
+            self._invoke(["install"], is_tty=True)
+        prompt = mock_text.call_args.args[0]
+        self.assertIn("Chave do Opa!Suite a ser monitorado", prompt)
 
     def test_escaping_the_key_paste_prompt_aborts_cleanly(self):
         with patch("main.ask_text", return_value="c1"), \

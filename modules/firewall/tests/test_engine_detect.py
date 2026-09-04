@@ -39,5 +39,23 @@ class DetectEngineTest(unittest.TestCase):
         self.assertEqual(engine_detect.detect_engine(), "iptables")
 
 
+class ServiceIsActiveTest(unittest.TestCase):
+    # exposta como API pública agora: status.py reusa isso pra reportar se
+    # o firewalld em si está rodando (não só qual engine detectar).
+    @patch("engine_detect.subprocess.run")
+    def test_true_when_systemctl_says_active(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="active\n")
+        self.assertTrue(engine_detect.service_is_active("firewalld"))
+
+    @patch("engine_detect.subprocess.run")
+    def test_false_when_inactive(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="inactive\n")
+        self.assertFalse(engine_detect.service_is_active("firewalld"))
+
+    @patch("engine_detect.subprocess.run", side_effect=OSError)
+    def test_false_when_systemctl_is_unavailable(self, mock_run):
+        self.assertFalse(engine_detect.service_is_active("firewalld"))
+
+
 if __name__ == "__main__":
     unittest.main()

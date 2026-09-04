@@ -7,6 +7,11 @@ from click.testing import CliRunner
 
 from main import cli
 
+BASE_STATUS = {
+    "engine": "iptables", "engine_active": False, "boot_persistent": False,
+    "rule_count": 0, "session_ip": None, "synced": False, "failsafe_ok": False, "lists": None,
+}
+
 
 class MainTestCase(unittest.TestCase):
     def setUp(self):
@@ -31,11 +36,41 @@ class RootCheckTest(MainTestCase):
         self.assertIn("root", result.output.lower())
 
     def test_status_does_not_require_root(self):
-        with patch("main.status_module.get_status", return_value={
-            "engine": "iptables", "rule_count": 0, "session_ip": None, "synced": False, "failsafe_ok": False,
-        }):
+        with patch("main.status_module.get_status", return_value=BASE_STATUS):
             result = self._invoke(["check"], is_root=False)
         self.assertEqual(result.exit_code, 0)
+
+
+class CheckCommandTest(MainTestCase):
+    def test_shows_engine_active_state(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, engine_active=True)):
+            result = self._invoke(["check"])
+        self.assertIn("ativo", result.output.lower())
+
+    def test_shows_engine_inactive_state(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, engine_active=False)):
+            result = self._invoke(["check"])
+        self.assertIn("inativo", result.output.lower())
+
+    def test_shows_boot_persistence_state(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, boot_persistent=True)):
+            result = self._invoke(["check"])
+        self.assertIn("habilitado", result.output.lower())
+
+    def test_shows_the_configured_ip_and_port_lists(self):
+        lists_data = {
+            "ip_accept": [("203.0.113.1", "confiavel")], "ip_deny": [],
+            "port_accept": [("5060/udp", "SIP")], "port_deny": [],
+        }
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, lists=lists_data)):
+            result = self._invoke(["check"])
+        self.assertIn("203.0.113.1", result.output)
+        self.assertIn("5060/udp", result.output)
+
+    def test_passes_the_state_dir_so_lists_get_read(self):
+        with patch("main.status_module.get_status", return_value=BASE_STATUS) as mock_get_status:
+            self._invoke(["check"])
+        mock_get_status.assert_called_once_with(engine=None, base_dir=self.state_dir)
 
 
 class PortCommandsTest(MainTestCase):
@@ -115,10 +150,9 @@ class StatusCommandTest(MainTestCase):
         # status é consulta, não ação -- "sucesso!"/"falha!" não fazem
         # sentido aqui (usava widgets.success/failed antes, corrigido pra
         # widgets.state: só cor, sem rótulo de ação).
-        with patch("main.status_module.get_status", return_value={
-            "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
-            "synced": True, "failsafe_ok": True,
-        }):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=True,
+        )):
             result = self._invoke(["check"])
         self.assertIn("iptables", result.output)
         self.assertIn("sincronizado", result.output.lower())
@@ -126,19 +160,17 @@ class StatusCommandTest(MainTestCase):
         self.assertNotIn("sucesso", result.output.lower())
 
     def test_shows_not_synced_state_without_failure_wording(self):
-        with patch("main.status_module.get_status", return_value={
-            "engine": "iptables", "rule_count": 0, "session_ip": "203.0.113.9",
-            "synced": False, "failsafe_ok": False,
-        }):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, rule_count=0, session_ip="203.0.113.9", synced=False, failsafe_ok=False,
+        )):
             result = self._invoke(["check"])
         self.assertIn("não sincronizado", result.output.lower())
         self.assertNotIn("falha", result.output.lower())
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
-        with patch("main.status_module.get_status", return_value={
-            "engine": "iptables", "rule_count": 5, "session_ip": "203.0.113.9",
-            "synced": True, "failsafe_ok": False,
-        }):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
+        )):
             result = self._invoke(["check"])
         self.assertIn("sincronizado", result.output.lower())
         self.assertIn("atenção", result.output.lower())

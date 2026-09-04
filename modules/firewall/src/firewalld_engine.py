@@ -35,25 +35,34 @@ def _icmp_rule():
     return f'rule priority="{defaults.FIREWALLD_PRIORITY_ICMP}" family="ipv4" protocol value="icmp" accept'
 
 
-def _rich_rule_present(zone, rule):
-    return _run(["--zone", zone, "--query-rich-rule", rule], check=False).returncode == 0
+def _rich_rule_present(zone, rule, permanent=False):
+    args = (["--permanent"] if permanent else []) + ["--zone", zone, "--query-rich-rule", rule]
+    return _run(args, check=False).returncode == 0
 
 
 def failsafe_present(zone, ip):
+    # estado em vigor AGORA -- sempre runtime, nunca permanent (é o que
+    # `check`/status.py usa pra saber se a proteção está de fato ativa).
     return _rich_rule_present(zone, _rich_rule(defaults.FIREWALLD_PRIORITY_FAILSAFE, source=ip))
 
 
 def insert_failsafe(zone, ip):
+    # opera inteiramente em --permanent -- sync() dá um --reload no final
+    # que promove tudo pro runtime de uma vez só. achado ao vivo (testando
+    # com firewalld real): sem --permanent aqui, aquele --reload descartava
+    # a regra recém-adicionada silenciosamente (reload recarrega DO
+    # permanent, joga fora qualquer coisa só em runtime).
     rule = _rich_rule(defaults.FIREWALLD_PRIORITY_FAILSAFE, source=ip)
-    if _rich_rule_present(zone, rule):
+    if _rich_rule_present(zone, rule, permanent=True):
         return True
-    _run(["--zone", zone, "--add-rich-rule", rule])
-    return _rich_rule_present(zone, rule)
+    _run(["--permanent", "--zone", zone, "--add-rich-rule", rule])
+    return _rich_rule_present(zone, rule, permanent=True)
 
 
 def count_rich_rules(zone):
     # zona pode nem existir ainda (antes do primeiro sync) -- não é erro,
-    # só significa zero regras.
+    # só significa zero regras. runtime (não permanent) -- é o que está de
+    # fato em vigor agora.
     listing = _run(["--zone", zone, "--list-rich-rules"], check=False)
     if listing.returncode != 0:
         return 0
@@ -61,12 +70,12 @@ def count_rich_rules(zone):
 
 
 def clear_zone_except_failsafe(zone, failsafe_rule):
-    listing = _run(["--zone", zone, "--list-rich-rules"])
+    listing = _run(["--permanent", "--zone", zone, "--list-rich-rules"])
     for line in listing.stdout.splitlines():
         line = line.strip()
         if not line or line == failsafe_rule:
             continue
-        _run(["--zone", zone, "--remove-rich-rule", line])
+        _run(["--permanent", "--zone", zone, "--remove-rich-rule", line])
 
 
 def port_rule_args(spec):
@@ -87,22 +96,24 @@ def sync(ip_accept, ip_deny, port_accept, port_deny, failsafe_ip):
 
     clear_zone_except_failsafe(zone, failsafe_rule)
 
-    _run(["--zone", zone, "--add-rich-rule", _icmp_rule()])
+    # tudo abaixo é --permanent, de propósito -- só o --reload final (que
+    # promove permanent -> runtime de uma vez) aplica de verdade.
+    _run(["--permanent", "--zone", zone, "--add-rich-rule", _icmp_rule()])
 
     for ip, _ in ip_deny:
-        _run(["--zone", zone, "--add-rich-rule",
+        _run(["--permanent", "--zone", zone, "--add-rich-rule",
               _rich_rule(defaults.FIREWALLD_PRIORITY_DENY_IP, source=ip, action="drop")])
     for ip, _ in ip_accept:
-        _run(["--zone", zone, "--add-rich-rule",
+        _run(["--permanent", "--zone", zone, "--add-rich-rule",
               _rich_rule(defaults.FIREWALLD_PRIORITY_TRUSTED_IP, source=ip, action="accept")])
 
     for spec_str, _ in port_deny:
         for port_range, proto in port_rule_args(parse_port_spec(spec_str)):
-            _run(["--zone", zone, "--add-rich-rule",
+            _run(["--permanent", "--zone", zone, "--add-rich-rule",
                   _rich_rule(defaults.FIREWALLD_PRIORITY_PORT_DENY, port=port_range, protocol=proto, action="drop")])
     for spec_str, _ in port_accept:
         for port_range, proto in port_rule_args(parse_port_spec(spec_str)):
-            _run(["--zone", zone, "--add-rich-rule",
+            _run(["--permanent", "--zone", zone, "--add-rich-rule",
                   _rich_rule(defaults.FIREWALLD_PRIORITY_PORT_ACCEPT, port=port_range, protocol=proto,
                              action="accept")])
 

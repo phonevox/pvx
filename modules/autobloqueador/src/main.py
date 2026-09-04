@@ -11,6 +11,13 @@ import autobloqueador_ops
 
 _TYPE_LABELS = {"OPA (PM2)": "opa", "PABX (Asterisk)": "pabx"}
 
+# "code" tem nome de campo genérico na API, mas significa coisas diferentes
+# pra cada tipo -- o rótulo do prompt reflete isso, não o nome do campo.
+_CODE_PROMPT_LABELS = {
+    "pabx": "ID do contrato a ser monitorado",
+    "opa": "Chave do Opa!Suite a ser monitorado",
+}
+
 _NETWORK_WARNING = (
     "⚠️  IMPORTANTE: o comando curl abaixo DEVE ser executado APENAS numa máquina "
     "de rede permitida (VPN/interna) -- nunca em rede pública ou sem autorização."
@@ -56,11 +63,12 @@ def _resolve_type(type_, interactive):
     return _TYPE_LABELS[label]
 
 
-def _resolve_code(code, interactive):
+def _resolve_code(code, type_, interactive):
     if code is None:
         if not interactive:
             raise click.ClickException("informe --code.")
-        code = ask_text("Code (máx 255 caracteres):")
+        label = _CODE_PROMPT_LABELS.get(type_, "Code")
+        code = ask_text(f"{label} (máx 255 caracteres):")
         if code is None:
             return None
     if not autobloqueador_ops.validate_code(code):
@@ -122,7 +130,7 @@ def _run_install(logger, url_base, type_, code, crypted_key_file, pvx_bin, inter
         type_ = _resolve_type(type_, interactive)
         if type_ is None:
             return
-        code = _resolve_code(code, interactive)
+        code = _resolve_code(code, type_, interactive)
         if code is None:
             return
 
@@ -141,7 +149,17 @@ def _run_install(logger, url_base, type_, code, crypted_key_file, pvx_bin, inter
             autobloqueador_ops.install_timer(pvx_bin=pvx_bin)
     except autobloqueador_ops.AutobloqueadorError as e:
         raise click.ClickException(f"falha ao instalar o timer: {e}")
-    widgets.success("service + timer instalados.")
+
+    try:
+        # install_timer já faz enable --now, mas o start explícito aqui
+        # garante o timer rodando mesmo que isso mude -- pedido ao vivo:
+        # técnico não devia precisar rodar `start` manualmente depois.
+        # try/except separado do install: se só isso falhar, a mensagem não
+        # pode culpar o install (as units já foram gravadas com sucesso).
+        autobloqueador_ops.start_timer()
+    except autobloqueador_ops.AutobloqueadorError as e:
+        raise click.ClickException(f"falha ao iniciar o timer: {e}")
+    widgets.success("service + timer instalados e iniciados.")
     logger.info(f"autobloqueador instalado (type={config['type']}).")
 
     click.echo()
@@ -157,7 +175,7 @@ def _run_reconfig(logger, type_, code, crypted_key_file, interactive):
     type_ = _resolve_type(type_, interactive)
     if type_ is None:
         return
-    code = _resolve_code(code, interactive)
+    code = _resolve_code(code, type_, interactive)
     if code is None:
         return
 
@@ -252,7 +270,7 @@ def _run_remove(logger, delete_config, interactive):
 
 class AutobloqueadorModule(PvxModule):
     name = "autobloqueador"
-    version = "0.1.2"
+    version = "0.1.4"
 
     def cli_group(self):
         @click.group(name="autobloqueador")

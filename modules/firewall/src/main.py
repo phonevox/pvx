@@ -59,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.2"
+    version = "0.2.5"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -205,11 +205,14 @@ class FirewallModule(PvxModule):
             if _is_interactive():
                 widgets.pause()
 
-        @group.command(name="check", help="mostra engine, IP da sessão e se está sincronizado.")
+        @group.command(name="check", help="mostra engine, IPs, portas e se o firewall está ativo agora.")
         @click.option("--engine", default=None, type=ENGINE_CHOICE)
         def check_cmd(engine):
-            result = status_module.get_status(engine=engine)
-            click.echo(f"engine: {result['engine']}")
+            result = status_module.get_status(engine=engine, base_dir=_state_dir())
+            engine_state = "ativo" if result["engine_active"] else "inativo"
+            boot_state = "habilitado" if result["boot_persistent"] else "desabilitado"
+            click.echo(f"engine: {result['engine']} ({engine_state})")
+            click.echo(f"reaplica no boot: {boot_state}")
             click.echo(f"IP da sessão: {result['session_ip'] or 'não detectado'}")
             click.echo()
 
@@ -220,6 +223,13 @@ class FirewallModule(PvxModule):
                 widgets.state(detail, ok=True)
             else:
                 widgets.state("não sincronizado -- rode `pvx firewall apply` pra aplicar as regras", ok=False)
+
+            if result["lists"]:
+                click.echo()
+                _echo_list("IPs confiáveis:", result["lists"]["ip_accept"])
+                _echo_list("IPs bloqueados:", result["lists"]["ip_deny"])
+                _echo_list("Portas liberadas:", result["lists"]["port_accept"])
+                _echo_list("Portas bloqueadas:", result["lists"]["port_deny"])
 
             if _is_interactive():
                 widgets.pause()
