@@ -42,7 +42,7 @@ class _ScrollableList:
     # indicadores de quanto mais tem acima/abaixo) -- questionary.select()/
     # checkbox() sempre renderizam a lista inteira de uma vez, sem viewport
     # limitado, e não dá pra configurar isso via parâmetro da lib.
-    WINDOW_SIZE = 5
+    WINDOW_SIZE = 10
     # flag única controlando os indicadores de scroll: True = "↑ mais N
     # acima"/"↓ mais N abaixo", False = só a seta.
     SHOW_SCROLL_COUNT = True

@@ -14,6 +14,11 @@ UPDATE_SCRIPT = MBILLING_WEB_DIR + "/protected/commands/update.sh"
 RES_CONFIG_MYSQL = "/etc/asterisk/res_config_mysql.conf"
 INSTALLER_URL = "https://raw.githubusercontent.com/magnussolution/magnusbilling7/source/script/install.sh"
 
+# convenção do MagnusBilling (só dele, não é coisa geral de Issabel): senha
+# do root do mysql fica aqui, só a senha crua, sem label -- usuário sempre root.
+DB_PASSWORD_LOG = "/root/passwordMysql.log"
+DB_AUTO_USER = "root"
+
 
 class MagnusError(Exception):
     pass
@@ -202,6 +207,19 @@ def is_already_installed():
 def _download(url):
     with urllib.request.urlopen(url, timeout=30) as response:
         return response.read()
+
+
+def detect_db_credentials():
+    # auto-detecção pra rodar sem prompt/flag em cron -- não é obrigação
+    # ninguém ter esse arquivo, só uma tentativa antes de exigir credenciais
+    # explícitas (ver main.py:_resolve_db_credentials).
+    try:
+        password = open(DB_PASSWORD_LOG).read().strip()
+    except OSError:
+        return None, None
+    if not password:
+        return None, None
+    return DB_AUTO_USER, password
 
 
 def run_installer():

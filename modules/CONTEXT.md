@@ -3,7 +3,7 @@
 Guia prático pra criar um módulo novo do zero. Filosofia geral (TDD, aprovação
 humana, convenções de código) já está em `/CLAUDE.md` — não repete aqui. Isto
 aqui é o "playbook": estrutura de arquivos, o que cada peça faz, e os
-gotchas já pisados em módulos anteriores (zabbix, uoe, netinstall, firewall,
+gotchas já pisados em módulos anteriores (zabbix, autobackup, netinstall, firewall,
 qint, ssh-hardening, dummy — são a referência viva, olha um deles sempre que
 em dúvida).
 
@@ -123,7 +123,7 @@ cli = <Nome>Module()
 - `interactive_entry()` **não é implementado** a não ser que o módulo precise
   de um wizard/fluxo de tela custom de verdade. Sem implementar, o core cai
   no auto-menu (`auto_menu.build_choices()` + `ask_select`, introspecção do
-  `cli_group()`) — é o caminho de todos os módulos hoje (zabbix, uoe,
+  `cli_group()`) — é o caminho de todos os módulos hoje (zabbix, autobackup,
   netinstall, firewall, qint, ssh-hardening). Não implementa "só por
   garantia" — é o erro que já pegou o M12/M7 (ver `/CLAUDE.md` → Lições
   aprendidas).
@@ -179,7 +179,7 @@ if valor is None:
   (`click.ClickException` já para a execução sozinho, sem precisar de pause).
 - Toda ação destrutiva exige confirmação: `--yes` pula o `ask_confirm()` na
   CLI direta, mas **uma flag `--yes` nunca implica automaticamente uma
-  segunda ação mais destrutiva** (ex.: `uoe remove --yes` apaga a cron local,
+  segunda ação mais destrutiva** (ex.: `autobackup remove --yes` apaga a cron local,
   mas só apaga o usuário remoto com `--delete-remote-user` explícito, ou
   confirmação própria no modo interativo).
 - Widgets sempre de `pvx.interactive.widgets` (`success`, `failed`, `state`,
@@ -187,6 +187,13 @@ if valor is None:
   `pvx.interactive.inputs` — nunca `questionary`/`rich` importado direto num
   módulo, nunca cor hardcoded (sempre a paleta do `theme.py` via os
   wrappers). Já mordemos isso uma vez (ver `/CLAUDE.md`).
+  - **Exceção**: `motd` importa `rich` direto (`render.py`) pra desenhar o
+    banner de login. A regra acima existe pra manter o *menu interativo do
+    pvx* com tema único — o banner de login roda fora do pvx (dispara via
+    hook em `/etc/profile.d`, no shell de login), não é uma tela do menu,
+    então essa razão de ser não se aplica. `rich` já vem vendorizado dentro
+    do `core.pyz` (é dependência do próprio core), então nenhum módulo
+    precisa vendorizar a lib de novo no `build.sh` pra usar isso.
 
 ## Segredos e estado local
 
@@ -196,7 +203,7 @@ if valor is None:
   meio da escrita).
 - Nunca imprime um token/senha inteiro em tela, log ou mensagem de
   confirmação — se precisar mostrar que "existe", redige (primeiros ~8
-  chars + `...`, ver `_redact()` em `uoe/src/main.py`).
+  chars + `...`, ver `_redact()` em `autobackup/src/main.py`).
 - Caminho de estado do módulo: `pvx_config.modules_dir() / "<nome>" / "state"`,
   criado com `mkdir(parents=True, exist_ok=True)` antes de usar.
 

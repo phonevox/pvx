@@ -1,6 +1,10 @@
 import subprocess
 
-MARKER = "# gerenciado pelo pvx uoe -- não editar à mão, use `pvx uoe relogin`"
+MARKER = "# gerenciado pelo pvx autobackup -- não editar à mão, use `pvx autobackup relogin`"
+# módulo renomeado de uoe pra autobackup -- centrais já em produção têm esse
+# marcador antigo na cron; sem reconhecê-lo, relogin/remove nunca acham a
+# entrada existente e duplicam. Nunca escrito de novo, só reconhecido.
+_LEGACY_MARKERS = ("# gerenciado pelo pvx uoe -- não editar à mão, use `pvx uoe relogin`",)
 
 # qualquer linha de cron com uma dessas palavras E que não seja a managed entry é
 # candidata a "legacy backup routine" -- nunca removida sozinha, só listada (ver
@@ -26,7 +30,7 @@ def write_crontab(lines):
 
 def find_managed_entry(lines):
     for index, line in enumerate(lines):
-        if line == MARKER and index + 1 < len(lines):
+        if (line == MARKER or line in _LEGACY_MARKERS) and index + 1 < len(lines):
             return index + 1, lines[index + 1]
     return None
 
@@ -38,6 +42,7 @@ def upsert_managed_entry(lines, command):
     index, _ = existing
     result = list(lines)
     result[index] = command
+    result[index - 1] = MARKER  # moderniza o marcador, mesmo se achado por um legado
     return result
 
 

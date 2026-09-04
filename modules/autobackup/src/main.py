@@ -1,3 +1,4 @@
+import random
 import sys
 
 import click
@@ -15,14 +16,23 @@ import uoe_client
 
 _STANDARD_ROOT_PATH_LABEL = "Convenção padrão (clientes/idcliente-idcontrato-empresa)"
 _MANUAL_ROOT_PATH_LABEL = "Definir manualmente..."
+_MAGNUS_MENU_SENTINEL = "_magnus_menu"
 _SCRIPT_LABELS = {
     "IssabelPBX": "issabel",
-    "MagnusBilling": "magnus",
+    "MagnusBilling": _MAGNUS_MENU_SENTINEL,
     "Definir script...": "custom",
 }
 _ISSABEL_MODE_LABELS = {
-    "Somente configurações (padrão)": False,
+    "Somente configurações": False,
     "Configurações e gravações": True,
+}
+_MAGNUS_MODE_LABELS = {
+    "magnus.sh": "magnus",
+    "pvx magnus": "magnus-pvx",
+}
+_ACCOUNT_ACTION_LABELS = {
+    "Criar novo usuário no UOE": False,
+    "Usuário já existe": True,
 }
 
 
@@ -39,7 +49,7 @@ def _read_password_file(path):
 
 
 def _state_path():
-    path = pvx_config.modules_dir() / "uoe" / "state"
+    path = pvx_config.modules_dir() / "autobackup" / "state"
     path.mkdir(parents=True, exist_ok=True)
     return path / "state.json"
 
@@ -136,6 +146,15 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
             return None, None, None
         script = _SCRIPT_LABELS[label]
 
+        if script == _MAGNUS_MENU_SENTINEL:
+            mode_label = ask_select(
+                "MagnusBilling -- como gerar o backup:", list(_MAGNUS_MODE_LABELS),
+                default="pvx magnus",
+            )
+            if mode_label is None:
+                return None, None, None
+            script = _MAGNUS_MODE_LABELS[mode_label]
+
     if script not in backup_scripts.SCRIPTS:
         raise click.ClickException(f"script inválido: {script} (opções: {', '.join(backup_scripts.SCRIPTS)}).")
 
@@ -143,7 +162,7 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
         if interactive:
             mode_label = ask_select(
                 "IssabelPBX -- o que enviar:", list(_ISSABEL_MODE_LABELS),
-                default="Somente configurações (padrão)",
+                default="Somente configurações",
             )
             if mode_label is None:
                 return None, None, None
@@ -165,13 +184,15 @@ def _resolve_schedule(minute, hour, interactive):
     if minute is None:
         if not interactive:
             raise click.ClickException("informe --cron-minute e --cron-hour.")
-        minute = ask_text("Minuto de execução (0-59):", default="0")
+        # sugestão aleatória (não um horário fixo) pra não empilhar toda cron
+        # nova no mesmo minuto/hora dos outros clientes.
+        minute = ask_text("Minuto de execução (0-59):", default=str(random.randint(0, 59)))
         if minute is None:
             return None, None
     if hour is None:
         if not interactive:
             raise click.ClickException("informe --cron-minute e --cron-hour.")
-        hour = ask_text("Hora de execução (0-23):", default="2")
+        hour = ask_text("Hora de execução (0-23):", default=str(random.randint(0, 6)))
         if hour is None:
             return None, None
     return minute, hour
@@ -181,17 +202,33 @@ def _run_setup(logger, opts, interactive):
     pbackup_root = _ensure_pbackup(logger)
     _review_legacy_cron(interactive)
 
-    root_path = _resolve_root_path(
-        opts["root_path"], opts["id_cliente"], opts["id_contrato"], opts["empresa"], interactive,
-    )
-    if root_path is None:
-        return
+    # decide ANTES de qualquer outra coisa -- root_path só existe pro cadastro
+    # (register), e o resto dos prompts muda de "defina" (criando algo novo)
+    # pra "informe" (login em algo que já existe) uma vez que isso é sabido.
+    skip_register = opts["skip_register"]
+    if not skip_register and interactive:
+        action = ask_select(
+            "Usuário no UOE:", list(_ACCOUNT_ACTION_LABELS),
+            default="Criar novo usuário no UOE",
+        )
+        if action is None:
+            return
+        skip_register = _ACCOUNT_ACTION_LABELS[action]
+
+    root_path = None
+    if not skip_register:
+        root_path = _resolve_root_path(
+            opts["root_path"], opts["id_cliente"], opts["id_contrato"], opts["empresa"], interactive,
+        )
+        if root_path is None:
+            return
 
     username = opts["username"]
     if username is None:
         if not interactive:
             raise click.ClickException("informe --username.")
-        username = ask_text("Defina o usuário do cliente no UOE:")
+        prompt = "Usuário do cliente já cadastrado no UOE:" if skip_register else "Defina o usuário do cliente no UOE:"
+        username = ask_text(prompt)
         if username is None:
             return
 
@@ -202,27 +239,33 @@ def _run_setup(logger, opts, interactive):
     if password is None:
         if not interactive:
             raise click.ClickException("informe --password-file (senha do cliente a ser criado).")
-        password = ask_password(f"Defina a senha do usuário '{username}' no UOE:")
+        prompt = (
+            f"Senha do usuário '{username}' no UOE:" if skip_register
+            else f"Defina a senha do usuário '{username}' no UOE:"
+        )
+        password = ask_password(prompt)
         if password is None:
             return
 
-    admin_password = _read_password_file(opts["admin_password_file"])
-    if admin_password is None:
-        if not interactive:
-            raise click.ClickException("informe --admin-password-file.")
-        admin_password = ask_password(
-            "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
-        )
+    if not skip_register:
+        # senha de root só é necessária pra registrar um usuário novo -- quem
+        # já existe não precisa que o técnico saiba/digite a senha do superadmin.
+        admin_password = _read_password_file(opts["admin_password_file"])
         if admin_password is None:
-            return
+            if not interactive:
+                raise click.ClickException("informe --admin-password-file.")
+            admin_password = ask_password(
+                "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
+            )
+            if admin_password is None:
+                return
 
-    with widgets.spinner("Autenticando como superadmin..."):
-        try:
-            admin_token = uoe_client.login("root", admin_password)
-        except uoe_client.UOEError as e:
-            raise click.ClickException(f"falha no login do superadmin: {e}")
+        with widgets.spinner("Autenticando como superadmin..."):
+            try:
+                admin_token = uoe_client.login("root", admin_password)
+            except uoe_client.UOEError as e:
+                raise click.ClickException(f"falha no login do superadmin: {e}")
 
-    if not opts["skip_register"]:
         try:
             with widgets.spinner(f"Registrando '{username}' no UOE..."):
                 uoe_client.register(admin_token, username, password, root_path)
@@ -263,17 +306,17 @@ def _run_setup(logger, opts, interactive):
     widgets.success("cron atualizada.")
 
     state.save(_state_path(), {
-        "username": username, "token": token, "root_path": root_path,
+        "username": username, "token": token, "root_path": root_path or "-",
         "script": script, "custom_command": custom_command, "issabel_recordings": issabel_recordings,
         "pbackup_root": pbackup_root, "cron_minute": minute, "cron_hour": hour,
     })
-    logger.info(f"uoe setup concluído -- username={username} script={script}")
+    logger.info(f"autobackup setup concluído -- username={username} script={script}")
 
 
 def _run_relogin(logger, password_file, interactive):
     saved = state.load(_state_path())
     if saved is None:
-        raise click.ClickException("nada configurado ainda -- rode `pvx uoe setup` primeiro.")
+        raise click.ClickException("nada configurado ainda -- rode `pvx autobackup setup` primeiro.")
 
     password = _read_password_file(password_file)
     if password is None:
@@ -299,7 +342,7 @@ def _run_relogin(logger, password_file, interactive):
 
     saved["token"] = token
     state.save(_state_path(), saved)
-    logger.info(f"uoe relogin concluído -- username={saved['username']}.")
+    logger.info(f"autobackup relogin concluído -- username={saved['username']}.")
     widgets.success("token renovado e cron atualizada.")
 
 
@@ -309,7 +352,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
     saved = state.load(_state_path())
 
     if managed is None and saved is None:
-        click.echo("nada gerenciado pelo pvx uoe encontrado nessa central.")
+        click.echo("nada gerenciado pelo pvx autobackup encontrado nessa central.")
         return
 
     if managed is not None:
@@ -347,16 +390,16 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
         widgets.success(f"usuário '{saved['username']}' apagado no UOE.")
 
     state.remove(_state_path())
-    logger.info("uoe remove concluído.")
+    logger.info("autobackup remove concluído.")
     widgets.success("removido.")
 
 
-class UOEModule(PvxModule):
-    name = "uoe"
-    version = "0.1.2"
+class AutobackupModule(PvxModule):
+    name = "autobackup"
+    version = "0.1.9"
 
     def cli_group(self):
-        @click.group(name="uoe")
+        @click.group(name="autobackup")
         def group():
             pass
 
@@ -423,12 +466,12 @@ class UOEModule(PvxModule):
         def check_cmd():
             saved = state.load(_state_path())
             if saved is None:
-                widgets.state("uoe NÃO configurado -- rode `pvx uoe setup` primeiro.", ok=False)
+                widgets.state("autobackup NÃO configurado -- rode `pvx autobackup setup` primeiro.", ok=False)
                 if _is_interactive():
                     widgets.pause()
                 return
 
-            widgets.state(f"uoe configurado (username={saved['username']})", ok=True)
+            widgets.state(f"autobackup configurado (username={saved['username']})", ok=True)
             click.echo(f"  root_path: {saved.get('root_path', '-')}")
             click.echo(f"  script: {saved.get('script', '-')}")
             click.echo(f"  cron: {saved.get('cron_minute', '?')} {saved.get('cron_hour', '?')} * * *")
@@ -446,4 +489,4 @@ class UOEModule(PvxModule):
         return group
 
 
-cli = UOEModule()
+cli = AutobackupModule()

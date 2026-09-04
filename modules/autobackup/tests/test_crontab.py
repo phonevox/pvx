@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import crontab
 
 MARKER = crontab.MARKER
+LEGACY_MARKER = "# gerenciado pelo pvx uoe -- não editar à mão, use `pvx uoe relogin`"
 
 
 class FindManagedEntryTest(unittest.TestCase):
@@ -23,6 +24,18 @@ class FindManagedEntryTest(unittest.TestCase):
     def test_none_when_marker_is_the_last_line(self):
         lines = ["0 3 * * * some-other-job.sh", MARKER]
         self.assertIsNone(crontab.find_managed_entry(lines))
+
+    def test_also_finds_the_legacy_marker_from_before_the_uoe_to_autobackup_rename(self):
+        # achado ao vivo: módulo renomeado de uoe pra autobackup -- centrais
+        # já em produção têm o marcador antigo na cron. Sem isso,
+        # relogin/remove nunca acham a entrada existente e duplicam.
+        lines = [
+            "0 3 * * * some-other-job.sh",
+            LEGACY_MARKER,
+            "25 2 * * * bash /root/pbackup/scripts/issabel.sh --token abc",
+        ]
+        result = crontab.find_managed_entry(lines)
+        self.assertEqual(result, (2, "25 2 * * * bash /root/pbackup/scripts/issabel.sh --token abc"))
 
 
 class UpsertManagedEntryTest(unittest.TestCase):
@@ -48,6 +61,19 @@ class UpsertManagedEntryTest(unittest.TestCase):
             MARKER,
             "25 2 * * * bash issabel.sh --token new",
             "0 4 * * * another-job.sh",
+        ])
+
+    def test_modernizes_a_legacy_marker_when_updating_the_entry(self):
+        lines = [
+            "0 3 * * * some-other-job.sh",
+            LEGACY_MARKER,
+            "25 2 * * * bash issabel.sh --token old",
+        ]
+        result = crontab.upsert_managed_entry(lines, "25 2 * * * bash issabel.sh --token new")
+        self.assertEqual(result, [
+            "0 3 * * * some-other-job.sh",
+            MARKER,
+            "25 2 * * * bash issabel.sh --token new",
         ])
 
 

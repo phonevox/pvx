@@ -1,0 +1,10 @@
+{
+  "name": "motd",
+  "version": "0.1.10",
+  "entrypoint": "main:cli",
+  "description": "Banner de login com status do servidor (sistema, serviços, Asterisk/Issabel).",
+  "author": "pvx",
+  "min_pvx_version": "0.2.17",
+  "checksum_sha256": "",
+  "dependencies": []
+}

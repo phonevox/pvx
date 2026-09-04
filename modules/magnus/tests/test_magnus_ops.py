@@ -409,5 +409,34 @@ class RunInstallerTest(unittest.TestCase):
         magnus_ops.run_installer()  # não deve levantar
 
 
+class DetectDbCredentialsTest(unittest.TestCase):
+    # convenção do MagnusBilling (só dele, não é coisa geral de Issabel):
+    # senha do root do mysql em /root/passwordMysql.log, só a senha crua,
+    # usuário sempre root.
+    def test_returns_root_and_password_when_log_exists(self):
+        with TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "passwordMysql.log")
+            Path(path).write_text("s3nha-secreta\n")
+            with patch("magnus_ops.DB_PASSWORD_LOG", path):
+                user, password = magnus_ops.detect_db_credentials()
+        self.assertEqual(user, "root")
+        self.assertEqual(password, "s3nha-secreta")
+
+    def test_none_when_log_is_absent(self):
+        with patch("magnus_ops.DB_PASSWORD_LOG", "/does/not/exist"):
+            user, password = magnus_ops.detect_db_credentials()
+        self.assertIsNone(user)
+        self.assertIsNone(password)
+
+    def test_none_when_log_is_empty(self):
+        with TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "passwordMysql.log")
+            Path(path).write_text("   \n")
+            with patch("magnus_ops.DB_PASSWORD_LOG", path):
+                user, password = magnus_ops.detect_db_credentials()
+        self.assertIsNone(user)
+        self.assertIsNone(password)
+
+
 if __name__ == "__main__":
     unittest.main()

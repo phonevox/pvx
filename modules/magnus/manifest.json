@@ -1,6 +1,6 @@
 {
   "name": "magnus",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "entrypoint": "main:cli",
   "description": "Backup, restaura\u00e7\u00e3o e instala\u00e7\u00e3o do MagnusBilling (port do phonevox/pmagnus).",
   "author": "pvx",
