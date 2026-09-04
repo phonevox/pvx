@@ -65,34 +65,34 @@ class VisibleWindowTest(unittest.TestCase):
         self.assertEqual(state.visible_range(), (0, 3))
 
     def test_caps_at_window_size_when_pointer_at_start(self):
-        state = _ScrollableList(_choices(12))
-        self.assertEqual(state.visible_range(), (0, 5))
+        state = _ScrollableList(_choices(15))
+        self.assertEqual(state.visible_range(), (0, 10))
 
     def test_window_slides_down_to_keep_pointer_visible(self):
-        state = _ScrollableList(_choices(12))
-        for _ in range(6):
+        state = _ScrollableList(_choices(15))
+        for _ in range(11):
             state.move_down()
-        self.assertEqual(state.pointed_at, 6)
+        self.assertEqual(state.pointed_at, 11)
         start, end = state.visible_range()
-        self.assertTrue(start <= 6 < end)
-        self.assertEqual(end - start, 5)
+        self.assertTrue(start <= 11 < end)
+        self.assertEqual(end - start, 10)
 
     def test_window_slides_back_up_when_returning(self):
-        state = _ScrollableList(_choices(12))
-        for _ in range(8):
+        state = _ScrollableList(_choices(15))
+        for _ in range(13):
             state.move_down()
-        for _ in range(8):
+        for _ in range(13):
             state.move_up()
         self.assertEqual(state.pointed_at, 0)
-        self.assertEqual(state.visible_range(), (0, 5))
+        self.assertEqual(state.visible_range(), (0, 10))
 
     def test_window_never_exceeds_the_end_of_the_list(self):
-        state = _ScrollableList(_choices(7))
-        for _ in range(6):
+        state = _ScrollableList(_choices(12))
+        for _ in range(11):
             state.move_down()
         start, end = state.visible_range()
-        self.assertEqual(end, 7)
-        self.assertEqual(end - start, 5)
+        self.assertEqual(end, 12)
+        self.assertEqual(end - start, 10)
 
     def test_empty_choices_has_an_empty_window(self):
         state = _ScrollableList([])
@@ -100,12 +100,12 @@ class VisibleWindowTest(unittest.TestCase):
 
     def test_window_size_none_shows_everything_no_scrolling(self):
         # menu raiz: lista clássica, sem limite -- só as listas grandes
-        # (módulos instalados, etc.) usam o viewport de 5.
-        state = _ScrollableList(_choices(12), window_size=None)
-        self.assertEqual(state.visible_range(), (0, 12))
-        for _ in range(11):
+        # (módulos instalados, etc.) usam o viewport padrão.
+        state = _ScrollableList(_choices(15), window_size=None)
+        self.assertEqual(state.visible_range(), (0, 15))
+        for _ in range(14):
             state.move_down()
-        self.assertEqual(state.visible_range(), (0, 12))
+        self.assertEqual(state.visible_range(), (0, 15))
 
     def test_window_size_none_never_shows_scroll_indicators(self):
         state = _ScrollableList(_choices(12), window_size=None)
@@ -173,26 +173,26 @@ class RenderLinesTest(unittest.TestCase):
         self.assertNotIn("»", text)
 
     def test_shows_up_indicator_only_when_scrolled_past_the_top(self):
-        state = _ScrollableList(_choices(12))
+        state = _ScrollableList(_choices(15))
         lines = state.render_lines()
         self.assertNotIn("acima", lines[0][0][1])
 
-        for _ in range(6):
+        for _ in range(10):
             state.move_down()
         lines = state.render_lines()
         self.assertIn("acima", lines[0][0][1])
 
     def test_shows_down_indicator_with_remaining_count(self):
-        state = _ScrollableList(_choices(12))
+        state = _ScrollableList(_choices(15))
         lines = state.render_lines()
-        self.assertIn("7 abaixo", lines[-1][0][1])
+        self.assertIn("5 abaixo", lines[-1][0][1])
 
     def test_show_scroll_count_false_keeps_only_the_arrow(self):
         # flag única (versão 1: só a seta / versão 2: "mais N acima/abaixo")
         # -- atributo de classe, mesmo padrão do WINDOW_SIZE.
-        state = _ScrollableList(_choices(12))
+        state = _ScrollableList(_choices(15))
         state.SHOW_SCROLL_COUNT = False
-        for _ in range(6):
+        for _ in range(10):
             state.move_down()
         lines = state.render_lines()
         self.assertEqual(lines[0][0][1].strip(), "↑")
