@@ -9,6 +9,7 @@ from pvx.interactive.inputs import ask_confirm, ask_select, ask_text
 from pvx.modules.base import PvxModule
 
 import apply as apply_module
+import sshd_service
 import user_setup
 from plan import DEFAULT_PORT, DEFAULT_PUBLIC_KEY, DEFAULT_ROOT_PASSWORD, DEFAULT_USERNAME, build_plan
 
@@ -28,7 +29,7 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.2.3"
+    version = "0.2.4"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
@@ -145,8 +146,9 @@ class SSHHardeningModule(PvxModule):
                     click.echo(f"- porta SSH: {plan['port']}")
 
                 confirmed = ask_confirm(
-                    "Confirma a aplicação dessas mudanças? Nada entra em vigor até reiniciar "
-                    "o sshd ou reiniciar a máquina.",
+                    "Confirma a aplicação dessas mudanças? O sshd é reiniciado automaticamente "
+                    "em seguida pra entrarem em vigor (conexões já abertas não caem, só as novas "
+                    "usam a config nova).",
                     default=False,
                 )
                 if not confirmed:
@@ -165,7 +167,18 @@ class SSHHardeningModule(PvxModule):
                     "nada foi aplicado de verdade."
                 )
             else:
-                outcome = "ssh-hardening aplicado. reinicie o sshd (ou a máquina) pra entrar em vigor."
+                outcome = "ssh-hardening aplicado."
+                if plan["lock_root"] or plan["change_port"]:
+                    # só reinicia se algo no sshd_config de fato mudou --
+                    # um plano só de create_user nem toca nele.
+                    restarted_unit = sshd_service.restart()
+                    if restarted_unit:
+                        outcome += f" {restarted_unit} reiniciado, mudanças já em vigor."
+                    else:
+                        outcome += (
+                            " aviso: não consegui reiniciar o sshd automaticamente -- "
+                            "reinicie manualmente (ou a máquina) pra as mudanças entrarem em vigor."
+                        )
                 if result.get("sudo_installed_now"):
                     outcome += " sudo não estava instalado nessa máquina -- instalado automaticamente."
                 elif result.get("sudo_installed_now") is False:
@@ -251,7 +264,17 @@ class SSHHardeningModule(PvxModule):
                 for item in result["reverted"]:
                     widgets.success(item)
                 logger.info(f"ssh-hardening revertido: {'; '.join(result['reverted'])}")
-                click.echo("reinicie o sshd (ou a máquina) pra as mudanças revertidas entrarem em vigor.")
+                if "sshd_config restaurado do backup" in result["reverted"]:
+                    # só reinicia se o sshd_config de fato voltou -- reverter
+                    # só o usuário criado não toca nele.
+                    restarted_unit = sshd_service.restart()
+                    if restarted_unit:
+                        click.echo(f"{restarted_unit} reiniciado, mudanças revertidas já em vigor.")
+                    else:
+                        click.echo(
+                            "aviso: não consegui reiniciar o sshd automaticamente -- reinicie "
+                            "manualmente (ou a máquina) pra as mudanças revertidas entrarem em vigor."
+                        )
             else:
                 click.echo("nada encontrado pra reverter (backup ausente e nenhum usuário criado).")
 
