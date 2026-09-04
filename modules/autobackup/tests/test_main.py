@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+import issabel_upload_ops
+import magnus_upload_ops
 import pbackup_ops
 import uoe_client
 from main import _read_password_file, _resolve_schedule, _resolve_script, cli
@@ -174,7 +176,7 @@ class SetupCommandTest(unittest.TestCase):
         cron_lines = mocks["write_crontab"].call_args.args[0]
         self.assertIn("# gerenciado pelo pvx autobackup", cron_lines[-2])
         self.assertIn("25 2 * * *", cron_lines[-1])
-        self.assertIn("issabel.sh", cron_lines[-1])
+        self.assertIn("issabel-upload", cron_lines[-1])
         self.assertIn("token-empresa", cron_lines[-1])
 
         saved = mocks["state_save"].call_args.args[1]
@@ -499,6 +501,71 @@ class CheckCommandTest(unittest.TestCase):
         result = self._invoke(saved=saved, managed=None)
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não encontrada", result.output.lower())
+
+
+class MagnusUploadCommandTest(unittest.TestCase):
+    # comando alvo da cron gerada por backup_scripts pro script "magnus-pvx"
+    # -- roda sem terminal (via cron), nunca deve pausar nem exigir --yes.
+    def _invoke(self, args=None, error=None):
+        args = args or ["magnus-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123"]
+        with patch("main.magnus_upload_ops.export_and_upload", side_effect=error) as mock_export, \
+             patch("main.AutobackupModule.get_logger"), \
+             patch("main.widgets.pause") as mock_pause:
+            result = CliRunner().invoke(cli.cli_group(), args)
+            return result, mock_export, mock_pause
+
+    def test_calls_export_and_upload_with_the_given_args(self):
+        result, mock_export, _ = self._invoke()
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with("http://uoe.example/v1/upload", "tok123")
+
+    def test_never_pauses_even_when_run_from_a_real_terminal(self):
+        _, _, mock_pause = self._invoke()
+        mock_pause.assert_not_called()
+
+    def test_failure_becomes_a_clean_click_exception(self):
+        result, _, _ = self._invoke(error=magnus_upload_ops.MagnusUploadError("falha ao gerar o backup: senha errada"))
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("senha errada", result.output)
+
+
+class IssabelUploadCommandTest(unittest.TestCase):
+    # comando alvo da cron gerada por backup_scripts pro script "issabel"
+    # -- roda sem terminal (via cron), nunca deve pausar nem exigir --yes.
+    def _invoke(self, args=None, error=None):
+        args = args or ["issabel-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123"]
+        with patch("main.issabel_upload_ops.export_and_upload", side_effect=error) as mock_export, \
+             patch("main.AutobackupModule.get_logger"), \
+             patch("main.widgets.pause") as mock_pause:
+            result = CliRunner().invoke(cli.cli_group(), args)
+            return result, mock_export, mock_pause
+
+    def test_defaults_to_configuration_only(self):
+        result, mock_export, _ = self._invoke()
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with(
+            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=False,
+        )
+
+    def test_recordings_flag_is_passed_through(self):
+        result, mock_export, _ = self._invoke(args=[
+            "issabel-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123", "--recordings",
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with(
+            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=True,
+        )
+
+    def test_never_pauses_even_when_run_from_a_real_terminal(self):
+        _, _, mock_pause = self._invoke()
+        mock_pause.assert_not_called()
+
+    def test_failure_becomes_a_clean_click_exception(self):
+        result, _, _ = self._invoke(error=issabel_upload_ops.IssabelUploadError("falha ao enviar o backup: 401"))
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("401", result.output)
 
 
 if __name__ == "__main__":

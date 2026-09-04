@@ -5,21 +5,22 @@ import backup_scripts
 
 class BuildCommandTest(unittest.TestCase):
     def test_issabel_command_defaults_to_config_only(self):
-        result = backup_scripts.build_command("issabel", token="eyJhbGc", pbackup_root="/root/pbackup")
+        # pedido ao vivo: centraliza a orquestração no pvx em vez de depender
+        # do scripts/issabel.sh do pbackup -- a geração em si continua sendo
+        # trabalho do issabel-helper (issabel_upload_ops.py só orquestra).
+        result = backup_scripts.build_command("issabel", token="eyJhbGc")
         self.assertEqual(
             result,
-            "bash /root/pbackup/scripts/issabel.sh --configuration "
-            "-t http://uoe.interno.falevox.com.br/v1/upload:/ --token eyJhbGc",
+            "pvx autobackup issabel-upload "
+            "--upload-url http://uoe.interno.falevox.com.br/v1/upload --token eyJhbGc",
         )
 
     def test_issabel_command_with_recordings(self):
-        result = backup_scripts.build_command(
-            "issabel", token="eyJhbGc", pbackup_root="/root/pbackup", issabel_recordings=True,
-        )
+        result = backup_scripts.build_command("issabel", token="eyJhbGc", issabel_recordings=True)
         self.assertEqual(
             result,
-            "bash /root/pbackup/scripts/issabel.sh --recordings --configuration "
-            "-t http://uoe.interno.falevox.com.br/v1/upload:/ --token eyJhbGc",
+            "pvx autobackup issabel-upload "
+            "--upload-url http://uoe.interno.falevox.com.br/v1/upload --token eyJhbGc --recordings",
         )
 
     def test_magnus_command(self):
@@ -33,12 +34,14 @@ class BuildCommandTest(unittest.TestCase):
         # alternativa que não depende do magnus.sh do pbackup (nem do cron.php
         # do próprio MagnusBilling) -- pvx magnus só gera o backup, upload é
         # sempre responsabilidade do pbackup (mesma separação dos outros scripts).
+        # pedido ao vivo: nada de shell chain complexo (data calculada em shell,
+        # && encadeado) direto no crontab -- isso vira um comando próprio do
+        # módulo (`magnus-upload`), testável, que faz a orquestração em Python.
         result = backup_scripts.build_command("magnus-pvx", token="eyJhbGc")
         self.assertEqual(
             result,
-            "pvx magnus backup export -o /tmp/backup-pxmagnus.tgz && "
-            "pbackup --files /tmp/backup-pxmagnus.tgz "
-            "--to http://uoe.interno.falevox.com.br/v1/upload:/ --token eyJhbGc",
+            "pvx autobackup magnus-upload "
+            "--upload-url http://uoe.interno.falevox.com.br/v1/upload --token eyJhbGc",
         )
 
     def test_custom_command_substitutes_the_placeholder(self):

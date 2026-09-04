@@ -2,18 +2,20 @@ import uoe_client
 
 UPLOAD_PATH = "/upload"
 
-_ISSABEL_CONFIG_ONLY_TEMPLATE = "bash {pbackup_root}/scripts/issabel.sh --configuration -t {upload_url}:/ --token {token}"
-_ISSABEL_WITH_RECORDINGS_TEMPLATE = "bash {pbackup_root}/scripts/issabel.sh --recordings --configuration -t {upload_url}:/ --token {token}"
+# pedido ao vivo: centraliza a orquestração no pvx em vez de depender do
+# scripts/issabel.sh do pbackup (nada contra o script -- é só pra não ter
+# que ir atualizar noutro repo se algo mudar). A geração em si continua
+# sendo trabalho do issabel-helper (issabel_upload_ops.py só orquestra).
+_ISSABEL_PVX_TEMPLATE = "pvx autobackup issabel-upload --upload-url {upload_url} --token {token}"
+_ISSABEL_PVX_RECORDINGS_TEMPLATE = "pvx autobackup issabel-upload --upload-url {upload_url} --token {token} --recordings"
 _MAGNUS_TEMPLATE = "bash {pbackup_root}/scripts/magnus.sh -t {upload_url}:/ --token {token}"
 # alternativa que não passa pelo magnus.sh do pbackup (nem pelo cron.php do
 # próprio MagnusBilling, que é a causa raiz de falha silenciosa que motivou
 # isso) -- pvx magnus só gera o backup (mysqldump direto), upload continua
-# sendo sempre trabalho do pbackup, encadeado via shell.
-_MAGNUS_PVX_OUTPUT = "/tmp/backup-pxmagnus.tgz"
-_MAGNUS_PVX_TEMPLATE = (
-    f"pvx magnus backup export -o {_MAGNUS_PVX_OUTPUT} && "
-    f"pbackup --files {_MAGNUS_PVX_OUTPUT} --to {{upload_url}}:/ --token {{token}}"
-)
+# sendo sempre trabalho do pbackup. Orquestração (nome com data, cleanup)
+# vive em magnus_upload_ops.py, não numa linha de shell -- nada de `&&`
+# encadeado nem `$(date ...)` escapado direto no crontab.
+_MAGNUS_PVX_TEMPLATE = "pvx autobackup magnus-upload --upload-url {upload_url} --token {token}"
 
 SCRIPTS = ("issabel", "magnus", "magnus-pvx", "custom")
 
@@ -22,8 +24,8 @@ def build_command(script, token, pbackup_root=None, custom_template=None, upload
     upload_url = (upload_base_url or uoe_client.BASE_URL) + UPLOAD_PATH
 
     if script == "issabel":
-        template = _ISSABEL_WITH_RECORDINGS_TEMPLATE if issabel_recordings else _ISSABEL_CONFIG_ONLY_TEMPLATE
-        return template.format(pbackup_root=pbackup_root, upload_url=upload_url, token=token)
+        template = _ISSABEL_PVX_RECORDINGS_TEMPLATE if issabel_recordings else _ISSABEL_PVX_TEMPLATE
+        return template.format(upload_url=upload_url, token=token)
     if script == "magnus":
         return _MAGNUS_TEMPLATE.format(pbackup_root=pbackup_root, upload_url=upload_url, token=token)
     if script == "magnus-pvx":

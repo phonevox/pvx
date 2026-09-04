@@ -10,6 +10,8 @@ from pvx.modules.base import PvxModule
 
 import backup_scripts
 import crontab
+import issabel_upload_ops
+import magnus_upload_ops
 import pbackup_ops
 import state
 import uoe_client
@@ -396,7 +398,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.9"
+    version = "0.1.11"
 
     def cli_group(self):
         @click.group(name="autobackup")
@@ -485,6 +487,45 @@ class AutobackupModule(PvxModule):
 
             if _is_interactive():
                 widgets.pause()
+
+        @group.command(
+            name="magnus-upload", hidden=True,
+            help="gera o backup do magnus e envia pro UOE (alvo da cron do script magnus-pvx, não roda à mão).",
+        )
+        @click.option("--upload-url", required=True)
+        @click.option("--token", required=True)
+        def magnus_upload_cmd(upload_url, token):
+            # comando alvo de cron -- nunca pausa (rodaria preso esperando
+            # enter num processo sem terminal de verdade) mesmo se alguém
+            # rodar à mão num terminal real.
+            logger = self.get_logger()
+            try:
+                magnus_upload_ops.export_and_upload(upload_url, token)
+            except magnus_upload_ops.MagnusUploadError as e:
+                logger.error(f"magnus-upload falhou: {e}")
+                raise click.ClickException(str(e))
+            logger.info("autobackup magnus-upload concluído.")
+            widgets.success("backup do magnus gerado e enviado ao UOE.")
+
+        @group.command(
+            name="issabel-upload", hidden=True,
+            help="gera o backup do Issabel (via issabel-helper) e envia pro UOE (alvo da cron do script issabel).",
+        )
+        @click.option("--upload-url", required=True)
+        @click.option("--token", required=True)
+        @click.option("--recordings", is_flag=True, help="também inclui as gravações dos últimos 3 dias.")
+        def issabel_upload_cmd(upload_url, token, recordings):
+            # comando alvo de cron -- nunca pausa (rodaria preso esperando
+            # enter num processo sem terminal de verdade) mesmo se alguém
+            # rodar à mão num terminal real.
+            logger = self.get_logger()
+            try:
+                issabel_upload_ops.export_and_upload(upload_url, token, configuration=True, recordings=recordings)
+            except issabel_upload_ops.IssabelUploadError as e:
+                logger.error(f"issabel-upload falhou: {e}")
+                raise click.ClickException(str(e))
+            logger.info("autobackup issabel-upload concluído.")
+            widgets.success("backup do Issabel gerado e enviado ao UOE.")
 
         return group
 
