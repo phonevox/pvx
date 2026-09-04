@@ -10,15 +10,8 @@ from pvx.modules.base import PvxModule
 import credentials
 import defaults
 import install_steps
-import integrations
 import os_ops
 import preflight
-
-QINT_FIELDS = (
-    "tipo", "sftp", "url", "token", "timecondition_out", "filas", "asterisk_ip",
-    "versao", "filial", "departamentos", "assuntos", "app", "setores",
-    "ocorrencias", "motivo_os",
-)
 
 
 def _is_interactive():
@@ -37,71 +30,6 @@ def _state_dir():
 
 def _default_tweaks():
     return [key for key, (on, _) in defaults.TWEAKS_CATALOG.items() if on]
-
-
-_SSH_FLAG_KEYS = (
-    "tweak_ssh_lock_root", "tweak_ssh_root_password", "tweak_ssh_create_user",
-    "tweak_ssh_username", "tweak_ssh_pubkey", "tweak_ssh_allow_password",
-    "tweak_ssh_user_password", "tweak_ssh_change_port", "tweak_ssh_port",
-)
-
-
-def _resolve_ssh_hardening_config(flags, interactive):
-    # atalho: com TTY e nenhuma flag --tweak-ssh-* dada, pergunta UMA vez se quer os
-    # padrões da Phonevox de cara (sem repetir as perguntas seguintes) ou revisar item
-    # por item -- uma flag explícita em qualquer campo pula direto pro fluxo de sempre.
-    if interactive and not any(flags[k] is not None for k in _SSH_FLAG_KEYS):
-        choice = ask_select(
-            "ssh-hardening: como configurar?",
-            ["Usar padrões da Phonevox (recomendado)", "Personalizar cada opção"],
-        )
-        if choice is None:
-            return None
-        if choice.startswith("Usar padrões"):
-            return {**defaults.SSH_HARDENING_DEFAULTS, "allow_password": False, "user_password": ""}
-
-    if flags["tweak_ssh_lock_root"] is None and interactive:
-        lock_root = ask_confirm("ssh-hardening: bloquear login SSH do root?", default=True)
-    else:
-        lock_root = flags["tweak_ssh_lock_root"] if flags["tweak_ssh_lock_root"] is not None else True
-
-    root_password = flags["tweak_ssh_root_password"] or defaults.SSH_HARDENING_DEFAULTS["root_password"]
-
-    if flags["tweak_ssh_create_user"] is None and interactive:
-        create_user = ask_confirm("ssh-hardening: criar usuário dedicado com sudo?", default=True)
-    else:
-        create_user = flags["tweak_ssh_create_user"] if flags["tweak_ssh_create_user"] is not None else True
-
-    username = flags["tweak_ssh_username"] or defaults.SSH_HARDENING_DEFAULTS["username"]
-    pubkey = flags["tweak_ssh_pubkey"] or defaults.SSH_HARDENING_DEFAULTS["pubkey"]
-    allow_password = flags["tweak_ssh_allow_password"] or False
-    user_password = flags["tweak_ssh_user_password"] or ""
-
-    if flags["tweak_ssh_change_port"] is None and interactive:
-        change_port = ask_confirm("ssh-hardening: trocar a porta padrão do SSH?", default=True)
-    else:
-        change_port = flags["tweak_ssh_change_port"] if flags["tweak_ssh_change_port"] is not None else True
-
-    port = flags["tweak_ssh_port"] or defaults.SSH_HARDENING_DEFAULTS["port"]
-
-    return {
-        "lock_root": lock_root, "root_password": root_password,
-        "create_user": create_user, "username": username, "pubkey": pubkey,
-        "allow_password": allow_password, "user_password": user_password,
-        "change_port": change_port, "port": port,
-    }
-
-
-def _resolve_qint_config(flags, interactive):
-    config = {k: flags[f"qint_{k}"] for k in QINT_FIELDS}
-    if config["tipo"] is None:
-        if not interactive:
-            return None
-        label = ask_select("qint: tipo de integração:", ["IXCSoft", "SGP"])
-        if label is None:
-            return None
-        config["tipo"] = "ixcsoft" if label == "IXCSoft" else "sgp"
-    return config
 
 
 _PREFLIGHT_STATUS_WORD = {"ok": "ok", "warn": "atenção", "error": "falha"}
@@ -128,16 +56,6 @@ def _preflight_reporter():
         widgets.check_result(text, status)
 
     return report
-
-
-def _report_tweak(logger, name, result):
-    if result["ok"]:
-        widgets.success(f"{name} aplicado.")
-        logger.info(f"{name} aplicado.")
-    else:
-        detail = result.get("stderr") or "falha desconhecida"
-        widgets.failed(f"{name}: {detail}")
-        logger.error(f"{name} falhou: {detail}")
 
 
 def _run_step(logger, message, done_message, fn, *args):
@@ -228,20 +146,6 @@ def _run_issabel5(logger, flags, interactive):
     if web_pw is None:
         return
 
-    ssh_config = None
-    if "ssh-hardening" in tweak_keys:
-        ssh_config = _resolve_ssh_hardening_config(flags, interactive)
-        if ssh_config is None:
-            return
-
-    qint_config = None
-    if "qint" in tweak_keys:
-        qint_config = _resolve_qint_config(flags, interactive)
-        if qint_config is None:
-            raise click.ClickException(
-                "tweak qint selecionada mas --qint-tipo não informado (ou sem terminal pra perguntar)."
-            )
-
     click.echo("Resumo:")
     click.echo(f"  Asterisk: {astver}")
     click.echo(f"  Pacotes extras: {', '.join(addpkgs_keys) or 'nenhum'}")
@@ -288,19 +192,6 @@ def _run_issabel5(logger, flags, interactive):
         install_steps.post_install,
     )
 
-    if ssh_config is not None:
-        with widgets.step("Aplicando ssh-hardening..."):
-            result = integrations.run_ssh_hardening(ssh_config)
-        _report_tweak(logger, "ssh-hardening", result)
-    if "firewall" in tweak_keys:
-        with widgets.step("Sincronizando firewall..."):
-            result = integrations.run_firewall_sync()
-        _report_tweak(logger, "firewall", result)
-    if qint_config is not None:
-        with widgets.step("Aplicando integração qint..."):
-            result = integrations.run_qint(qint_config)
-        _report_tweak(logger, "qint", result)
-
     _run_step(
         logger,
         "Instalando o schema do banco de dados...", "Schema do banco instalado.",
@@ -318,15 +209,12 @@ def _run_issabel5(logger, flags, interactive):
         install_steps.set_timezone, tz,
     )
 
-    extra_kv = {}
-    if ssh_config is not None and ssh_config["change_port"]:
-        extra_kv["ssh_port"] = ssh_config["port"]
     _run_step(
         logger,
         "Definindo senhas de acesso (MySQL root / admin Web)...", "Senhas de acesso definidas.",
         install_steps.set_passwords, sql_pw, web_pw,
     )
-    cred_path = credentials.save_credentials(str(_state_dir()), "issabel5", sql_pw, web_pw, extra=extra_kv)
+    cred_path = credentials.save_credentials(str(_state_dir()), "issabel5", sql_pw, web_pw)
     widgets.success(f"credenciais salvas em {cred_path} (0600)")
 
     if flags["reboot"]:
@@ -339,7 +227,7 @@ def _run_issabel5(logger, flags, interactive):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.18"
+    version = "0.1.19"
 
     def cli_group(self):
         @click.group(name="netinstall")
@@ -361,30 +249,6 @@ class NetinstallModule(PvxModule):
         )
         @click.option("--yes", is_flag=True)
         @click.option("--reboot/--no-reboot", default=True)
-        @click.option("--tweak-ssh-lock-root/--tweak-ssh-no-lock-root", default=None)
-        @click.option("--tweak-ssh-root-password", default=None)
-        @click.option("--tweak-ssh-create-user/--tweak-ssh-no-create-user", default=None)
-        @click.option("--tweak-ssh-username", default=None)
-        @click.option("--tweak-ssh-pubkey", default=None)
-        @click.option("--tweak-ssh-allow-password/--tweak-ssh-no-allow-password", default=None)
-        @click.option("--tweak-ssh-user-password", default=None)
-        @click.option("--tweak-ssh-change-port/--tweak-ssh-no-change-port", default=None)
-        @click.option("--tweak-ssh-port", default=None)
-        @click.option("--qint-tipo", default=None)
-        @click.option("--qint-sftp", default=None)
-        @click.option("--qint-url", default=None)
-        @click.option("--qint-token", default=None)
-        @click.option("--qint-timecondition-out", default=None)
-        @click.option("--qint-filas", default=None)
-        @click.option("--qint-asterisk-ip", default=None)
-        @click.option("--qint-versao", default=None)
-        @click.option("--qint-filial", default=None)
-        @click.option("--qint-departamentos", default=None)
-        @click.option("--qint-assuntos", default=None)
-        @click.option("--qint-app", default=None)
-        @click.option("--qint-setores", default=None)
-        @click.option("--qint-ocorrencias", default=None)
-        @click.option("--qint-motivo-os", default=None)
         def issabel5_cmd(**flags):
             logger = self.get_logger()
             interactive = _is_interactive()

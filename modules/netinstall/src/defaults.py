@@ -1,19 +1,6 @@
 MIRROR_PROBE_URL = "http://mirror.issabel.org"
 MIN_MEM_KB = 1536 * 1024  # RAM+swap mínimo recomendado (aviso, não bloqueio)
 
-# chave pública principal da Phonevox -- default do usuário dedicado do ssh-hardening.
-SSH_DEFAULT_PUBKEY = (
-    "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQC5S9t+CHuQYVe9It/zVWNEYWq7fuGBF1oll63MujAREeP3sB3N"
-    "VhrWs8AcDNOwPQ+8Z7s4Yc8/r8BKCquujugkWv3ilZjJAbeyR7A6rddRM1ai1bfc8gRV7CD1tExQuO+QE9RORQ0f0"
-    "J+0+Fu4vB3YRMeSx4czq5tbYKwvdfP6pgWWRppyA8uM7nKXnYsdwkyKxJZb4I353cC4C+ZvaEUQahygNs9XgblBB9"
-    "TM0UuttdoBi4pTj4aqLXTBhcLqghkQP45JaQ8/G5qSzs2U2eGH4L+mEqFSg+ybL3KxGmyHxtCBOqhFTm/s3EqkSQ80"
-    "OSwdYSzH7GMTWWfKZ4UoeFiQucHYto83LmfBYdqckbtw7ZNsXU/egQR5eSwtwQBK5yLnPSnQldozMKoS2gKayWtxqv"
-    "jiYpQacw48DaB1mZUfl7SJ/fa9LEUrQ2CnizQJSemwsteJqDII95mzCpyGXAeNfXdhI52dx0YXx3D62LXQBAn1HSIg"
-    "nzsrEVh29CumZ28cxpOL0djI2Y8VyHgw6fFSAZqmn3Xr2yCxBvzN4rlEvtzGVw8PxAZT33duLEgPFV2XBrU5I98bufg"
-    "g8cE3NXTLtMwuYWbtKtbRZkpRJesQEkaL70kLvvsYCZAaqDhwLAO8q41czunYLt6MyKcAHrb5whFBz6Fx/WrEEpM1p5"
-    "KhSw== MAIN@PHONEVOX"
-)
-
 DEFAULT_TIMEZONE = "America/Sao_Paulo"
 DEFAULT_LANG = "pt_BR"
 
@@ -54,22 +41,11 @@ PACKAGES_ISSABEL = [
     "xtables-addons", "RoundCubeMail", "php-ioncubeloader", "libnsl", "fop2",
 ]
 
-# tweaks Phonevox: chave -> (default_on, label). "ssh-hardening"/"firewall"/"qint" já têm
-# módulo pvx real (integrations.py); "operator-panel" é passo local (control_panel.py).
+# tweaks Phonevox: chave -> (default_on, label). Pedido ao vivo: ssh-hardening/firewall/qint
+# saíram daqui -- rodar durante o netinstall obrigava a resolver a configuração de 3 módulos
+# no meio da instalação do Issabel; agora é sempre um `pvx <módulo> setup/apply` separado,
+# depois que o Issabel já está de pé. "operator-panel" é passo local (control_panel.py), não
+# um módulo pvx -- continua aqui.
 TWEAKS_CATALOG = {
     "operator-panel": (True, "Painel do operador (control_panel -- visão de recepção/switchboard)"),
-    "ssh-hardening": (True, "Hardening de acesso SSH (bloqueia root, cria usuário admin dedicado, muda porta)"),
-    "firewall": (True, "Firewall (iptables/firewalld) com as listas padrão da Phonevox + sync"),
-    "qint": (False, "Integração de URA (IXCSoft/SGP) com Asterisk/Issabel -- precisa de dados do cliente, default off"),
-}
-
-SSH_HARDENING_DEFAULTS = {
-    "lock_root": True,
-    "root_password": "phonevox@@",
-    "create_user": True,
-    "username": "phonevox",
-    "pubkey": SSH_DEFAULT_PUBKEY,
-    "allow_password": False,
-    "change_port": True,
-    "port": "21122",
 }
