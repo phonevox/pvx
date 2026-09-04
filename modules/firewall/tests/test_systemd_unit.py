@@ -1,7 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import systemd_unit
 
@@ -39,6 +39,22 @@ class InstallTest(unittest.TestCase):
             commands = [c.args[0] for c in mock_run.call_args_list]
             self.assertIn(["systemctl", "daemon-reload"], commands)
             self.assertIn(["systemctl", "enable", "pvx-firewall.service"], commands)
+
+
+class IsEnabledTest(unittest.TestCase):
+    @patch("systemd_unit.subprocess.run")
+    def test_true_when_systemctl_says_enabled(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="enabled\n")
+        self.assertTrue(systemd_unit.is_enabled())
+
+    @patch("systemd_unit.subprocess.run")
+    def test_false_when_disabled(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="disabled\n")
+        self.assertFalse(systemd_unit.is_enabled())
+
+    @patch("systemd_unit.subprocess.run", side_effect=OSError)
+    def test_false_when_systemctl_is_unavailable(self, mock_run):
+        self.assertFalse(systemd_unit.is_enabled())
 
 
 if __name__ == "__main__":

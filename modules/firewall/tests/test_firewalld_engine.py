@@ -48,9 +48,13 @@ class FailsafeTest(unittest.TestCase):
         result = fwd.insert_failsafe("pvxfw", "189.124.85.75")
         self.assertTrue(result)
         insert_call = mock_run.call_args_list[1]
-        self.assertEqual(insert_call.args[0][:3], ["firewall-cmd", "--zone", "pvxfw"])
-        self.assertEqual(insert_call.args[0][3], "--add-rich-rule")
-        rule = insert_call.args[0][4]
+        # achado ao vivo (testando com firewalld real): sem --permanent aqui,
+        # o --reload no fim de sync() descarta a regra silenciosamente --
+        # tudo que sync() monta precisa ser permanent, só o reload final
+        # promove pro runtime de uma vez.
+        self.assertIn("--permanent", insert_call.args[0])
+        self.assertIn("--add-rich-rule", insert_call.args[0])
+        rule = insert_call.args[0][insert_call.args[0].index("--add-rich-rule") + 1]
         self.assertIn('priority="-2000"', rule)
         self.assertIn('source address="189.124.85.75"', rule)
         self.assertIn("accept", rule)
@@ -77,8 +81,14 @@ class ClearZoneExceptFailsafeTest(unittest.TestCase):
 
         fwd.clear_zone_except_failsafe("pvxfw", failsafe_rule)
 
+        listing_call = mock_run.call_args_list[0]
         remove_call = mock_run.call_args_list[1]
-        self.assertEqual(remove_call.args[0], ["firewall-cmd", "--zone", "pvxfw", "--remove-rich-rule", other_rule])
+        self.assertIn("--permanent", listing_call.args[0])
+        self.assertIn("--permanent", remove_call.args[0])
+        self.assertIn("--remove-rich-rule", remove_call.args[0])
+        self.assertEqual(
+            remove_call.args[0][remove_call.args[0].index("--remove-rich-rule") + 1], other_rule,
+        )
 
     @patch("firewalld_engine.subprocess.run")
     def test_removes_everything_when_no_failsafe_rule(self, mock_run):
@@ -165,9 +175,11 @@ class SyncTest(unittest.TestCase):
         mock_failsafe.assert_called_once_with("pvxfw", "203.0.113.9")
         mock_clear.assert_called_once()
 
-        rules = [
-            c.args[0][4] for c in mock_run.call_args_list if c.args[0][3:4] == ["--add-rich-rule"]
-        ]
+        add_calls = [c.args[0] for c in mock_run.call_args_list if "--add-rich-rule" in c.args[0]]
+        rules = [args[args.index("--add-rich-rule") + 1] for args in add_calls]
+        # achado ao vivo (testando com firewalld real): sem --permanent aqui,
+        # o --reload no fim de sync() descartava toda regra silenciosamente.
+        self.assertTrue(all("--permanent" in args for args in add_calls))
         self.assertTrue(any('source address="189.124.85.75"' in r and "accept" in r for r in rules))
         self.assertTrue(any('source address="1.2.3.4"' in r and "drop" in r for r in rules))
         self.assertTrue(any('port="5060"' in r and 'protocol="udp"' in r and "accept" in r for r in rules))

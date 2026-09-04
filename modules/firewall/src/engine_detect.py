@@ -2,7 +2,7 @@ import shutil
 import subprocess
 
 
-def _service_is_active(name):
+def service_is_active(name):
     try:
         result = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True)
     except OSError:
@@ -11,7 +11,7 @@ def _service_is_active(name):
 
 
 def detect_engine():
-    if shutil.which("firewall-cmd") and _service_is_active("firewalld"):
+    if shutil.which("firewall-cmd") and service_is_active("firewalld"):
         return "firewalld"
     if shutil.which("iptables"):
         return "iptables"
