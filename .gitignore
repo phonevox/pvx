@@ -18,3 +18,4 @@ modules/magnus/dist/
 .claude/settings.local.json
 scripts/_*
 modules/autobloqueador/dist/
+modules/motd/dist/
