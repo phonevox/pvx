@@ -29,6 +29,18 @@ class BuildCommandTest(unittest.TestCase):
             "bash /opt/pbackup/scripts/magnus.sh -t http://uoe.interno.falevox.com.br/v1/upload:/ --token eyJhbGc",
         )
 
+    def test_magnus_pvx_command(self):
+        # alternativa que não depende do magnus.sh do pbackup (nem do cron.php
+        # do próprio MagnusBilling) -- pvx magnus só gera o backup, upload é
+        # sempre responsabilidade do pbackup (mesma separação dos outros scripts).
+        result = backup_scripts.build_command("magnus-pvx", token="eyJhbGc")
+        self.assertEqual(
+            result,
+            "pvx magnus backup export -o /tmp/backup-pxmagnus.tgz && "
+            "pbackup --files /tmp/backup-pxmagnus.tgz "
+            "--to http://uoe.interno.falevox.com.br/v1/upload:/ --token eyJhbGc",
+        )
+
     def test_custom_command_substitutes_the_placeholder(self):
         result = backup_scripts.build_command(
             "custom", token="eyJhbGc", custom_template="/opt/meuscript.sh --upload --token {TOKEN} --verbose",

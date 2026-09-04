@@ -6,7 +6,7 @@ from click.testing import CliRunner
 
 import pbackup_ops
 import uoe_client
-from main import _read_password_file, _resolve_script, cli
+from main import _read_password_file, _resolve_schedule, _resolve_script, cli
 
 # conteúdo nunca é checado de verdade (uoe_client.login/register são mockados em
 # todo teste) -- só precisa ser um arquivo real e legível pro _read_password_file.
@@ -75,13 +75,13 @@ class ResolveScriptTest(unittest.TestCase):
     def test_choosing_issabel_opens_the_config_vs_recordings_submenu(self):
         with patch(
             "main.ask_select",
-            side_effect=["IssabelPBX", "Somente configurações (padrão)"],
+            side_effect=["IssabelPBX", "Somente configurações"],
         ) as mock_select:
             script, custom, recordings = _resolve_script(None, None, None, interactive=True)
         self.assertEqual(script, "issabel")
         self.assertFalse(recordings)
         submenu_choices = mock_select.call_args_list[1].args[1]
-        self.assertEqual(submenu_choices, ["Somente configurações (padrão)", "Configurações e gravações"])
+        self.assertEqual(submenu_choices, ["Somente configurações", "Configurações e gravações"])
 
     def test_choosing_recordings_in_the_submenu(self):
         with patch(
@@ -95,6 +95,46 @@ class ResolveScriptTest(unittest.TestCase):
         with patch("main.ask_select", side_effect=["IssabelPBX", None]):
             script, custom, recordings = _resolve_script(None, None, None, interactive=True)
         self.assertIsNone(script)
+
+    def test_choosing_magnusbilling_opens_the_native_vs_pvx_submenu(self):
+        with patch(
+            "main.ask_select",
+            side_effect=["MagnusBilling", "magnus.sh"],
+        ) as mock_select:
+            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        self.assertEqual(script, "magnus")
+        submenu_call = mock_select.call_args_list[1]
+        self.assertEqual(submenu_call.args[1], ["magnus.sh", "pvx magnus"])
+        self.assertEqual(submenu_call.kwargs.get("default"), "pvx magnus")
+
+    def test_choosing_pvx_magnus_in_the_submenu(self):
+        with patch("main.ask_select", side_effect=["MagnusBilling", "pvx magnus"]):
+            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        self.assertEqual(script, "magnus-pvx")
+
+    def test_escaping_the_magnusbilling_submenu_aborts_cleanly(self):
+        with patch("main.ask_select", side_effect=["MagnusBilling", None]):
+            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        self.assertIsNone(script)
+
+
+class ResolveScheduleTest(unittest.TestCase):
+    # pedido ao vivo: nada de horário fixo sugerido -- toda cron nova cai num
+    # horário diferente, pra não empilhar todo mundo rodando às 2h.
+    def test_suggests_a_random_minute_and_hour_within_range(self):
+        with patch("main.ask_text", side_effect=lambda _msg, default: default), \
+             patch("main.random.randint", side_effect=[42, 3]) as mock_randint:
+            minute, hour = _resolve_schedule(None, None, interactive=True)
+        self.assertEqual(minute, "42")
+        self.assertEqual(hour, "3")
+        mock_randint.assert_any_call(0, 59)
+        mock_randint.assert_any_call(0, 6)
+
+    def test_explicit_values_skip_the_suggestion(self):
+        with patch("main.random.randint") as mock_randint:
+            minute, hour = _resolve_schedule("25", "2", interactive=True)
+        self.assertEqual((minute, hour), ("25", "2"))
+        mock_randint.assert_not_called()
 
 
 class SetupCommandTest(unittest.TestCase):
@@ -112,14 +152,17 @@ class SetupCommandTest(unittest.TestCase):
              patch("main.crontab.read_crontab", return_value=[]), \
              patch("main.crontab.find_legacy_candidates", return_value=[]), \
              patch("main.crontab.write_crontab") as mock_write_crontab, \
-             patch("main.uoe_client.login", side_effect=login_side_effect or (lambda u, p: f"token-{u}")), \
-             patch("main.uoe_client.register", side_effect=register_error), \
+             patch(
+                 "main.uoe_client.login", side_effect=login_side_effect or (lambda u, p: f"token-{u}"),
+             ) as mock_login, \
+             patch("main.uoe_client.register", side_effect=register_error) as mock_register, \
              patch("main.state.save") as mock_state_save, \
-             patch("main.UOEModule.get_logger"):
+             patch("main.AutobackupModule.get_logger"):
             result = CliRunner().invoke(cli.cli_group(), args)
             return result, {
                 "fresh_install": mock_fresh, "update_in_place": mock_update,
                 "write_crontab": mock_write_crontab, "state_save": mock_state_save,
+                "login": mock_login, "register": mock_register,
             }
 
     def test_happy_path_writes_the_managed_cron_entry_and_state(self):
@@ -129,7 +172,7 @@ class SetupCommandTest(unittest.TestCase):
         mocks["update_in_place"].assert_not_called()
 
         cron_lines = mocks["write_crontab"].call_args.args[0]
-        self.assertIn("# gerenciado pelo pvx uoe", cron_lines[-2])
+        self.assertIn("# gerenciado pelo pvx autobackup", cron_lines[-2])
         self.assertIn("25 2 * * *", cron_lines[-1])
         self.assertIn("issabel.sh", cron_lines[-1])
         self.assertIn("token-empresa", cron_lines[-1])
@@ -159,7 +202,8 @@ class SetupCommandTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.output)
 
     def test_register_failure_offers_a_skip_to_login_when_interactive(self):
-        with patch("main.ask_confirm", return_value=True):
+        with patch("main.ask_select", return_value="Criar novo usuário no UOE"), \
+             patch("main.ask_confirm", return_value=True):
             result, mocks = self._invoke(
                 BASE_SETUP_ARGS, is_tty=True,
                 register_error=uoe_client.UOEError(500, "Internal Server Error"),
@@ -168,14 +212,90 @@ class SetupCommandTest(unittest.TestCase):
         mocks["state_save"].assert_called_once()
 
     def test_skip_register_flag_never_calls_register(self):
-        with patch("main.uoe_client.register") as mock_register:
-            result, _ = self._invoke(BASE_SETUP_ARGS + ["--skip-register"])
+        result, mocks = self._invoke(BASE_SETUP_ARGS + ["--skip-register"])
         self.assertEqual(result.exit_code, 0, result.output)
-        mock_register.assert_not_called()
+        mocks["register"].assert_not_called()
+
+    def test_skip_register_flag_also_skips_the_admin_login(self):
+        # pedido ao vivo: pra um usuário que já existe, o técnico não devia
+        # precisar da senha de root só pra logar -- ela só serve pro register.
+        args = _without_flag(BASE_SETUP_ARGS, "--admin-password-file") + ["--skip-register"]
+        result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["register"].assert_not_called()
+        mocks["login"].assert_called_once_with("empresa", "rootpw")
+
+    def test_interactive_asks_create_vs_login_defaulting_to_create(self):
+        with patch("main.ask_select", return_value="Criar novo usuário no UOE") as mock_select:
+            result, mocks = self._invoke(BASE_SETUP_ARGS, is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        call = mock_select.call_args
+        self.assertEqual(call.args[1], ["Criar novo usuário no UOE", "Usuário já existe"])
+        self.assertEqual(call.kwargs.get("default"), "Criar novo usuário no UOE")
+        mocks["register"].assert_called_once()
+
+    def test_interactive_choosing_existing_user_skips_admin_login_and_register(self):
+        with patch("main.ask_select", return_value="Usuário já existe"):
+            args = _without_flag(BASE_SETUP_ARGS, "--admin-password-file")
+            result, mocks = self._invoke(args, is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["register"].assert_not_called()
+        mocks["login"].assert_called_once_with("empresa", "rootpw")
+
+    def test_escaping_the_account_action_menu_aborts_cleanly(self):
+        with patch("main.ask_select", return_value=None), patch("main.uoe_client.login") as mock_login:
+            result, mocks = self._invoke(BASE_SETUP_ARGS, is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_login.assert_not_called()
+        mocks["state_save"].assert_not_called()
+
+    def test_skip_register_flag_never_asks_the_account_action_menu(self):
+        with patch("main.ask_select") as mock_select:
+            result, _ = self._invoke(BASE_SETUP_ARGS + ["--skip-register"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_select.assert_not_called()
+
+    def test_account_action_is_asked_before_the_username_prompt(self):
+        # pedido ao vivo: escolher "usuário já existe" só faz sentido ANTES de
+        # perguntar usuário/senha -- senão o técnico já respondeu como se
+        # tivesse criando (prompt "Defina...") antes de dizer que só quer logar.
+        args = _without_flag(BASE_SETUP_ARGS, "--username")
+        order = []
+        with patch("main.ask_select", side_effect=lambda *a, **kw: order.append("select") or "Criar novo usuário no UOE"), \
+             patch("main.ask_text", side_effect=lambda *a, **kw: order.append("text") or "empresa"):
+            self._invoke(args, is_tty=True)
+        self.assertEqual(order, ["select", "text"])
+
+    def test_choosing_existing_user_does_not_use_define_wording(self):
+        args = _without_flag(_without_flag(BASE_SETUP_ARGS, "--admin-password-file"), "--password-file")
+        with patch("main.ask_select", return_value="Usuário já existe"), \
+             patch("main.ask_password", return_value="senha-existente") as mock_password:
+            result, mocks = self._invoke(args, is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        prompt = mock_password.call_args_list[0].args[0]
+        self.assertNotIn("Defina", prompt)
+        mocks["login"].assert_called_once_with("empresa", "senha-existente")
+
+    def test_choosing_existing_user_skips_the_root_path_prompt_entirely(self):
+        # pedido ao vivo: root_path só existe pro cadastro (register) -- quem
+        # só vai logar não tem por que informar isso, nem ser perguntado.
+        args = _without_flag(BASE_SETUP_ARGS, "--root-path")
+        with patch("main.ask_select", return_value="Usuário já existe") as mock_select:
+            result, mocks = self._invoke(args, is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        prompts = [call.args[0] for call in mock_select.call_args_list]
+        self.assertEqual(prompts, ["Usuário no UOE:"])
+
+    def test_headless_skip_register_does_not_require_root_path(self):
+        args = _without_flag(BASE_SETUP_ARGS, "--root-path") + ["--skip-register"]
+        result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["register"].assert_not_called()
 
     @patch("main.widgets.pause")
     def test_pauses_when_interactive(self, mock_pause):
-        result, _ = self._invoke(BASE_SETUP_ARGS, is_tty=True)
+        with patch("main.ask_select", return_value="Criar novo usuário no UOE"):
+            result, _ = self._invoke(BASE_SETUP_ARGS, is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 
@@ -197,7 +317,8 @@ class SetupCommandTest(unittest.TestCase):
         mocks["state_save"].assert_not_called()
 
     def test_interactive_prompts_for_the_password_with_no_default(self):
-        with patch("main.ask_password", side_effect=["senha-digitada-pelo-tecnico"]) as mock_password:
+        with patch("main.ask_select", return_value="Criar novo usuário no UOE"), \
+             patch("main.ask_password", side_effect=["senha-digitada-pelo-tecnico"]) as mock_password:
             args = _without_flag(BASE_SETUP_ARGS, "--password-file")
             result, mocks = self._invoke(args, is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
@@ -205,7 +326,8 @@ class SetupCommandTest(unittest.TestCase):
         self.assertIn("empresa", prompt)
 
     def test_root_password_prompt_is_unmistakable(self):
-        with patch("main.ask_password", return_value="senha-digitada") as mock_password:
+        with patch("main.ask_select", return_value="Criar novo usuário no UOE"), \
+             patch("main.ask_password", return_value="senha-digitada") as mock_password:
             args = _without_flag(BASE_SETUP_ARGS, "--admin-password-file")
             self._invoke(args, is_tty=True)
         prompt = mock_password.call_args_list[-1].args[0]
@@ -231,7 +353,7 @@ class RelonginCommandTest(unittest.TestCase):
              patch("main.crontab.read_crontab", return_value=[]), \
              patch("main.crontab.write_crontab") as mock_write, \
              patch("main.uoe_client.login", return_value="new-token"), \
-             patch("main.UOEModule.get_logger"):
+             patch("main.AutobackupModule.get_logger"):
             result = CliRunner().invoke(cli.cli_group(), args)
             return result, {"save": mock_save, "write_crontab": mock_write}
 
@@ -276,7 +398,7 @@ class RemoveCommandTest(unittest.TestCase):
              patch("main.crontab.write_crontab") as mock_write, \
              patch("main.uoe_client.delete_user") as mock_delete_user, \
              patch("main.uoe_client.login", return_value="admintoken"), \
-             patch("main.UOEModule.get_logger"):
+             patch("main.AutobackupModule.get_logger"):
             result = CliRunner().invoke(cli.cli_group(), args)
             return result, {
                 "remove_state": mock_remove_state, "remove_entry": mock_remove_entry,

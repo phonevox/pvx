@@ -12,7 +12,7 @@ modules/qint/dist/
 modules/firewall/dist/
 modules/netinstall/dist/
 modules/zabbix/dist/
-modules/uoe/dist/
+modules/autobackup/dist/
 modules/magnus/dist/
 /dist/
 .claude/settings.local.json
