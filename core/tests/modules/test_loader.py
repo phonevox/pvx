@@ -151,6 +151,59 @@ cli = Mod()
         self.assertEqual(modules["first"].name, "first-value")
         self.assertEqual(modules["second"].name, "second-value")
 
+    def test_rediscovers_a_module_after_its_pyz_is_replaced_in_place(self):
+        # bug real: `pvx modules update` sobrescreve o mesmo module.pyz (mesmo
+        # path) enquanto o menu interativo (processo longo, nunca reinicia)
+        # continua rodando. zipimport cacheia o zipimporter (índice interno do
+        # .zip) por path pra sempre -- sem invalidar isso, o discover() de
+        # depois do update usa o índice do .zip ANTIGO sobre o arquivo NOVO
+        # (offsets não batem mais) e crasha, em vez de enxergar a versão nova.
+        def build_pyz(build_dir, version, pyz_path):
+            build_dir.mkdir(parents=True, exist_ok=True)
+            (build_dir / "module.py").write_text(f"""
+from pvx.modules.base import PvxModule
+
+
+class Mod(PvxModule):
+    name = "dummy"
+    version = "{version}"
+
+    def cli_group(self):
+        import click
+
+        @click.group()
+        def group():
+            pass
+
+        return group
+
+
+cli = Mod()
+""")
+            (build_dir / "__main__.py").write_text("from module import cli\n")
+            if pyz_path.exists():
+                pyz_path.unlink()
+            zipapp.create_archive(build_dir, pyz_path)
+            shutil.rmtree(build_dir)
+
+        with TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            mod_dir = tmp_path / "modules" / "dummy"
+            mod_dir.mkdir(parents=True)
+            (mod_dir / "manifest.json").write_text(json.dumps({
+                "name": "dummy", "version": "0.1.0", "entrypoint": "module:cli",
+            }))
+            pyz_path = mod_dir / "module.pyz"
+
+            build_pyz(tmp_path / "build_v1", "0.1.0", pyz_path)
+            first = discover(tmp_path / "modules")
+            self.assertEqual(first["dummy"].version, "0.1.0")
+
+            # update de verdade: mesmo path, conteúdo (tamanho/índice) diferente.
+            build_pyz(tmp_path / "build_v2", "0.2.0-com-bastante-conteudo-a-mais", pyz_path)
+            second = discover(tmp_path / "modules")
+            self.assertEqual(second["dummy"].version, "0.2.0-com-bastante-conteudo-a-mais")
+
     def test_discovers_real_built_module_pyz(self):
         dummy_dir = Path(__file__).resolve().parents[3] / "modules" / "dummy"
         build = subprocess.run(
