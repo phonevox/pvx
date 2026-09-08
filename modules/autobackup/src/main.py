@@ -32,6 +32,10 @@ _MAGNUS_MODE_LABELS = {
     "magnus.sh": "magnus",
     "pvx magnus": "magnus-pvx",
 }
+_MAGNUS_SPLIT_LABELS = {
+    "Arquivo único (config + sons)": False,
+    "Arquivos separados (config, gravações e sons)": True,
+}
 _ACCOUNT_MODE_REGISTER = "register"
 _ACCOUNT_MODE_LOGIN = "login"
 _ACCOUNT_MODE_TOKEN = "token"
@@ -141,7 +145,7 @@ def _resolve_root_path(root_path, id_cliente, id_contrato, empresa, interactive)
     return f"clientes/{id_cliente}-{id_contrato}-{empresa}"
 
 
-def _resolve_script(script, custom_command, issabel_recordings, interactive):
+def _resolve_script(script, custom_command, issabel_recordings, magnus_split, interactive):
     if script is None:
         if not interactive:
             raise click.ClickException(
@@ -149,7 +153,7 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
             )
         label = ask_select("Script pra rodar na cron:", list(_SCRIPT_LABELS))
         if label is None:
-            return None, None, None
+            return None, None, None, None
         script = _SCRIPT_LABELS[label]
 
         if script == _MAGNUS_MENU_SENTINEL:
@@ -158,7 +162,7 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
                 default="pvx magnus",
             )
             if mode_label is None:
-                return None, None, None
+                return None, None, None, None
             script = _MAGNUS_MODE_LABELS[mode_label]
 
     if script not in backup_scripts.SCRIPTS:
@@ -171,19 +175,31 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
                 default="Somente configurações",
             )
             if mode_label is None:
-                return None, None, None
+                return None, None, None, None
             issabel_recordings = _ISSABEL_MODE_LABELS[mode_label]
         else:
             issabel_recordings = False
+
+    if script == "magnus-pvx" and magnus_split is None:
+        if interactive:
+            mode_label = ask_select(
+                "MagnusBilling (pvx) -- como enviar o backup:", list(_MAGNUS_SPLIT_LABELS),
+                default="Arquivo único (config + sons)",
+            )
+            if mode_label is None:
+                return None, None, None, None
+            magnus_split = _MAGNUS_SPLIT_LABELS[mode_label]
+        else:
+            magnus_split = False
 
     if script == "custom" and custom_command is None:
         if not interactive:
             raise click.ClickException("--script custom exige --custom-command (com {TOKEN} literal).")
         custom_command = ask_text("Comando completo (use {TOKEN} onde o token deve entrar):")
         if custom_command is None:
-            return None, None, None
+            return None, None, None, None
 
-    return script, custom_command, issabel_recordings
+    return script, custom_command, issabel_recordings, magnus_split
 
 
 def _resolve_schedule(minute, hour, interactive):
@@ -311,8 +327,8 @@ def _run_setup(logger, opts, interactive):
                 raise click.ClickException(f"falha no login de '{username}': {e}")
         widgets.success("token obtido.")
 
-    script, custom_command, issabel_recordings = _resolve_script(
-        opts["script"], opts["custom_command"], opts["issabel_recordings"], interactive,
+    script, custom_command, issabel_recordings, magnus_split = _resolve_script(
+        opts["script"], opts["custom_command"], opts["issabel_recordings"], opts["magnus_split"], interactive,
     )
     if script is None:
         return
@@ -323,7 +339,7 @@ def _run_setup(logger, opts, interactive):
 
     command = backup_scripts.build_command(
         script, token, pbackup_root=pbackup_root, custom_template=custom_command,
-        issabel_recordings=issabel_recordings,
+        issabel_recordings=issabel_recordings, magnus_split=magnus_split,
     )
     cron_line = f"{minute} {hour} * * * {command}"
     crontab.write_crontab(crontab.upsert_managed_entry(crontab.read_crontab(), cron_line))
@@ -332,7 +348,7 @@ def _run_setup(logger, opts, interactive):
     state.save(_state_path(), {
         "username": username, "token": token, "root_path": root_path or "-",
         "script": script, "custom_command": custom_command, "issabel_recordings": issabel_recordings,
-        "pbackup_root": pbackup_root, "cron_minute": minute, "cron_hour": hour,
+        "magnus_split": magnus_split, "pbackup_root": pbackup_root, "cron_minute": minute, "cron_hour": hour,
     })
     logger.info(f"autobackup setup concluído -- username={username} script={script}")
 
@@ -360,6 +376,7 @@ def _run_relogin(logger, password_file, interactive):
         saved["script"], token,
         pbackup_root=saved.get("pbackup_root"), custom_template=saved.get("custom_command"),
         issabel_recordings=saved.get("issabel_recordings", False),
+        magnus_split=saved.get("magnus_split", False),
     )
     cron_line = f"{saved['cron_minute']} {saved['cron_hour']} * * * {command}"
     crontab.write_crontab(crontab.upsert_managed_entry(crontab.read_crontab(), cron_line))
@@ -420,7 +437,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.12"
+    version = "0.1.13"
 
     def cli_group(self):
         @click.group(name="autobackup")
@@ -445,6 +462,11 @@ class AutobackupModule(PvxModule):
         @click.option(
             "--issabel-recordings/--issabel-config-only", default=None,
             help="só se --script issabel (default: config-only).",
+        )
+        @click.option(
+            "--magnus-split/--magnus-single", default=None,
+            help="só se --script magnus-pvx -- arquivos separados (config/gravações/sons) "
+                 "em vez de um único .tgz (default: single).",
         )
         @click.option("--custom-command", default=None, help="comando completo com {TOKEN} literal.")
         @click.option("--cron-minute", default=None)
@@ -521,13 +543,17 @@ class AutobackupModule(PvxModule):
         )
         @click.option("--upload-url", required=True)
         @click.option("--token", required=True)
-        def magnus_upload_cmd(upload_url, token):
+        @click.option(
+            "--split", is_flag=True,
+            help="gera config/gravações/sons em arquivos separados, cada um na sua pasta remota.",
+        )
+        def magnus_upload_cmd(upload_url, token, split):
             # comando alvo de cron -- nunca pausa (rodaria preso esperando
             # enter num processo sem terminal de verdade) mesmo se alguém
             # rodar à mão num terminal real.
             logger = self.get_logger()
             try:
-                magnus_upload_ops.export_and_upload(upload_url, token)
+                magnus_upload_ops.export_and_upload(upload_url, token, split=split)
             except magnus_upload_ops.MagnusUploadError as e:
                 logger.error(f"magnus-upload falhou: {e}")
                 raise click.ClickException(str(e))

@@ -44,6 +44,17 @@ class BuildCommandTest(unittest.TestCase):
             "--upload-url http://uoe.interno.falevox.com.br/v1/upload --token eyJhbGc",
         )
 
+    def test_magnus_pvx_command_with_split(self):
+        # pedido ao vivo: opção de backup do magnus em arquivos separados
+        # (config/gravações/sons) em vez de um único .tgz -- mesma ideia do
+        # --recordings do issabel, um flag por cima do comando base.
+        result = backup_scripts.build_command("magnus-pvx", token="eyJhbGc", magnus_split=True)
+        self.assertEqual(
+            result,
+            "pvx autobackup magnus-upload "
+            "--upload-url http://uoe.interno.falevox.com.br/v1/upload --token eyJhbGc --split",
+        )
+
     def test_custom_command_substitutes_the_placeholder(self):
         result = backup_scripts.build_command(
             "custom", token="eyJhbGc", custom_template="/opt/meuscript.sh --upload --token {TOKEN} --verbose",

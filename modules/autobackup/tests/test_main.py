@@ -53,24 +53,24 @@ class ResolveScriptTest(unittest.TestCase):
     # (não mais "Issabel (config + gravações)"/"Comando customizado"), e
     # escolher IssabelPBX abre um submenu -- só config (padrão) ou +gravações.
     def test_headless_with_issabel_flag_defaults_to_config_only(self):
-        script, custom, recordings = _resolve_script("issabel", None, None, interactive=False)
+        script, custom, recordings, split = _resolve_script("issabel", None, None, None, interactive=False)
         self.assertEqual(script, "issabel")
         self.assertFalse(recordings)
 
     def test_headless_respects_explicit_recordings_flag(self):
-        script, custom, recordings = _resolve_script("issabel", None, True, interactive=False)
+        script, custom, recordings, split = _resolve_script("issabel", None, True, None, interactive=False)
         self.assertTrue(recordings)
 
     def test_magnus_never_asks_the_issabel_submenu(self):
         with patch("main.ask_select") as mock_select:
-            script, custom, recordings = _resolve_script("magnus", None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script("magnus", None, None, None, interactive=True)
         self.assertEqual(script, "magnus")
         self.assertIsNone(recordings)
         mock_select.assert_not_called()
 
     def test_interactive_offers_the_new_top_level_labels(self):
         with patch("main.ask_select", return_value=None) as mock_select:
-            _resolve_script(None, None, None, interactive=True)
+            _resolve_script(None, None, None, None, interactive=True)
         choices = mock_select.call_args.args[1]
         self.assertEqual(choices, ["IssabelPBX", "MagnusBilling", "Definir script..."])
 
@@ -79,7 +79,7 @@ class ResolveScriptTest(unittest.TestCase):
             "main.ask_select",
             side_effect=["IssabelPBX", "Somente configurações"],
         ) as mock_select:
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertEqual(script, "issabel")
         self.assertFalse(recordings)
         submenu_choices = mock_select.call_args_list[1].args[1]
@@ -90,12 +90,12 @@ class ResolveScriptTest(unittest.TestCase):
             "main.ask_select",
             side_effect=["IssabelPBX", "Configurações e gravações"],
         ):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertTrue(recordings)
 
     def test_escaping_the_issabel_submenu_aborts_cleanly(self):
         with patch("main.ask_select", side_effect=["IssabelPBX", None]):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertIsNone(script)
 
     def test_choosing_magnusbilling_opens_the_native_vs_pvx_submenu(self):
@@ -103,20 +103,56 @@ class ResolveScriptTest(unittest.TestCase):
             "main.ask_select",
             side_effect=["MagnusBilling", "magnus.sh"],
         ) as mock_select:
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertEqual(script, "magnus")
         submenu_call = mock_select.call_args_list[1]
         self.assertEqual(submenu_call.args[1], ["magnus.sh", "pvx magnus"])
         self.assertEqual(submenu_call.kwargs.get("default"), "pvx magnus")
 
     def test_choosing_pvx_magnus_in_the_submenu(self):
-        with patch("main.ask_select", side_effect=["MagnusBilling", "pvx magnus"]):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        with patch("main.ask_select", side_effect=["MagnusBilling", "pvx magnus", "Arquivo único (config + sons)"]):
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertEqual(script, "magnus-pvx")
+        self.assertFalse(split)
 
     def test_escaping_the_magnusbilling_submenu_aborts_cleanly(self):
         with patch("main.ask_select", side_effect=["MagnusBilling", None]):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
+        self.assertIsNone(script)
+
+    # pedido ao vivo: bkp do magnus (pvx) em arquivos separados em vez de um
+    # único .tgz -- mesma ideia do submenu config-vs-recordings do issabel.
+    def test_magnus_pvx_opens_the_split_submenu(self):
+        with patch(
+            "main.ask_select",
+            side_effect=["MagnusBilling", "pvx magnus", "Arquivos separados (config, gravações e sons)"],
+        ) as mock_select:
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
+        self.assertEqual(script, "magnus-pvx")
+        self.assertTrue(split)
+        submenu_call = mock_select.call_args_list[2]
+        self.assertEqual(
+            submenu_call.args[1],
+            ["Arquivo único (config + sons)", "Arquivos separados (config, gravações e sons)"],
+        )
+
+    def test_magnus_native_never_asks_the_split_submenu(self):
+        with patch("main.ask_select", side_effect=["MagnusBilling", "magnus.sh"]) as mock_select:
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
+        self.assertEqual(script, "magnus")
+        self.assertEqual(mock_select.call_count, 2)
+
+    def test_headless_magnus_pvx_defaults_to_single_file(self):
+        script, custom, recordings, split = _resolve_script("magnus-pvx", None, None, None, interactive=False)
+        self.assertFalse(split)
+
+    def test_headless_respects_explicit_split_flag(self):
+        script, custom, recordings, split = _resolve_script("magnus-pvx", None, None, True, interactive=False)
+        self.assertTrue(split)
+
+    def test_escaping_the_split_submenu_aborts_cleanly(self):
+        with patch("main.ask_select", side_effect=["MagnusBilling", "pvx magnus", None]):
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertIsNone(script)
 
 
@@ -556,7 +592,14 @@ class MagnusUploadCommandTest(unittest.TestCase):
     def test_calls_export_and_upload_with_the_given_args(self):
         result, mock_export, _ = self._invoke()
         self.assertEqual(result.exit_code, 0, result.output)
-        mock_export.assert_called_once_with("http://uoe.example/v1/upload", "tok123")
+        mock_export.assert_called_once_with("http://uoe.example/v1/upload", "tok123", split=False)
+
+    def test_split_flag_is_forwarded(self):
+        result, mock_export, _ = self._invoke(
+            args=["magnus-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123", "--split"],
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with("http://uoe.example/v1/upload", "tok123", split=True)
 
     def test_never_pauses_even_when_run_from_a_real_terminal(self):
         _, _, mock_pause = self._invoke()
