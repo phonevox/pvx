@@ -32,7 +32,7 @@ PACKAGES_BASE = [
     "php-process", "php-simplepie", "php-Smarty", "php-soap", "php-tcpdf", "php-tidy",
     "php-xml", "asterisk$ASTVER", "asterisk$ASTVER-devel", "asterisk$ASTVER-curl",
     "asterisk-codec-g729", "asterisk-perl", "asterisk-es-sounds", "asterisk-fr-sounds",
-    "asterisk-sounds-en-gsm", "asterisk-pt_BR-sounds", "certbot", "vim", "jq", "whois",
+    "asterisk-sounds-en-gsm", "asterisk-pt_BR-sounds", "certbot", "vim", "jq", "whois", "sngrep",
     "bind-utils", "dhcp-server", "langpacks-es", "langpacks-en", "langpacks-pt",
     "langpacks-pt_BR", "langpacks-fa", "langpacks-fr", "mailx",
 ]
