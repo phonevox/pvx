@@ -8,10 +8,10 @@ import issabel_upload_ops
 import magnus_upload_ops
 import pbackup_ops
 import uoe_client
-from main import _read_password_file, _resolve_schedule, _resolve_script, cli
+from main import _read_secret_file, _resolve_schedule, _resolve_script, cli
 
 # conteúdo nunca é checado de verdade (uoe_client.login/register são mockados em
-# todo teste) -- só precisa ser um arquivo real e legível pro _read_password_file.
+# todo teste) -- só precisa ser um arquivo real e legível pro _read_secret_file.
 _PW_FILE = tempfile.NamedTemporaryFile(mode="w", suffix=".pw", delete=False)
 _PW_FILE.write("rootpw")
 _PW_FILE.close()
@@ -40,12 +40,12 @@ BASE_SETUP_ARGS = [
 ]
 
 
-class ReadPasswordFileTest(unittest.TestCase):
+class ReadSecretFileTest(unittest.TestCase):
     def test_reads_and_strips_the_file_content(self):
-        self.assertEqual(_read_password_file(PASSWORD_FILE), "rootpw")
+        self.assertEqual(_read_secret_file(PASSWORD_FILE), "rootpw")
 
     def test_none_when_no_path_given(self):
-        self.assertIsNone(_read_password_file(None))
+        self.assertIsNone(_read_secret_file(None))
 
 
 class ResolveScriptTest(unittest.TestCase):
@@ -213,26 +213,28 @@ class SetupCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["state_save"].assert_called_once()
 
-    def test_skip_register_flag_never_calls_register(self):
-        result, mocks = self._invoke(BASE_SETUP_ARGS + ["--skip-register"])
+    def test_login_mode_never_calls_register(self):
+        result, mocks = self._invoke(BASE_SETUP_ARGS + ["--account-mode", "login"])
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["register"].assert_not_called()
 
-    def test_skip_register_flag_also_skips_the_admin_login(self):
+    def test_login_mode_also_skips_the_admin_login(self):
         # pedido ao vivo: pra um usuário que já existe, o técnico não devia
         # precisar da senha de root só pra logar -- ela só serve pro register.
-        args = _without_flag(BASE_SETUP_ARGS, "--admin-password-file") + ["--skip-register"]
+        args = _without_flag(BASE_SETUP_ARGS, "--admin-password-file") + ["--account-mode", "login"]
         result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["register"].assert_not_called()
         mocks["login"].assert_called_once_with("empresa", "rootpw")
 
-    def test_interactive_asks_create_vs_login_defaulting_to_create(self):
+    def test_interactive_asks_create_vs_login_vs_token_defaulting_to_create(self):
         with patch("main.ask_select", return_value="Criar novo usuário no UOE") as mock_select:
             result, mocks = self._invoke(BASE_SETUP_ARGS, is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         call = mock_select.call_args
-        self.assertEqual(call.args[1], ["Criar novo usuário no UOE", "Usuário já existe"])
+        self.assertEqual(
+            call.args[1], ["Criar novo usuário no UOE", "Usuário já existe", "Usar um token já autenticado"],
+        )
         self.assertEqual(call.kwargs.get("default"), "Criar novo usuário no UOE")
         mocks["register"].assert_called_once()
 
@@ -251,9 +253,9 @@ class SetupCommandTest(unittest.TestCase):
         mock_login.assert_not_called()
         mocks["state_save"].assert_not_called()
 
-    def test_skip_register_flag_never_asks_the_account_action_menu(self):
+    def test_account_mode_flag_never_asks_the_account_action_menu(self):
         with patch("main.ask_select") as mock_select:
-            result, _ = self._invoke(BASE_SETUP_ARGS + ["--skip-register"], is_tty=True)
+            result, _ = self._invoke(BASE_SETUP_ARGS + ["--account-mode", "login"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_select.assert_not_called()
 
@@ -288,11 +290,48 @@ class SetupCommandTest(unittest.TestCase):
         prompts = [call.args[0] for call in mock_select.call_args_list]
         self.assertEqual(prompts, ["Usuário no UOE:"])
 
-    def test_headless_skip_register_does_not_require_root_path(self):
-        args = _without_flag(BASE_SETUP_ARGS, "--root-path") + ["--skip-register"]
+    def test_headless_login_mode_does_not_require_root_path(self):
+        args = _without_flag(BASE_SETUP_ARGS, "--root-path") + ["--account-mode", "login"]
         result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["register"].assert_not_called()
+
+    def test_token_mode_skips_register_and_login_entirely(self):
+        # pedido ao vivo: 3a opção -- nem cria usuário, nem loga, só usa um token
+        # já autenticado (ex.: obtido em outro lugar).
+        args = _without_flag(
+            _without_flag(_without_flag(BASE_SETUP_ARGS, "--admin-password-file"), "--password-file"),
+            "--root-path",
+        ) + ["--account-mode", "token", "--token-file", PASSWORD_FILE]
+        result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["register"].assert_not_called()
+        mocks["login"].assert_not_called()
+        saved = mocks["state_save"].call_args.args[1]
+        self.assertEqual(saved["token"], "rootpw")
+
+    def test_token_mode_prompts_for_the_token_when_interactive_and_no_file_given(self):
+        args = _without_flag(
+            _without_flag(_without_flag(BASE_SETUP_ARGS, "--admin-password-file"), "--password-file"),
+            "--root-path",
+        )
+        with patch("main.ask_select", return_value="Usar um token já autenticado"), \
+             patch("main.ask_password", return_value="token-digitado-na-mao") as mock_password:
+            result, mocks = self._invoke(args, is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["register"].assert_not_called()
+        mocks["login"].assert_not_called()
+        mock_password.assert_called_once_with("Token já autenticado no UOE:")
+        saved = mocks["state_save"].call_args.args[1]
+        self.assertEqual(saved["token"], "token-digitado-na-mao")
+
+    def test_token_mode_headless_without_token_file_is_an_error(self):
+        args = _without_flag(
+            _without_flag(_without_flag(BASE_SETUP_ARGS, "--admin-password-file"), "--password-file"),
+            "--root-path",
+        ) + ["--account-mode", "token"]
+        result, _ = self._invoke(args)
+        self.assertNotEqual(result.exit_code, 0)
 
     @patch("main.widgets.pause")
     def test_pauses_when_interactive(self, mock_pause):

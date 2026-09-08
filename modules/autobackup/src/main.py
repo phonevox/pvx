@@ -32,9 +32,13 @@ _MAGNUS_MODE_LABELS = {
     "magnus.sh": "magnus",
     "pvx magnus": "magnus-pvx",
 }
+_ACCOUNT_MODE_REGISTER = "register"
+_ACCOUNT_MODE_LOGIN = "login"
+_ACCOUNT_MODE_TOKEN = "token"
 _ACCOUNT_ACTION_LABELS = {
-    "Criar novo usuário no UOE": False,
-    "Usuário já existe": True,
+    "Criar novo usuário no UOE": _ACCOUNT_MODE_REGISTER,
+    "Usuário já existe": _ACCOUNT_MODE_LOGIN,
+    "Usar um token já autenticado": _ACCOUNT_MODE_TOKEN,
 }
 
 
@@ -42,9 +46,9 @@ def _is_interactive():
     return sys.stdin.isatty()
 
 
-def _read_password_file(path):
-    # nunca senha em argumento de linha de comando (fica em ~/.bash_history, ps
-    # aux, etc.) -- mesma convenção de scripts/publish.sh.
+def _read_secret_file(path):
+    # nunca senha/token em argumento de linha de comando (fica em ~/.bash_history,
+    # ps aux, etc.) -- mesma convenção de scripts/publish.sh.
     if path is None:
         return None
     return open(path).read().strip()
@@ -207,87 +211,105 @@ def _run_setup(logger, opts, interactive):
     # decide ANTES de qualquer outra coisa -- root_path só existe pro cadastro
     # (register), e o resto dos prompts muda de "defina" (criando algo novo)
     # pra "informe" (login em algo que já existe) uma vez que isso é sabido.
-    skip_register = opts["skip_register"]
-    if not skip_register and interactive:
-        action = ask_select(
-            "Usuário no UOE:", list(_ACCOUNT_ACTION_LABELS),
-            default="Criar novo usuário no UOE",
-        )
-        if action is None:
-            return
-        skip_register = _ACCOUNT_ACTION_LABELS[action]
+    account_mode = opts["account_mode"]
+    if account_mode is None:
+        if interactive:
+            action = ask_select(
+                "Usuário no UOE:", list(_ACCOUNT_ACTION_LABELS),
+                default="Criar novo usuário no UOE",
+            )
+            if action is None:
+                return
+            account_mode = _ACCOUNT_ACTION_LABELS[action]
+        else:
+            account_mode = _ACCOUNT_MODE_REGISTER  # headless sem flag = comportamento antigo (registra)
 
     root_path = None
-    if not skip_register:
+    if account_mode == _ACCOUNT_MODE_REGISTER:
         root_path = _resolve_root_path(
             opts["root_path"], opts["id_cliente"], opts["id_contrato"], opts["empresa"], interactive,
         )
         if root_path is None:
             return
 
-    username = opts["username"]
-    if username is None:
-        if not interactive:
-            raise click.ClickException("informe --username.")
-        prompt = "Usuário do cliente já cadastrado no UOE:" if skip_register else "Defina o usuário do cliente no UOE:"
-        username = ask_text(prompt)
-        if username is None:
-            return
-
-    # nunca deriva/hardcoda uma fórmula de senha -- repo é público, uma fórmula
-    # fixa no fonte revelaria como adivinhar a senha de qualquer cliente sabendo
-    # só o username (ver ADR 0001). o técnico sempre digita a senha de verdade.
-    password = _read_password_file(opts["password_file"])
-    if password is None:
-        if not interactive:
-            raise click.ClickException("informe --password-file (senha do cliente a ser criado).")
-        prompt = (
-            f"Senha do usuário '{username}' no UOE:" if skip_register
-            else f"Defina a senha do usuário '{username}' no UOE:"
-        )
-        password = ask_password(prompt)
-        if password is None:
-            return
-
-    if not skip_register:
-        # senha de root só é necessária pra registrar um usuário novo -- quem
-        # já existe não precisa que o técnico saiba/digite a senha do superadmin.
-        admin_password = _read_password_file(opts["admin_password_file"])
-        if admin_password is None:
+    if account_mode == _ACCOUNT_MODE_TOKEN:
+        # nem cria usuário nem loga -- o token já foi obtido em outro lugar (ex.:
+        # gerado direto no UOE). Sem senha nenhuma envolvida aqui.
+        token = _read_secret_file(opts["token_file"])
+        if token is None:
             if not interactive:
-                raise click.ClickException("informe --admin-password-file.")
-            admin_password = ask_password(
-                "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
+                raise click.ClickException("informe --token-file (token já autenticado no UOE).")
+            token = ask_password("Token já autenticado no UOE:")
+            if token is None:
+                return
+        username = opts["username"] or "-"
+    else:
+        username = opts["username"]
+        if username is None:
+            if not interactive:
+                raise click.ClickException("informe --username.")
+            prompt = (
+                "Usuário do cliente já cadastrado no UOE:" if account_mode == _ACCOUNT_MODE_LOGIN
+                else "Defina o usuário do cliente no UOE:"
             )
-            if admin_password is None:
+            username = ask_text(prompt)
+            if username is None:
                 return
 
-        with widgets.spinner("Autenticando como superadmin..."):
-            try:
-                admin_token = uoe_client.login("root", admin_password)
-            except uoe_client.UOEError as e:
-                raise click.ClickException(f"falha no login do superadmin: {e}")
-
-        try:
-            with widgets.spinner(f"Registrando '{username}' no UOE..."):
-                uoe_client.register(admin_token, username, password, root_path)
-            widgets.success(f"usuário '{username}' registrado (root_path={root_path}).")
-        except uoe_client.UOEError as e:
-            logger.error(f"register de '{username}' falhou: {e}")
-            skip = interactive and ask_confirm(
-                f"Falha ao registrar (HTTP {e.status}): {e.body}\n"
-                "Isso pode ser porque o usuário já existe. Pular pro login e continuar?",
-                default=False,
+        # nunca deriva/hardcoda uma fórmula de senha -- repo é público, uma fórmula
+        # fixa no fonte revelaria como adivinhar a senha de qualquer cliente sabendo
+        # só o username (ver ADR 0001). o técnico sempre digita a senha de verdade.
+        password = _read_secret_file(opts["password_file"])
+        if password is None:
+            if not interactive:
+                raise click.ClickException("informe --password-file (senha do cliente a ser criado).")
+            prompt = (
+                f"Senha do usuário '{username}' no UOE:" if account_mode == _ACCOUNT_MODE_LOGIN
+                else f"Defina a senha do usuário '{username}' no UOE:"
             )
-            if not skip:
-                raise click.ClickException(f"falha ao registrar '{username}' no UOE: {e}")
+            password = ask_password(prompt)
+            if password is None:
+                return
 
-    with widgets.spinner(f"Autenticando '{username}'..."):
-        try:
-            token = uoe_client.login(username, password)
-        except uoe_client.UOEError as e:
-            raise click.ClickException(f"falha no login de '{username}': {e}")
-    widgets.success("token obtido.")
+        if account_mode == _ACCOUNT_MODE_REGISTER:
+            # senha de root só é necessária pra registrar um usuário novo -- quem
+            # já existe não precisa que o técnico saiba/digite a senha do superadmin.
+            admin_password = _read_secret_file(opts["admin_password_file"])
+            if admin_password is None:
+                if not interactive:
+                    raise click.ClickException("informe --admin-password-file.")
+                admin_password = ask_password(
+                    "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
+                )
+                if admin_password is None:
+                    return
+
+            with widgets.spinner("Autenticando como superadmin..."):
+                try:
+                    admin_token = uoe_client.login("root", admin_password)
+                except uoe_client.UOEError as e:
+                    raise click.ClickException(f"falha no login do superadmin: {e}")
+
+            try:
+                with widgets.spinner(f"Registrando '{username}' no UOE..."):
+                    uoe_client.register(admin_token, username, password, root_path)
+                widgets.success(f"usuário '{username}' registrado (root_path={root_path}).")
+            except uoe_client.UOEError as e:
+                logger.error(f"register de '{username}' falhou: {e}")
+                skip = interactive and ask_confirm(
+                    f"Falha ao registrar (HTTP {e.status}): {e.body}\n"
+                    "Isso pode ser porque o usuário já existe. Pular pro login e continuar?",
+                    default=False,
+                )
+                if not skip:
+                    raise click.ClickException(f"falha ao registrar '{username}' no UOE: {e}")
+
+        with widgets.spinner(f"Autenticando '{username}'..."):
+            try:
+                token = uoe_client.login(username, password)
+            except uoe_client.UOEError as e:
+                raise click.ClickException(f"falha no login de '{username}': {e}")
+        widgets.success("token obtido.")
 
     script, custom_command, issabel_recordings = _resolve_script(
         opts["script"], opts["custom_command"], opts["issabel_recordings"], interactive,
@@ -320,7 +342,7 @@ def _run_relogin(logger, password_file, interactive):
     if saved is None:
         raise click.ClickException("nada configurado ainda -- rode `pvx autobackup setup` primeiro.")
 
-    password = _read_password_file(password_file)
+    password = _read_secret_file(password_file)
     if password is None:
         if not interactive:
             raise click.ClickException("informe --password-file.")
@@ -372,7 +394,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
     if saved and (delete_remote_user or (interactive and ask_confirm(
         "Também apagar o usuário no UOE (ação remota, mais destrutiva)?", default=False,
     ))):
-        admin_password = _read_password_file(admin_password_file)
+        admin_password = _read_secret_file(admin_password_file)
         if admin_password is None:
             admin_password = ask_password(
                 "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
@@ -398,7 +420,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.11"
+    version = "0.1.12"
 
     def cli_group(self):
         @click.group(name="autobackup")
@@ -413,7 +435,12 @@ class AutobackupModule(PvxModule):
         @click.option("--username", default=None)
         @click.option("--password-file", default=None, help="arquivo com a senha a definir pro cliente (sem terminal pra digitar).")
         @click.option("--admin-password-file", default=None, help="arquivo com a senha do root/superadmin do UOE.")
-        @click.option("--skip-register", is_flag=True, help="pula o registro, só loga (cliente já existe).")
+        @click.option(
+            "--account-mode", type=click.Choice(["register", "login", "token"]), default=None,
+            help="register cria o usuário, login usa um usuário já existente, "
+                 "token usa um token já autenticado (nenhum dos dois, sem senha nenhuma).",
+        )
+        @click.option("--token-file", default=None, help="arquivo com um token já autenticado (--account-mode token).")
         @click.option("--script", type=click.Choice(backup_scripts.SCRIPTS), default=None)
         @click.option(
             "--issabel-recordings/--issabel-config-only", default=None,
