@@ -294,6 +294,62 @@ class SetPasswordsTest(unittest.TestCase):
         mock_fop2.assert_not_called()
 
 
+class SetPhpTimezoneTest(unittest.TestCase):
+    # achado ao vivo: set_timezone só ajustava o relógio do SO -- o PHP tem seu
+    # próprio date.timezone no php.ini, independente disso, e ficava sempre em UTC.
+    def test_uncomments_and_sets_when_directive_is_commented_out(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".ini") as f:
+            f.write("[Date]\n;date.timezone =\n")
+            path = f.name
+        install_steps._set_php_timezone("America/Sao_Paulo", path)
+        content = Path(path).read_text()
+        self.assertIn("date.timezone = America/Sao_Paulo", content)
+        self.assertNotIn(";date.timezone", content)
+
+    def test_replaces_an_already_active_directive(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".ini") as f:
+            f.write("date.timezone = UTC\n")
+            path = f.name
+        install_steps._set_php_timezone("America/Sao_Paulo", path)
+        content = Path(path).read_text()
+        self.assertIn("date.timezone = America/Sao_Paulo", content)
+        self.assertNotIn("UTC", content)
+
+    def test_appends_when_directive_is_entirely_absent(self):
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".ini") as f:
+            f.write("[Date]\n")
+            path = f.name
+        install_steps._set_php_timezone("America/Sao_Paulo", path)
+        content = Path(path).read_text()
+        self.assertIn("date.timezone = America/Sao_Paulo", content)
+
+    def test_safe_when_file_is_missing(self):
+        install_steps._set_php_timezone("America/Sao_Paulo", "/nonexistent/php.ini")  # não deve levantar
+
+
+class SetTimezoneTest(unittest.TestCase):
+    @patch("install_steps._set_php_timezone")
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    def test_sets_the_system_timezone_and_the_php_timezone(self, mock_run_cmd, mock_php_tz):
+        install_steps.set_timezone("America/Sao_Paulo")
+        mock_run_cmd.assert_any_call(["timedatectl", "set-timezone", "America/Sao_Paulo"])
+        mock_php_tz.assert_called_once_with("America/Sao_Paulo")
+
+    @patch("install_steps._set_php_timezone")
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    def test_reloads_httpd_so_php_picks_up_the_change_without_a_reboot(self, mock_run_cmd, mock_php_tz):
+        install_steps.set_timezone("America/Sao_Paulo")
+        mock_run_cmd.assert_any_call(["systemctl", "reload", "httpd"])
+
+    @patch("install_steps._set_php_timezone")
+    @patch("install_steps.os_ops.run_cmd", return_value=False)
+    def test_falls_back_to_symlink_when_timedatectl_is_absent(self, mock_run_cmd, mock_php_tz):
+        install_steps.set_timezone("America/Sao_Paulo")
+        mock_run_cmd.assert_any_call(
+            ["ln", "-sf", "/usr/share/zoneinfo/America/Sao_Paulo", "/etc/localtime"]
+        )
+
+
 class SyncFop2SecretTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     @patch("install_steps.os.access", return_value=True)

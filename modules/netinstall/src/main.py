@@ -12,6 +12,7 @@ import defaults
 import install_steps
 import os_ops
 import preflight
+import tmux_ops
 
 
 def _is_interactive():
@@ -227,7 +228,7 @@ def _run_issabel5(logger, flags, interactive):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.19"
+    version = "0.1.21"
 
     def cli_group(self):
         @click.group(name="netinstall")
@@ -250,8 +251,12 @@ class NetinstallModule(PvxModule):
         @click.option("--yes", is_flag=True)
         @click.option("--reboot/--no-reboot", default=True)
         def issabel5_cmd(**flags):
-            logger = self.get_logger()
             interactive = _is_interactive()
+            if interactive and not tmux_ops.is_active():
+                tmux_ops.ensure_installed()
+                tmux_ops.relaunch_inside()  # nunca retorna se der certo
+
+            logger = self.get_logger()
             try:
                 _run_issabel5(logger, flags, interactive)
             except click.ClickException:

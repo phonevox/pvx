@@ -133,10 +133,31 @@ def install_db():
         raise RuntimeError("install_amp --installdb falhou -- schema do banco não foi criado.")
 
 
+def _set_php_timezone(tz, path="/etc/php.ini"):
+    # achado ao vivo: date.timezone é do PHP, independente do relógio/timezone do SO --
+    # sem isso ficava sempre em UTC (ou o default de build do php.ini), mesmo com o
+    # timedatectl já certo.
+    try:
+        content = open(path).read()
+    except OSError:
+        return
+    line = f"date.timezone = {tz}"
+    if re.search(r"^;?\s*date\.timezone\s*=.*$", content, flags=re.MULTILINE):
+        new_content = re.sub(r"^;?\s*date\.timezone\s*=.*$", line, content, count=1, flags=re.MULTILINE)
+    else:
+        new_content = content.rstrip("\n") + f"\n{line}\n"
+    if new_content != content:
+        open(path, "w").write(new_content)
+
+
 def set_timezone(tz):
     if not os_ops.run_cmd(["timedatectl", "set-timezone", tz]):
         os_ops.run_cmd(["ln", "-sf", f"/usr/share/zoneinfo/{tz}", "/etc/localtime"])
     os_ops.run_cmd(["hwclock", "--hctosys"])
+    _set_php_timezone(tz)
+    # sem isso, o php-fpm/mod_php já carregado continua com o date.timezone antigo até
+    # o reboot do fim da instalação -- só importa se rodar com --no-reboot.
+    os_ops.run_cmd(["systemctl", "reload", "httpd"])
 
 
 def install_control_panel(pyz_path):

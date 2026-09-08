@@ -27,6 +27,7 @@ class MainTestCase(unittest.TestCase):
             else patch("main.preflight.check", return_value=preflight_result)
         )
         with preflight_patch, \
+             patch("main.tmux_ops.is_active", return_value=True), \
              patch("main.preflight.version_major", return_value=9), \
              patch("main.install_steps.add_repos", side_effect=step_side_effects.get("add_repos")), \
              patch("main.install_steps.prepare_system", side_effect=step_side_effects.get("prepare_system")), \
@@ -44,6 +45,50 @@ class MainTestCase(unittest.TestCase):
                 "reboot": mock_reboot, "control_panel": mock_control_panel,
                 "creds": mock_creds, "install_packages": mock_install_packages,
             }
+
+
+class TmuxRelaunchTest(MainTestCase):
+    # achado ao vivo: instalação de 20+min cortada no meio por queda de SSH -- rodar
+    # dentro de uma sessão tmux sobrevive a isso. Só relança quando é interativo de
+    # verdade (sem sentido embrulhar uma invocação por script/cron) e quando ainda
+    # não está dentro de uma sessão tmux (evita recursão infinita).
+    def _invoke_with_tmux(self, args, is_active, is_tty):
+        with patch("main._is_interactive", return_value=is_tty), \
+             patch("main.tmux_ops.is_active", return_value=is_active), \
+             patch("main.tmux_ops.ensure_installed") as mock_ensure, \
+             patch("main.tmux_ops.relaunch_inside") as mock_relaunch, \
+             patch("main.preflight.check", return_value=([], [])), \
+             patch("main.preflight.version_major", return_value=9), \
+             patch("main.install_steps.add_repos"), \
+             patch("main.install_steps.prepare_system"), \
+             patch("main.install_steps.enable_php_remi"), \
+             patch("main.install_steps.install_packages"), \
+             patch("main.install_steps.post_install"), \
+             patch("main.install_steps.install_db"), \
+             patch("main.install_steps.install_control_panel"), \
+             patch("main.install_steps.set_timezone"), \
+             patch("main.install_steps.set_passwords"), \
+             patch("main.credentials.save_credentials", return_value="/tmp/creds.txt"), \
+             patch("main.os_ops.run_cmd"):
+            CliRunner().invoke(cli.cli_group(), args)
+            return mock_ensure, mock_relaunch
+
+    def test_relaunches_inside_tmux_when_interactive_and_not_already_inside(self):
+        mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=False, is_tty=True)
+        mock_ensure.assert_called_once()
+        mock_relaunch.assert_called_once()
+
+    def test_does_not_relaunch_when_already_inside_tmux(self):
+        mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=True, is_tty=True)
+        mock_ensure.assert_not_called()
+        mock_relaunch.assert_not_called()
+
+    def test_does_not_relaunch_when_not_interactive(self):
+        # instalação por script/cron não tem terminal pra tmux tomar conta --
+        # embrulhar isso não faz sentido nenhum.
+        mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=False, is_tty=False)
+        mock_ensure.assert_not_called()
+        mock_relaunch.assert_not_called()
 
 
 class PreflightTest(MainTestCase):
