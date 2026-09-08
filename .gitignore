@@ -19,3 +19,4 @@ modules/magnus/dist/
 scripts/_*
 modules/autobloqueador/dist/
 modules/motd/dist/
+modules/ssl/dist/

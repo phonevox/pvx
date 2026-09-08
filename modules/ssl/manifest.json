@@ -1,0 +1,10 @@
+{
+  "name": "ssl",
+  "version": "0.1.1",
+  "entrypoint": "main:cli",
+  "description": "Emite, renova e monitora certificados Let's Encrypt (Apache) em Issabel/MagnusBilling.",
+  "author": "pvx",
+  "min_pvx_version": "0.2.0",
+  "checksum_sha256": "",
+  "dependencies": []
+}
