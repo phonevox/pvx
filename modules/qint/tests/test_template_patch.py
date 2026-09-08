@@ -15,18 +15,20 @@ class PatchTest(unittest.TestCase):
         )
         self.assertEqual(result, "url=https://erp.example.com\ntoken=abc123\n")
 
-    def test_raises_when_placeholder_missing(self):
-        with self.assertRaises(ValueError):
-            patch("url=fixo\n", {"{{URL}}": "https://erp.example.com"})
+    def test_ignores_a_placeholder_absent_from_the_template(self):
+        # achado ao vivo, conferido contra o instalador bash original: cada substituição
+        # lá é um "sed -i 's|X|Y|'" -- se X não existe no arquivo, sed não erra, só não
+        # muda nada. Templates reais legitimamente não têm todo placeholder previsto
+        # (ex.: sgp não tem a variante sem sufixo de "ocorrencia_comercial").
+        result = patch("token=fixo\n", {"{{TOKEN}}": "abc123"})
+        self.assertEqual(result, "token=fixo\n")
 
-    def test_does_not_apply_any_substitution_when_one_placeholder_is_missing(self):
-        text = "url={{URL}}\ntoken=fixo\n"
-        with self.assertRaises(ValueError):
-            patch(text, {"{{URL}}": "https://erp.example.com", "{{TOKEN}}": "abc123"})
-
-    def test_error_message_lists_the_missing_placeholder(self):
-        with self.assertRaisesRegex(ValueError, r"\{\{TOKEN\}\}"):
-            patch("token=fixo\n", {"{{TOKEN}}": "abc123"})
+    def test_applies_the_replacements_that_do_match_even_when_others_dont(self):
+        result = patch(
+            "url={{URL}}\ntoken=fixo\n",
+            {"{{URL}}": "https://erp.example.com", "{{TOKEN}}": "abc123"},
+        )
+        self.assertEqual(result, "url=https://erp.example.com\ntoken=fixo\n")
 
 
 if __name__ == "__main__":

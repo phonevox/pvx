@@ -66,7 +66,14 @@ def build_php_replacements(config):
         placeholders_.update(PHP_SGP_EXTRA)
 
     values = {**config, **_split_erp_url(config["erp_url"])}
-    return {placeholder: str(values[key]) for placeholder, key in placeholders_.items()}
+    # achado ao vivo, conferido contra o instalador bash original (sed 's|$var = ""|$var
+    # = "valor"|'): a substituição precisa manter o nome da variável, só preenchendo a
+    # aspas -- devolver só o valor bruto (ex.: "187.77.247.148") apagava a declaração
+    # "$server_local = " inteira, deixando a variável indefinida pro resto do script.
+    return {
+        placeholder: f"{placeholder.split(' = ', 1)[0]} = '{values[key]}'"
+        for placeholder, key in placeholders_.items()
+    }
 
 
 def build_macro_replacements(config):

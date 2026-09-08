@@ -37,21 +37,24 @@ _BASE_CONFIG = {
 
 
 class BuildPhpReplacementsTest(unittest.TestCase):
+    # achado ao vivo, conferido contra o instalador bash original (sed 's|$var = ""|$var
+    # = "valor"|'): a substituição preserva a declaração da variável, só preenche a
+    # aspas -- devolver só o valor bruto apagava "$var = " inteiro do arquivo real.
     def test_maps_asterisk_ip_and_token_directly(self):
         result = placeholders.build_php_replacements({**_BASE_CONFIG, "type": "ixcsoft"})
-        self.assertEqual(result["$server_local = ''"], "10.0.0.1")
-        self.assertEqual(result["$token = ''"], "abc123")
+        self.assertEqual(result["$server_local = ''"], "$server_local = '10.0.0.1'")
+        self.assertEqual(result["$token = ''"], "$token = 'abc123'")
 
     def test_derives_scheme_host_and_port_from_erp_url(self):
         result = placeholders.build_php_replacements({**_BASE_CONFIG, "type": "ixcsoft"})
-        self.assertEqual(result["$protocol_web = ''"], "https")
-        self.assertEqual(result["$servidor_web = ''"], "erp.example.com")
-        self.assertEqual(result["$porta_web = ''"], "8080")
+        self.assertEqual(result["$protocol_web = ''"], "$protocol_web = 'https'")
+        self.assertEqual(result["$servidor_web = ''"], "$servidor_web = 'erp.example.com'")
+        self.assertEqual(result["$porta_web = ''"], "$porta_web = '8080'")
 
     def test_erp_url_without_explicit_port_yields_empty_port(self):
         config = {**_BASE_CONFIG, "type": "ixcsoft", "erp_url": "https://erp.example.com"}
         result = placeholders.build_php_replacements(config)
-        self.assertEqual(result["$porta_web = ''"], "")
+        self.assertEqual(result["$porta_web = ''"], "$porta_web = ''")
 
     def test_ixcsoft_does_not_include_app_placeholder(self):
         result = placeholders.build_php_replacements({**_BASE_CONFIG, "type": "ixcsoft"})
@@ -59,7 +62,7 @@ class BuildPhpReplacementsTest(unittest.TestCase):
 
     def test_sgp_includes_app_placeholder(self):
         result = placeholders.build_php_replacements({**_BASE_CONFIG, "type": "sgp", "app": "meuapp"})
-        self.assertEqual(result["$app = ''"], "meuapp")
+        self.assertEqual(result["$app = ''"], "$app = 'meuapp'")
 
 
 class BuildMacroReplacementsTest(unittest.TestCase):

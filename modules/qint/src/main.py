@@ -208,7 +208,7 @@ def _run_apply(logger, yes, skip_asterisk_check):
         click.echo("Operação cancelada.")
         return
 
-    for category in deploy.compute_conflicts(defaults.DESTINATION_BASE_DIRS):
+    for category in deploy.compute_conflicts(defaults.DESTINATION_BASE_DIRS, tipo):
         if not (yes or ask_confirm(f"O destino de '{category}' já existe. Sobrescrever?", default=False)):
             click.echo("Operação abortada -- nada foi alterado.")
             return
@@ -242,15 +242,24 @@ def _run_apply(logger, yes, skip_asterisk_check):
     widgets.success(outcome)
     logger.info(f"qint apply ({tipo}): {outcome}")
 
-    click.echo("Crie manualmente no Issabel as seguintes destinations:")
+    # cada bloco fica em linhas separadas (igual ao instalador bash original) --
+    # "name,context,1" sozinho na linha dá pra selecionar e colar direto no campo
+    # "Goto" do custom destination do Issabel, sem catar o resto do texto junto.
+    click.echo()
+    click.echo("Crie as seguintes custom destinations no Issabel:")
+    click.echo()
     for name, context, label in destinations.destination_specs(tipo):
-        click.echo(f"  {name} ({context}): {label}")
-    click.echo(f"Aponte a URA de saída pra Time Condition ID {staged['id_timecondition_exitpoint']}.")
+        click.echo(f"{name},{context},1")
+        click.echo(label)
+        click.echo()
+    click.echo(
+        f'Aponte a URA de saída pra Time Condition ID "{staged["id_timecondition_exitpoint"]}".'
+    )
 
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.10"
+    version = "0.1.13"
 
     def cli_group(self):
         @click.group(name="qint")
