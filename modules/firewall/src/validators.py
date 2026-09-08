@@ -31,3 +31,13 @@ def validate_cidr(value):
     except ValueError:
         return False
     return network.version == 4
+
+
+def parse_cidr_list(value):
+    # achado ao vivo: técnico mandou vários CIDRs numa tacada só ("1.1.1.1/32,2.2.2.2/8"),
+    # e cada um sozinho é válido -- só faltava aceitar mais de um por vez.
+    entries = [part.strip() for part in value.split(",") if part.strip()]
+    invalid = [entry for entry in entries if not validate_cidr(entry)]
+    if invalid:
+        raise ValueError(f"CIDR inválido: {', '.join(invalid)}")
+    return entries

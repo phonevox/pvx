@@ -14,6 +14,7 @@ def get_status(engine=None, base_dir=None):
     engine_name = sync.resolve_engine(engine)
     ip = session_ip.detect_session_ip()
 
+    firewalld_zone = None
     if engine_name == "iptables":
         rule_count = iptables_engine.count_input_rules()
         failsafe_ok = ip is not None and iptables_engine.failsafe_present(ip)
@@ -21,8 +22,12 @@ def get_status(engine=None, base_dir=None):
         # carregada no kernel agora", o mesmo sinal que synced.
         engine_active = rule_count > 0
     else:
-        rule_count = firewalld_engine.count_rich_rules(defaults.FIREWALLD_ZONE)
-        failsafe_ok = ip is not None and firewalld_engine.failsafe_present(defaults.FIREWALLD_ZONE, ip)
+        # mesma zona que sync.run() de fato usaria -- sem isso, `check` lia sempre a
+        # zona própria (pvxfw) mesmo numa central onde ela é inerte (ver
+        # resolve_firewalld_zone/MagnusBilling), reportando "sincronizado" à toa.
+        firewalld_zone, _ = sync.resolve_firewalld_zone()
+        rule_count = firewalld_engine.count_rich_rules(firewalld_zone)
+        failsafe_ok = ip is not None and firewalld_engine.failsafe_present(firewalld_zone, ip)
         # sinal independente de synced: o daemon pode estar parado mesmo com
         # regras configuradas (nada sendo de fato aplicado nesse caso).
         engine_active = engine_detect.service_is_active("firewalld")
@@ -54,4 +59,5 @@ def get_status(engine=None, base_dir=None):
         "synced": rule_count > 0,
         "failsafe_ok": failsafe_ok,
         "lists": lists_data,
+        "firewalld_zone": firewalld_zone,
     }

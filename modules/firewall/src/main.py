@@ -59,7 +59,7 @@ def _echo_list(title, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.5"
+    version = "0.2.10"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -138,46 +138,65 @@ class FirewallModule(PvxModule):
         def ip_group():
             pass
 
-        @ip_group.command(name="accept", help="adiciona um IP/CIDR à lista de confiáveis.")
+        @ip_group.command(
+            name="accept", help="adiciona um ou mais IP/CIDR (separados por vírgula) à lista de confiáveis.",
+        )
         @click.argument("cidr", required=False, default=None)
         @click.option("--comment", default="")
         def ip_accept_cmd(cidr, comment):
             _require_root()
             cidr = _resolve_arg(
-                cidr, "IP/CIDR (ex.: 203.0.113.9, 10.0.0.0/8):",
-                "informe o CIDR: `pvx firewall ip accept <cidr> [--comment]`.",
+                cidr, "IP/CIDR (ex.: 203.0.113.9, 10.0.0.0/8 -- vários separados por vírgula):",
+                "informe o CIDR: `pvx firewall ip accept <cidr>[,<cidr>...] [--comment]`.",
             )
             if cidr is None:
                 return
-            if not validators.validate_cidr(cidr):
-                raise click.ClickException(f"CIDR inválido: {cidr}")
-            lists.add_entry(_list_path("ip_accept"), cidr, comment)
-            click.echo(f"{cidr} adicionado à lista de confiáveis.")
+            try:
+                entries = validators.parse_cidr_list(cidr)
+            except ValueError as e:
+                raise click.ClickException(str(e))
+            for entry in entries:
+                added = lists.add_entry(_list_path("ip_accept"), entry, comment)
+                verb = "adicionado à" if added else "já estava na"
+                click.echo(f"{entry} {verb} lista de confiáveis.")
             if _is_interactive():
                 widgets.pause()
 
-        @ip_group.command(name="deny", help="adiciona um IP/CIDR à lista de bloqueio.")
+        @ip_group.command(
+            name="deny", help="adiciona um ou mais IP/CIDR (separados por vírgula) à lista de bloqueio.",
+        )
         @click.argument("cidr", required=False, default=None)
         @click.option("--comment", default="")
         @click.option("--force", is_flag=True, help="ignora a checagem de auto-bloqueio")
         def ip_deny_cmd(cidr, comment, force):
             _require_root()
             cidr = _resolve_arg(
-                cidr, "IP/CIDR (ex.: 203.0.113.9, 10.0.0.0/8):",
-                "informe o CIDR: `pvx firewall ip deny <cidr> [--comment] [--force]`.",
+                cidr, "IP/CIDR (ex.: 203.0.113.9, 10.0.0.0/8 -- vários separados por vírgula):",
+                "informe o CIDR: `pvx firewall ip deny <cidr>[,<cidr>...] [--comment] [--force]`.",
             )
             if cidr is None:
                 return
-            if not validators.validate_cidr(cidr):
-                raise click.ClickException(f"CIDR inválido: {cidr}")
+            try:
+                entries = validators.parse_cidr_list(cidr)
+            except ValueError as e:
+                raise click.ClickException(str(e))
             if not force:
                 session = session_ip.detect_session_ip()
-                if session and ipaddress.ip_address(session) in ipaddress.ip_network(cidr, strict=False):
-                    raise click.ClickException(
-                        f"{cidr} inclui o IP da sua sessão atual ({session}) -- use --force se tiver certeza."
-                    )
-            lists.add_entry(_list_path("ip_deny"), cidr, comment)
-            click.echo(f"{cidr} adicionado à lista de bloqueio.")
+                if session:
+                    session_addr = ipaddress.ip_address(session)
+                    self_banning = [
+                        entry for entry in entries
+                        if session_addr in ipaddress.ip_network(entry, strict=False)
+                    ]
+                    if self_banning:
+                        raise click.ClickException(
+                            f"{', '.join(self_banning)} inclui o IP da sua sessão atual ({session}) -- "
+                            "use --force se tiver certeza."
+                        )
+            for entry in entries:
+                added = lists.add_entry(_list_path("ip_deny"), entry, comment)
+                verb = "adicionado à" if added else "já estava na"
+                click.echo(f"{entry} {verb} lista de bloqueio.")
             if _is_interactive():
                 widgets.pause()
 
@@ -212,6 +231,8 @@ class FirewallModule(PvxModule):
             engine_state = "ativo" if result["engine_active"] else "inativo"
             boot_state = "habilitado" if result["boot_persistent"] else "desabilitado"
             click.echo(f"engine: {result['engine']} ({engine_state})")
+            if result.get("firewalld_zone"):
+                click.echo(f"zona firewalld: {result['firewalld_zone']}")
             click.echo(f"reaplica no boot: {boot_state}")
             click.echo(f"IP da sessão: {result['session_ip'] or 'não detectado'}")
             click.echo()
