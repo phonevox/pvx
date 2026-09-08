@@ -177,6 +177,19 @@ class BuildBannerTest(unittest.TestCase):
         self.assertIn("Rocky Linux 8.10", text)
         self.assertIn("America/Sao_Paulo", text)
 
+    def test_shows_a_web_url_line_alongside_the_plain_ips(self):
+        # pedido ao vivo: facilita acesso web -- nunca prefixa o IP em si (linha
+        # "IPs" continua igual, útil pra SSH/outros usos), só soma uma linha nova.
+        text = self._rendered_text(self.BASE_DATA)
+        self.assertIn("51.79.70.39", text)
+        self.assertIn("https://51.79.70.39", text)
+
+    def test_web_url_line_lists_every_ip(self):
+        data = {**self.BASE_DATA, "ips": ["51.79.70.39", "10.0.0.5"]}
+        text = self._rendered_text(data)
+        self.assertIn("https://51.79.70.39", text)
+        self.assertIn("https://10.0.0.5", text)
+
     def test_includes_the_phonevox_header(self):
         text = self._rendered_text(self.BASE_DATA)
         self.assertIn("PHONEVOX GROUP TECHNOLOGY", text)

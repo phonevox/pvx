@@ -119,6 +119,10 @@ def _system_panel(data):
         ("Host", f"{data['hostname']} | {data['open_sessions']} session(s)"),
         ("OS", f"{data['os_pretty_name']} | {data['machine_id']}"),
         ("IPs", ", ".join(data["ips"]) or "N/A"),
+        # linha extra, nunca prefixado no IP em si -- "IPs" acima continua
+        # igual, útil pra SSH/outros usos. Isso só facilita clicar/copiar a
+        # URL do painel web.
+        ("Painel web", ", ".join(f"https://{ip}" for ip in data["ips"]) or "N/A"),
     ]
     return _panel("system", _kv_table(rows))
 
