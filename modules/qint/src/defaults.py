@@ -30,12 +30,19 @@ REQUIRED_FIELDS = {
 
 # caminhos padrão de instalação Asterisk/Issabel -- confirmar contra um
 # Issabel real antes de qualquer deploy de produção, nunca validados aqui.
+# achado ao vivo: "audio" era /var/lib/asterisk/sounds/custom, mas o dialplan real
+# seta CHANNEL(language)=<tipo>/<genero>/<locutor> -- Asterisk resolve isso sempre
+# contra <astvarlibdir>/sounds/<language>/... (comportamento fixo do core, não
+# configurável), sem nenhum "/custom" no meio. Com o "/custom" a mais, os áudios
+# eram baixados mas nunca encontrados pelo Asterisk. Conferido contra a própria
+# convenção do script bash original (DIR_ASTERISK_SOUNDS + "/" + TIPO_INTEGRACAO,
+# um nível só, igual às outras 4 categorias).
 DESTINATION_BASE_DIRS = {
     "agi": "/var/lib/asterisk/agi-bin",
     "php": "/var/www/html",
     "dialplan": "/etc/asterisk",
     "moh": "/var/lib/asterisk/moh",
-    "audio": "/var/lib/asterisk/sounds/custom",
+    "audio": "/var/lib/asterisk/sounds",
 }
 
 
