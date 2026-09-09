@@ -29,7 +29,7 @@ def _is_interactive():
 
 class SSHHardeningModule(PvxModule):
     name = "ssh-hardening"
-    version = "0.2.4"
+    version = "0.2.5"
 
     def cli_group(self):
         @click.group(name="ssh-hardening")
@@ -202,18 +202,25 @@ class SSHHardeningModule(PvxModule):
 
         @group.command(name="check", help="mostra o que foi aplicado e se ainda está no lugar.")
         def check_cmd():
+            # achado ao vivo: "ainda não configurado" saía como widgets.state(ok=False)
+            # (vermelho, mesmo nível visual de erro de verdade) -- nada quebrou, só
+            # falta rodar o setup. check_result() (sucesso/aviso/erro) resolve isso,
+            # igual já corrigido em autobackup/ssl/firewall.
             is_tty = _is_interactive()
+            widgets.title("pvx > ssh-hardening > check")
+            widgets.section("Status")
+
             state_dir = str(config.modules_dir() / "ssh-hardening" / "state")
             record = apply_module.find_latest_record(state_dir)
 
             if record is None:
-                widgets.state("ssh-hardening NÃO configurado -- rode `pvx ssh-hardening setup` primeiro.", ok=False)
+                widgets.check_result("ssh-hardening não configurado -- rode `pvx ssh-hardening setup` primeiro.", "warn")
                 if is_tty:
                     widgets.pause()
                 return
 
             plan = record["plan"]
-            widgets.state("ssh-hardening configurado:", ok=True)
+            widgets.check_result("ssh-hardening configurado", "ok")
             if plan.get("lock_root"):
                 click.echo("  root: login via SSH bloqueado")
             if plan.get("create_user"):

@@ -117,6 +117,25 @@ class StatusTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, msg=result.output)
         self.assertIn("prepare", result.output.lower())
 
+    @patch("main.staged_config.load", return_value=None)
+    def test_shows_a_title_header(self, mock_load):
+        result = _invoke(["status"])
+        self.assertIn("pvx > qint > status", result.output)
+
+    @patch("main.widgets.check_result")
+    @patch("main.staged_config.load", return_value=None)
+    def test_nothing_staged_is_a_warning_not_an_error(self, mock_load, mock_check_result):
+        _invoke(["status"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
+    @patch("main.widgets.check_result")
+    @patch("main.staged_config.load", return_value={"type": "ixcsoft", "token": "x"})
+    def test_staged_config_is_a_success(self, mock_load, mock_check_result):
+        _invoke(["status"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "ok")
+
     @patch(
         "main.staged_config.load",
         return_value={"type": "ixcsoft", "token": "supersecreto", "asterisk_ip": "10.0.0.1"},

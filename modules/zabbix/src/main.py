@@ -56,7 +56,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.2.1"
+    version = "0.2.2"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -303,6 +303,13 @@ class ZabbixModule(PvxModule):
 
         @group.command(name="check", help="mostra config, status do serviço e scripts cadastrados.")
         def check_cmd():
+            # achado ao vivo: "não configurado"/"instalado mas não gerenciado" saíam
+            # como widgets.state(ok=False) -- vermelho, mesmo nível visual de erro de
+            # verdade. Nada quebrou nesses dois casos, é aviso -- check_result()
+            # resolve isso, igual já corrigido em autobackup/ssl/firewall/ssh-hardening.
+            widgets.title("pvx > zabbix > check")
+            widgets.section("Status")
+
             variant_path = _state_dir() / _AGENT_VARIANT_FILENAME
             legacy_sudo = sudoers.detect_legacy_rule()
             if not variant_path.exists():
@@ -310,17 +317,17 @@ class ZabbixModule(PvxModule):
                 # vindo do pzabbix (script bash antigo) ou de instalação manual.
                 existing_package = install_steps.detect_existing_agent(defaults.AGENT_PACKAGES.values())
                 if existing_package:
-                    widgets.state(
-                        f"Zabbix ({existing_package}) instalado mas NÃO gerenciado pelo pvx "
+                    widgets.check_result(
+                        f"Zabbix ({existing_package}) instalado mas não gerenciado pelo pvx "
                         "-- rode `pvx zabbix setup` pra assumir.",
-                        ok=False,
+                        "warn",
                     )
                 else:
-                    widgets.state("Zabbix NÃO configurado -- rode `pvx zabbix setup` primeiro.", ok=False)
+                    widgets.check_result("Zabbix não configurado -- rode `pvx zabbix setup` primeiro.", "warn")
                 if legacy_sudo:
-                    click.echo(
-                        "  aviso: regra sudoers antiga e insegura em /etc/sudoers "
-                        "(%zabbix ALL=(ALL) NOPASSWD: ALL)"
+                    widgets.check_result(
+                        "regra sudoers antiga e insegura em /etc/sudoers (%zabbix ALL=(ALL) NOPASSWD: ALL)",
+                        "warn",
                     )
                 if _is_interactive():
                     widgets.pause()
@@ -331,7 +338,7 @@ class ZabbixModule(PvxModule):
             params = config.read_params(defaults.AGENT_CONFIG_PATHS[agent_variant])
             status = install_steps.service_status(service)
 
-            widgets.state(f"Zabbix configurado ({defaults.AGENT_PACKAGES[agent_variant]})", ok=True)
+            widgets.check_result(f"Zabbix configurado ({defaults.AGENT_PACKAGES[agent_variant]})", "ok")
             click.echo(f"  Server: {params.get('Server', '-')}")
             click.echo(f"  ServerActive: {params.get('ServerActive', '-')}")
             click.echo(f"  Hostname: {params.get('Hostname', '-')}")
@@ -340,24 +347,24 @@ class ZabbixModule(PvxModule):
 
             active_ok = status["active"] == "active"
             enabled_ok = status["enabled"] == "enabled"
-            widgets.state(f"Serviço {service}: {'ativo' if active_ok else 'inativo'}", ok=active_ok)
-            widgets.state(f"Habilitado no boot: {'sim' if enabled_ok else 'não'}", ok=enabled_ok)
+            widgets.check_result(f"Serviço {service}: {'ativo' if active_ok else 'inativo'}", "ok" if active_ok else "error")
+            widgets.check_result(f"Habilitado no boot: {'sim' if enabled_ok else 'não'}", "ok" if enabled_ok else "warn")
             click.echo()
 
+            widgets.section("Scripts customizados")
             entries = scripts.list_all(str(_state_dir() / defaults.SCRIPTS_STATE_FILENAME))
             if not entries:
-                click.echo("Scripts customizados: nenhum cadastrado.")
+                widgets.description("nenhum cadastrado.")
             else:
-                click.echo(f"Scripts customizados ({len(entries)}):")
                 for key in sorted(entries):
                     suffix = " (root)" if entries[key].get("needs_root") else ""
-                    click.echo(f"  {key}: {entries[key]['command']}{suffix}")
+                    widgets.item(f"{key}: {entries[key]['command']}{suffix}")
 
             if legacy_sudo:
-                click.echo()
-                click.echo(
-                    "aviso: regra sudoers antiga e insegura ainda presente em /etc/sudoers "
-                    "(%zabbix ALL=(ALL) NOPASSWD: ALL) -- rode `pvx zabbix setup` de novo pra limpar."
+                widgets.check_result(
+                    "regra sudoers antiga e insegura ainda presente em /etc/sudoers "
+                    "(%zabbix ALL=(ALL) NOPASSWD: ALL) -- rode `pvx zabbix setup` de novo pra limpar.",
+                    "warn",
                 )
 
             if _is_interactive():
