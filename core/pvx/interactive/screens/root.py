@@ -3,7 +3,7 @@ import traceback
 import click
 import questionary
 
-from pvx import build_info, self_update
+from pvx import build_info, self_update, update_check
 from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
 from pvx.interactive.auto_menu import build_choices
@@ -64,6 +64,13 @@ class RootScreen:
     def render(self):
         widgets.banner()
         modules = discover_installed_modules()
+
+        # só no menu interativo -- CLI direta (scripting) nunca passa por
+        # RootScreen, então isso não atrapalha automação nenhuma. Cache
+        # próprio (ver update_check.py) evita bater no registry a cada
+        # redesenho do menu raiz.
+        for notice in update_check.pending_notices(modules):
+            widgets.warning(notice)
 
         def indented(value, description=None):
             return questionary.Choice(title=f"  {value}", value=value, description=description)

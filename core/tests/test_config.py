@@ -39,6 +39,7 @@ class ConfigPathsTest(unittest.TestCase):
         self.assertEqual(config.logs_dir(), base / "logs")
         self.assertEqual(config.registry_cache_path(), base / "registry.json")
         self.assertEqual(config.config_file_path(), base / "config.json")
+        self.assertEqual(config.update_check_cache_path(), base / "update_check.json")
 
     def test_registry_index_url_respects_env_override(self):
         os.environ["PVX_REGISTRY_URL"] = "https://example.com/index.json"

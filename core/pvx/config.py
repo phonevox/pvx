@@ -33,6 +33,10 @@ def registry_cache_path() -> Path:
     return pvx_home() / "registry.json"
 
 
+def update_check_cache_path() -> Path:
+    return pvx_home() / "update_check.json"
+
+
 def config_file_path() -> Path:
     return pvx_home() / "config.json"
 

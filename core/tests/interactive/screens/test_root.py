@@ -101,6 +101,14 @@ def _index_of_value(choices, value):
 
 
 class RootScreenTest(unittest.TestCase):
+    # sem isso, TODO teste bateria de verdade no registry/core-manifest via
+    # update_check.pending_notices() (rede real, lenta e não-determinística)
+    # -- default silencioso aqui, testes específicos abaixo sobrescrevem.
+    def setUp(self):
+        patcher = patch("pvx.interactive.screens.root.update_check.pending_notices", return_value=[])
+        self.mock_pending_notices = patcher.start()
+        self.addCleanup(patcher.stop)
+
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
     def test_selecting_sair_exits(self, mock_ask_select, mock_discover):
@@ -411,6 +419,45 @@ class RootScreenTest(unittest.TestCase):
         self.assertFalse(
             any(isinstance(c, questionary.Separator) and c.line == "Módulos" for c in choices)
         )
+
+
+class RootScreenUpdateNoticeTest(unittest.TestCase):
+    # aviso de atualização pendente (core e/ou módulo) -- só no menu
+    # interativo (aqui), nunca na CLI direta (nem passa por RootScreen).
+    @patch("pvx.interactive.screens.root.widgets.warning")
+    @patch(
+        "pvx.interactive.screens.root.update_check.pending_notices",
+        return_value=["core: atualização disponível (0.2.25 -> 0.2.26)"],
+    )
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
+    def test_shows_a_warning_per_pending_notice(
+        self, mock_ask_select, mock_discover, mock_notices, mock_warning
+    ):
+        RootScreen().render()
+        mock_warning.assert_called_once_with("core: atualização disponível (0.2.25 -> 0.2.26)")
+
+    @patch("pvx.interactive.screens.root.widgets.warning")
+    @patch("pvx.interactive.screens.root.update_check.pending_notices", return_value=[])
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
+    def test_no_warning_when_nothing_pending(self, mock_ask_select, mock_discover, mock_notices, mock_warning):
+        RootScreen().render()
+        mock_warning.assert_not_called()
+
+    @patch("pvx.interactive.screens.root.widgets.warning")
+    @patch(
+        "pvx.interactive.screens.root.update_check.pending_notices",
+        return_value=["core: atualização disponível (0.2.25 -> 0.2.26)", "firewall: atualização disponível (0.2.10 -> 0.2.11)"],
+    )
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={"firewall": object()})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
+    def test_passes_installed_modules_and_shows_every_notice(
+        self, mock_ask_select, mock_discover, mock_notices, mock_warning
+    ):
+        RootScreen().render()
+        mock_notices.assert_called_once_with(mock_discover.return_value)
+        self.assertEqual(mock_warning.call_count, 2)
 
 
 if __name__ == "__main__":
