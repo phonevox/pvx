@@ -59,18 +59,48 @@ class GetStatusTest(unittest.TestCase):
         self.assertFalse(result["synced"])
         self.assertFalse(result["failsafe_ok"])
 
+    @patch("status.sync.resolve_firewalld_zone", return_value=("pvxfw", True))
     @patch("status.firewalld_engine.failsafe_present", return_value=True)
     @patch("status.firewalld_engine.count_rich_rules", return_value=3)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="firewalld")
-    def test_dispatches_to_firewalld(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_dispatches_to_firewalld(self, mock_resolve, mock_ip, mock_count, mock_failsafe, mock_zone):
         result = status.get_status(engine=None)
         self.assertEqual(result["engine"], "firewalld")
         self.assertEqual(result["rule_count"], 3)
         self.assertTrue(result["synced"])
         self.assertTrue(result["failsafe_ok"])
+        self.assertEqual(result["firewalld_zone"], "pvxfw")
         mock_count.assert_called_once_with("pvxfw")
         mock_failsafe.assert_called_once_with("pvxfw", "203.0.113.9")
+
+    # achado ao vivo: numa central MagnusBilling, `check` lia sempre a zona "pvxfw"
+    # (100% inerte lá) e reportava "sincronizado" mesmo sem nenhum pacote de verdade
+    # passando por ali -- agora lê a zona que sync.run() de fato usaria.
+    @patch("status.sync.resolve_firewalld_zone", return_value=("public", False))
+    @patch("status.firewalld_engine.failsafe_present", return_value=True)
+    @patch("status.firewalld_engine.count_rich_rules", return_value=5)
+    @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
+    @patch("status.sync.resolve_engine", return_value="firewalld")
+    def test_reads_the_magnus_public_zone_instead_of_the_inert_own_zone(
+        self, mock_resolve, mock_ip, mock_count, mock_failsafe, mock_zone
+    ):
+        result = status.get_status(engine=None)
+        self.assertEqual(result["firewalld_zone"], "public")
+        mock_count.assert_called_once_with("public")
+        mock_failsafe.assert_called_once_with("public", "203.0.113.9")
+
+    @patch("status.sync.resolve_firewalld_zone", return_value=("pvxfw", True))
+    @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_input_rules", return_value=7)
+    @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
+    @patch("status.sync.resolve_engine", return_value="iptables")
+    def test_firewalld_zone_is_none_for_the_iptables_engine(
+        self, mock_resolve, mock_ip, mock_count, mock_failsafe, mock_zone
+    ):
+        result = status.get_status(engine=None)
+        self.assertIsNone(result["firewalld_zone"])
+        mock_zone.assert_not_called()
 
     @patch("status.iptables_engine.failsafe_present", return_value=True)
     @patch("status.iptables_engine.count_input_rules", return_value=7)

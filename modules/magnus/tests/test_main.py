@@ -119,6 +119,91 @@ class BackupExportCommandTest(unittest.TestCase):
         mock_pause.assert_not_called()
 
 
+class BackupExportComponentModeTest(unittest.TestCase):
+    # pedido ao vivo: nada de --split ambíguo -- a presença de qualquer uma
+    # dessas 3 flags liga o modo "arquivos separados"; nenhuma delas dada
+    # mantém o comportamento de sempre (-o, um arquivo bundlado).
+    BASE = ["backup", "export", "--db-user", "root", "--db-password-file", PASSWORD_FILE]
+
+    def _invoke(self, extra_args, config_kwargs=None, sf_kwargs=None, rec_kwargs=None):
+        config_kwargs = config_kwargs or {"return_value": "/out/backup_voip_softswitch.02-09-2026.tgz"}
+        sf_kwargs = sf_kwargs or {"return_value": ("/out/soundfiles.02-09-2026.tgz", [])}
+        rec_kwargs = rec_kwargs or {"return_value": ("/out/recordings.02-09-2026.tgz", [])}
+        with patch("main._is_interactive", return_value=False), \
+             patch("main.MagnusModule.get_logger"), \
+             patch("main.magnus_ops.export_configuration", **config_kwargs) as mock_config, \
+             patch("main.magnus_ops.export_soundfiles", **sf_kwargs) as mock_sf, \
+             patch("main.magnus_ops.export_recordings", **rec_kwargs) as mock_rec:
+            result = CliRunner().invoke(cli.cli_group(), self.BASE + extra_args)
+            return result, {"configuration": mock_config, "soundfiles": mock_sf, "recordings": mock_rec}
+
+    def test_no_component_flag_never_touches_the_component_functions(self):
+        with patch("main.magnus_ops.export_backup", return_value=("/tmp/out.tgz", [])):
+            result, mocks = self._invoke([])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["configuration"].assert_not_called()
+        mocks["soundfiles"].assert_not_called()
+        mocks["recordings"].assert_not_called()
+
+    def test_configuration_flag_alone_exports_only_configuration(self):
+        result, mocks = self._invoke(["--configuration"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["configuration"].assert_called_once()
+        mocks["soundfiles"].assert_not_called()
+        mocks["recordings"].assert_not_called()
+
+    def test_recordings_flag_alone_exports_only_recordings(self):
+        result, mocks = self._invoke(["--recordings"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["recordings"].assert_called_once()
+        mocks["configuration"].assert_not_called()
+        mocks["soundfiles"].assert_not_called()
+
+    def test_all_three_flags_exports_all_three(self):
+        result, mocks = self._invoke(["--configuration", "--recordings", "--soundfiles"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["configuration"].assert_called_once()
+        mocks["soundfiles"].assert_called_once()
+        mocks["recordings"].assert_called_once()
+
+    def test_uses_the_conventional_filenames_inside_output_dir(self):
+        result, mocks = self._invoke(["--configuration", "--recordings", "--soundfiles", "--output-dir", "/out"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        config_path = mocks["configuration"].call_args.kwargs["output_path"]
+        rec_path = mocks["recordings"].call_args.kwargs["output_path"]
+        sf_path = mocks["soundfiles"].call_args.kwargs["output_path"]
+        self.assertTrue(config_path.startswith("/out/backup_voip_softswitch."))
+        self.assertTrue(rec_path.startswith("/out/recordings."))
+        self.assertTrue(sf_path.startswith("/out/soundfiles."))
+
+    def test_combining_output_and_a_component_flag_is_rejected(self):
+        result, mocks = self._invoke(["--configuration", "-o", "/tmp/x.tgz"])
+        self.assertNotEqual(result.exit_code, 0)
+        mocks["configuration"].assert_not_called()
+
+    def test_output_dir_without_any_component_flag_is_rejected(self):
+        with patch("main.magnus_ops.export_backup") as mock_backup:
+            result, mocks = self._invoke(["--output-dir", "/out"])
+        self.assertNotEqual(result.exit_code, 0)
+        mock_backup.assert_not_called()
+
+    def test_reports_a_warning_when_a_component_is_skipped(self):
+        result, mocks = self._invoke(
+            ["--soundfiles"],
+            sf_kwargs={"return_value": (None, ["diretório de soundfiles não encontrado em '/x' -- pulado."])},
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("soundfiles não encontrado", result.output)
+
+    def test_magnus_error_becomes_a_clean_click_exception(self):
+        result, mocks = self._invoke(
+            ["--configuration"], config_kwargs={"side_effect": magnus_ops.MagnusError("deu ruim")},
+        )
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("deu ruim", result.output)
+
+
 class BackupImportCommandTest(unittest.TestCase):
     def _invoke(self, args, is_tty=False, valid_archive=True, validation_errors=None, auto_detected=(None, None)):
         with patch("main._is_interactive", return_value=is_tty), \

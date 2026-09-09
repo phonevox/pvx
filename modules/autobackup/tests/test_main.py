@@ -4,12 +4,14 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+import issabel_upload_ops
+import magnus_upload_ops
 import pbackup_ops
 import uoe_client
-from main import _read_password_file, _resolve_schedule, _resolve_script, cli
+from main import _read_secret_file, _resolve_schedule, _resolve_script, cli
 
 # conteúdo nunca é checado de verdade (uoe_client.login/register são mockados em
-# todo teste) -- só precisa ser um arquivo real e legível pro _read_password_file.
+# todo teste) -- só precisa ser um arquivo real e legível pro _read_secret_file.
 _PW_FILE = tempfile.NamedTemporaryFile(mode="w", suffix=".pw", delete=False)
 _PW_FILE.write("rootpw")
 _PW_FILE.close()
@@ -38,12 +40,12 @@ BASE_SETUP_ARGS = [
 ]
 
 
-class ReadPasswordFileTest(unittest.TestCase):
+class ReadSecretFileTest(unittest.TestCase):
     def test_reads_and_strips_the_file_content(self):
-        self.assertEqual(_read_password_file(PASSWORD_FILE), "rootpw")
+        self.assertEqual(_read_secret_file(PASSWORD_FILE), "rootpw")
 
     def test_none_when_no_path_given(self):
-        self.assertIsNone(_read_password_file(None))
+        self.assertIsNone(_read_secret_file(None))
 
 
 class ResolveScriptTest(unittest.TestCase):
@@ -51,24 +53,24 @@ class ResolveScriptTest(unittest.TestCase):
     # (não mais "Issabel (config + gravações)"/"Comando customizado"), e
     # escolher IssabelPBX abre um submenu -- só config (padrão) ou +gravações.
     def test_headless_with_issabel_flag_defaults_to_config_only(self):
-        script, custom, recordings = _resolve_script("issabel", None, None, interactive=False)
+        script, custom, recordings, split = _resolve_script("issabel", None, None, None, interactive=False)
         self.assertEqual(script, "issabel")
         self.assertFalse(recordings)
 
     def test_headless_respects_explicit_recordings_flag(self):
-        script, custom, recordings = _resolve_script("issabel", None, True, interactive=False)
+        script, custom, recordings, split = _resolve_script("issabel", None, True, None, interactive=False)
         self.assertTrue(recordings)
 
     def test_magnus_never_asks_the_issabel_submenu(self):
         with patch("main.ask_select") as mock_select:
-            script, custom, recordings = _resolve_script("magnus", None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script("magnus", None, None, None, interactive=True)
         self.assertEqual(script, "magnus")
         self.assertIsNone(recordings)
         mock_select.assert_not_called()
 
     def test_interactive_offers_the_new_top_level_labels(self):
         with patch("main.ask_select", return_value=None) as mock_select:
-            _resolve_script(None, None, None, interactive=True)
+            _resolve_script(None, None, None, None, interactive=True)
         choices = mock_select.call_args.args[1]
         self.assertEqual(choices, ["IssabelPBX", "MagnusBilling", "Definir script..."])
 
@@ -77,7 +79,7 @@ class ResolveScriptTest(unittest.TestCase):
             "main.ask_select",
             side_effect=["IssabelPBX", "Somente configurações"],
         ) as mock_select:
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertEqual(script, "issabel")
         self.assertFalse(recordings)
         submenu_choices = mock_select.call_args_list[1].args[1]
@@ -88,12 +90,12 @@ class ResolveScriptTest(unittest.TestCase):
             "main.ask_select",
             side_effect=["IssabelPBX", "Configurações e gravações"],
         ):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertTrue(recordings)
 
     def test_escaping_the_issabel_submenu_aborts_cleanly(self):
         with patch("main.ask_select", side_effect=["IssabelPBX", None]):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertIsNone(script)
 
     def test_choosing_magnusbilling_opens_the_native_vs_pvx_submenu(self):
@@ -101,20 +103,56 @@ class ResolveScriptTest(unittest.TestCase):
             "main.ask_select",
             side_effect=["MagnusBilling", "magnus.sh"],
         ) as mock_select:
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertEqual(script, "magnus")
         submenu_call = mock_select.call_args_list[1]
         self.assertEqual(submenu_call.args[1], ["magnus.sh", "pvx magnus"])
         self.assertEqual(submenu_call.kwargs.get("default"), "pvx magnus")
 
     def test_choosing_pvx_magnus_in_the_submenu(self):
-        with patch("main.ask_select", side_effect=["MagnusBilling", "pvx magnus"]):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+        with patch("main.ask_select", side_effect=["MagnusBilling", "pvx magnus", "Arquivo único (config + sons)"]):
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertEqual(script, "magnus-pvx")
+        self.assertFalse(split)
 
     def test_escaping_the_magnusbilling_submenu_aborts_cleanly(self):
         with patch("main.ask_select", side_effect=["MagnusBilling", None]):
-            script, custom, recordings = _resolve_script(None, None, None, interactive=True)
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
+        self.assertIsNone(script)
+
+    # pedido ao vivo: bkp do magnus (pvx) em arquivos separados em vez de um
+    # único .tgz -- mesma ideia do submenu config-vs-recordings do issabel.
+    def test_magnus_pvx_opens_the_split_submenu(self):
+        with patch(
+            "main.ask_select",
+            side_effect=["MagnusBilling", "pvx magnus", "Arquivos separados (config, gravações e sons)"],
+        ) as mock_select:
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
+        self.assertEqual(script, "magnus-pvx")
+        self.assertTrue(split)
+        submenu_call = mock_select.call_args_list[2]
+        self.assertEqual(
+            submenu_call.args[1],
+            ["Arquivo único (config + sons)", "Arquivos separados (config, gravações e sons)"],
+        )
+
+    def test_magnus_native_never_asks_the_split_submenu(self):
+        with patch("main.ask_select", side_effect=["MagnusBilling", "magnus.sh"]) as mock_select:
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
+        self.assertEqual(script, "magnus")
+        self.assertEqual(mock_select.call_count, 2)
+
+    def test_headless_magnus_pvx_defaults_to_single_file(self):
+        script, custom, recordings, split = _resolve_script("magnus-pvx", None, None, None, interactive=False)
+        self.assertFalse(split)
+
+    def test_headless_respects_explicit_split_flag(self):
+        script, custom, recordings, split = _resolve_script("magnus-pvx", None, None, True, interactive=False)
+        self.assertTrue(split)
+
+    def test_escaping_the_split_submenu_aborts_cleanly(self):
+        with patch("main.ask_select", side_effect=["MagnusBilling", "pvx magnus", None]):
+            script, custom, recordings, split = _resolve_script(None, None, None, None, interactive=True)
         self.assertIsNone(script)
 
 
@@ -174,7 +212,7 @@ class SetupCommandTest(unittest.TestCase):
         cron_lines = mocks["write_crontab"].call_args.args[0]
         self.assertIn("# gerenciado pelo pvx autobackup", cron_lines[-2])
         self.assertIn("25 2 * * *", cron_lines[-1])
-        self.assertIn("issabel.sh", cron_lines[-1])
+        self.assertIn("issabel-upload", cron_lines[-1])
         self.assertIn("token-empresa", cron_lines[-1])
 
         saved = mocks["state_save"].call_args.args[1]
@@ -211,26 +249,28 @@ class SetupCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["state_save"].assert_called_once()
 
-    def test_skip_register_flag_never_calls_register(self):
-        result, mocks = self._invoke(BASE_SETUP_ARGS + ["--skip-register"])
+    def test_login_mode_never_calls_register(self):
+        result, mocks = self._invoke(BASE_SETUP_ARGS + ["--account-mode", "login"])
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["register"].assert_not_called()
 
-    def test_skip_register_flag_also_skips_the_admin_login(self):
+    def test_login_mode_also_skips_the_admin_login(self):
         # pedido ao vivo: pra um usuário que já existe, o técnico não devia
         # precisar da senha de root só pra logar -- ela só serve pro register.
-        args = _without_flag(BASE_SETUP_ARGS, "--admin-password-file") + ["--skip-register"]
+        args = _without_flag(BASE_SETUP_ARGS, "--admin-password-file") + ["--account-mode", "login"]
         result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["register"].assert_not_called()
         mocks["login"].assert_called_once_with("empresa", "rootpw")
 
-    def test_interactive_asks_create_vs_login_defaulting_to_create(self):
+    def test_interactive_asks_create_vs_login_vs_token_defaulting_to_create(self):
         with patch("main.ask_select", return_value="Criar novo usuário no UOE") as mock_select:
             result, mocks = self._invoke(BASE_SETUP_ARGS, is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         call = mock_select.call_args
-        self.assertEqual(call.args[1], ["Criar novo usuário no UOE", "Usuário já existe"])
+        self.assertEqual(
+            call.args[1], ["Criar novo usuário no UOE", "Usuário já existe", "Usar um token já autenticado"],
+        )
         self.assertEqual(call.kwargs.get("default"), "Criar novo usuário no UOE")
         mocks["register"].assert_called_once()
 
@@ -249,9 +289,9 @@ class SetupCommandTest(unittest.TestCase):
         mock_login.assert_not_called()
         mocks["state_save"].assert_not_called()
 
-    def test_skip_register_flag_never_asks_the_account_action_menu(self):
+    def test_account_mode_flag_never_asks_the_account_action_menu(self):
         with patch("main.ask_select") as mock_select:
-            result, _ = self._invoke(BASE_SETUP_ARGS + ["--skip-register"], is_tty=True)
+            result, _ = self._invoke(BASE_SETUP_ARGS + ["--account-mode", "login"], is_tty=True)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_select.assert_not_called()
 
@@ -286,11 +326,48 @@ class SetupCommandTest(unittest.TestCase):
         prompts = [call.args[0] for call in mock_select.call_args_list]
         self.assertEqual(prompts, ["Usuário no UOE:"])
 
-    def test_headless_skip_register_does_not_require_root_path(self):
-        args = _without_flag(BASE_SETUP_ARGS, "--root-path") + ["--skip-register"]
+    def test_headless_login_mode_does_not_require_root_path(self):
+        args = _without_flag(BASE_SETUP_ARGS, "--root-path") + ["--account-mode", "login"]
         result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["register"].assert_not_called()
+
+    def test_token_mode_skips_register_and_login_entirely(self):
+        # pedido ao vivo: 3a opção -- nem cria usuário, nem loga, só usa um token
+        # já autenticado (ex.: obtido em outro lugar).
+        args = _without_flag(
+            _without_flag(_without_flag(BASE_SETUP_ARGS, "--admin-password-file"), "--password-file"),
+            "--root-path",
+        ) + ["--account-mode", "token", "--token-file", PASSWORD_FILE]
+        result, mocks = self._invoke(args)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["register"].assert_not_called()
+        mocks["login"].assert_not_called()
+        saved = mocks["state_save"].call_args.args[1]
+        self.assertEqual(saved["token"], "rootpw")
+
+    def test_token_mode_prompts_for_the_token_when_interactive_and_no_file_given(self):
+        args = _without_flag(
+            _without_flag(_without_flag(BASE_SETUP_ARGS, "--admin-password-file"), "--password-file"),
+            "--root-path",
+        )
+        with patch("main.ask_select", return_value="Usar um token já autenticado"), \
+             patch("main.ask_password", return_value="token-digitado-na-mao") as mock_password:
+            result, mocks = self._invoke(args, is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["register"].assert_not_called()
+        mocks["login"].assert_not_called()
+        mock_password.assert_called_once_with("Token já autenticado no UOE:")
+        saved = mocks["state_save"].call_args.args[1]
+        self.assertEqual(saved["token"], "token-digitado-na-mao")
+
+    def test_token_mode_headless_without_token_file_is_an_error(self):
+        args = _without_flag(
+            _without_flag(_without_flag(BASE_SETUP_ARGS, "--admin-password-file"), "--password-file"),
+            "--root-path",
+        ) + ["--account-mode", "token"]
+        result, _ = self._invoke(args)
+        self.assertNotEqual(result.exit_code, 0)
 
     @patch("main.widgets.pause")
     def test_pauses_when_interactive(self, mock_pause):
@@ -473,6 +550,28 @@ class CheckCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
 
+    def test_not_configured_is_a_warning_not_an_error(self):
+        # achado ao vivo: "ainda não configurado" saía vermelho (mesmo nível
+        # visual de um erro de verdade) -- nada quebrou, só falta rodar o
+        # setup. Isso é aviso, não erro.
+        with patch("main.widgets.check_result") as mock_check_result, \
+             patch("main._is_interactive", return_value=False), \
+             patch("main.state.load", return_value=None):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
+    def test_fully_configured_is_a_success(self):
+        saved = {"username": "empresa", "root_path": "x", "script": "issabel", "cron_minute": "0", "cron_hour": "2"}
+        with patch("main.widgets.check_result") as mock_check_result, \
+             patch("main._is_interactive", return_value=False), \
+             patch("main.state.load", return_value=saved), \
+             patch("main.crontab.read_crontab", return_value=[]), \
+             patch("main.crontab.find_managed_entry", return_value=(1, "0 2 * * * bash issabel.sh")):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        levels = [call.args[1] for call in mock_check_result.call_args_list]
+        self.assertEqual(levels, ["ok"])
+
     @patch("main.widgets.pause")
     def test_pauses_when_interactive(self, mock_pause):
         self._invoke(is_tty=True, saved=None)
@@ -499,6 +598,89 @@ class CheckCommandTest(unittest.TestCase):
         result = self._invoke(saved=saved, managed=None)
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não encontrada", result.output.lower())
+
+    def test_missing_managed_entry_uses_warning_level(self):
+        saved = {"username": "empresa", "root_path": "x", "script": "issabel", "cron_minute": "0", "cron_hour": "2"}
+        with patch("main.widgets.check_result") as mock_check_result, \
+             patch("main._is_interactive", return_value=False), \
+             patch("main.state.load", return_value=saved), \
+             patch("main.crontab.read_crontab", return_value=[]), \
+             patch("main.crontab.find_managed_entry", return_value=None):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        levels = [call.args[1] for call in mock_check_result.call_args_list]
+        self.assertEqual(levels, ["ok", "warn"])
+
+
+class MagnusUploadCommandTest(unittest.TestCase):
+    # comando alvo da cron gerada por backup_scripts pro script "magnus-pvx"
+    # -- roda sem terminal (via cron), nunca deve pausar nem exigir --yes.
+    def _invoke(self, args=None, error=None):
+        args = args or ["magnus-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123"]
+        with patch("main.magnus_upload_ops.export_and_upload", side_effect=error) as mock_export, \
+             patch("main.AutobackupModule.get_logger"), \
+             patch("main.widgets.pause") as mock_pause:
+            result = CliRunner().invoke(cli.cli_group(), args)
+            return result, mock_export, mock_pause
+
+    def test_calls_export_and_upload_with_the_given_args(self):
+        result, mock_export, _ = self._invoke()
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with("http://uoe.example/v1/upload", "tok123", split=False)
+
+    def test_split_flag_is_forwarded(self):
+        result, mock_export, _ = self._invoke(
+            args=["magnus-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123", "--split"],
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with("http://uoe.example/v1/upload", "tok123", split=True)
+
+    def test_never_pauses_even_when_run_from_a_real_terminal(self):
+        _, _, mock_pause = self._invoke()
+        mock_pause.assert_not_called()
+
+    def test_failure_becomes_a_clean_click_exception(self):
+        result, _, _ = self._invoke(error=magnus_upload_ops.MagnusUploadError("falha ao gerar o backup: senha errada"))
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("senha errada", result.output)
+
+
+class IssabelUploadCommandTest(unittest.TestCase):
+    # comando alvo da cron gerada por backup_scripts pro script "issabel"
+    # -- roda sem terminal (via cron), nunca deve pausar nem exigir --yes.
+    def _invoke(self, args=None, error=None):
+        args = args or ["issabel-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123"]
+        with patch("main.issabel_upload_ops.export_and_upload", side_effect=error) as mock_export, \
+             patch("main.AutobackupModule.get_logger"), \
+             patch("main.widgets.pause") as mock_pause:
+            result = CliRunner().invoke(cli.cli_group(), args)
+            return result, mock_export, mock_pause
+
+    def test_defaults_to_configuration_only(self):
+        result, mock_export, _ = self._invoke()
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with(
+            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=False,
+        )
+
+    def test_recordings_flag_is_passed_through(self):
+        result, mock_export, _ = self._invoke(args=[
+            "issabel-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123", "--recordings",
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_export.assert_called_once_with(
+            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=True,
+        )
+
+    def test_never_pauses_even_when_run_from_a_real_terminal(self):
+        _, _, mock_pause = self._invoke()
+        mock_pause.assert_not_called()
+
+    def test_failure_becomes_a_clean_click_exception(self):
+        result, _, _ = self._invoke(error=issabel_upload_ops.IssabelUploadError("falha ao enviar o backup: 401"))
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("401", result.output)
 
 
 if __name__ == "__main__":

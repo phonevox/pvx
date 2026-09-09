@@ -2,17 +2,35 @@ import importlib
 import importlib.util
 import json
 import sys
+import zipimport
 
 
 def _load_from_pyz(pyz_path, module_file):
     # limpa TODO nome novo em sys.modules, não só module_file -- módulos
     # internos (ex. validators.py) de módulos diferentes colidem senão.
     before = set(sys.modules)
-    sys.path.insert(0, str(pyz_path))
+    path_str = str(pyz_path)
+
+    # achado ao vivo: zipimport cacheia o zipimporter (índice interno do .zip)
+    # por path, pra sempre -- `pvx modules update` sobrescreve o mesmo
+    # module.pyz enquanto o menu interativo (processo longo, nunca reinicia)
+    # continua rodando. Sem isso, o discover() de depois do update reusa o
+    # índice do .zip ANTIGO sobre o arquivo NOVO (offsets não batem mais) e
+    # crasha (ou pior, carrega conteúdo errado) só de reabrir o mesmo módulo.
+    sys.path_importer_cache.pop(path_str, None)
+    # sys.path_importer_cache só descarta o OBJETO zipimporter -- construir um
+    # novo pro mesmo path ainda consulta esse cache mais baixo (índice bruto do
+    # .zip) antes de reler o arquivo do disco. Sem limpar os dois, o problema
+    # persiste idêntico. _zip_directory_cache é detalhe interno do CPython
+    # (não é API pública) -- getattr com fallback pra nunca quebrar o loader
+    # inteiro se uma versão futura do Python remover/renomear isso.
+    getattr(zipimport, "_zip_directory_cache", {}).pop(path_str, None)
+
+    sys.path.insert(0, path_str)
     try:
         return importlib.import_module(module_file)
     finally:
-        sys.path.remove(str(pyz_path))
+        sys.path.remove(path_str)
         for name in set(sys.modules) - before:
             sys.modules.pop(name, None)
 

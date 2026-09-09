@@ -39,6 +39,7 @@ class ConfigPathsTest(unittest.TestCase):
         self.assertEqual(config.logs_dir(), base / "logs")
         self.assertEqual(config.registry_cache_path(), base / "registry.json")
         self.assertEqual(config.config_file_path(), base / "config.json")
+        self.assertEqual(config.update_check_cache_path(), base / "update_check.json")
 
     def test_registry_index_url_respects_env_override(self):
         os.environ["PVX_REGISTRY_URL"] = "https://example.com/index.json"
@@ -123,6 +124,27 @@ class ThemeConfigTest(unittest.TestCase):
         data = config.read_config()
         self.assertEqual(data["outra_chave"], 123)
         self.assertEqual(data["theme"], "roxo")
+
+    def test_symbol_set_name_defaults_to_ascii(self):
+        self.assertEqual(config.get_symbol_set_name(), "ascii")
+
+    def test_set_symbol_set_name_persists_and_is_read_back(self):
+        config.set_symbol_set_name("ascii")
+        self.assertEqual(config.get_symbol_set_name(), "ascii")
+
+    def test_border_name_defaults_to_duplo(self):
+        self.assertEqual(config.get_border_name(), "duplo")
+
+    def test_set_border_name_persists_and_is_read_back(self):
+        config.set_border_name("simples")
+        self.assertEqual(config.get_border_name(), "simples")
+
+    def test_line_format_name_defaults_to_modern_full_color(self):
+        self.assertEqual(config.get_line_format_name(), "modern-full-color")
+
+    def test_set_line_format_name_persists_and_is_read_back(self):
+        config.set_line_format_name("minimal")
+        self.assertEqual(config.get_line_format_name(), "minimal")
 
 
 if __name__ == "__main__":

@@ -51,12 +51,18 @@ class GatherDataTest(unittest.TestCase):
             patch("main.asterisk_info.find_logdir", return_value=defaults["find_logdir"]),
             patch("main.asterisk_info.version", return_value=defaults["version"]),
             patch("main.asterisk_info.active_calls", return_value=defaults["active_calls"]),
-            patch("main.issabel_info.storage_percent", return_value=defaults["storage_percent"]),
-            patch("main.issabel_info.storage_bytes", return_value=defaults["storage_bytes"]),
-            patch("main.issabel_info.recordings_percent", return_value=defaults["recordings_percent"]),
-            patch("main.issabel_info.recordings_bytes", return_value=defaults["recordings_bytes"]),
-            patch("main.issabel_info.dialer_percent", return_value=defaults["dialer_percent"]),
-            patch("main.issabel_info.dialer_bytes", return_value=defaults["dialer_bytes"]),
+            patch(
+                "main.issabel_info.storage_info",
+                return_value=(defaults["storage_bytes"], defaults["storage_percent"]),
+            ),
+            patch(
+                "main.issabel_info.recordings_info",
+                return_value=(defaults["recordings_bytes"], defaults["recordings_percent"]),
+            ),
+            patch(
+                "main.issabel_info.dialer_info",
+                return_value=(defaults["dialer_bytes"], defaults["dialer_percent"]),
+            ),
             patch("main.autobackup_info.status", return_value=defaults["autobackup_status"]),
         )
 

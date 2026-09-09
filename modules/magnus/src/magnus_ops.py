@@ -9,6 +9,7 @@ import urllib.request
 
 DEFAULT_SOUNDS_DIR = "/usr/local/src/magnus/sounds"
 DEFAULT_ASTERISK_DIR = "/etc/asterisk"
+DEFAULT_RECORDINGS_DIR = "/var/spool/asterisk/monitor"
 MBILLING_WEB_DIR = "/var/www/html/mbilling"
 UPDATE_SCRIPT = MBILLING_WEB_DIR + "/protected/commands/update.sh"
 RES_CONFIG_MYSQL = "/etc/asterisk/res_config_mysql.conf"
@@ -27,6 +28,23 @@ class MagnusError(Exception):
 def output_filename(today=None):
     today = today or datetime.date.today()
     return f"backup-pxmagnus.{today:%d-%m-%Y}.tgz"
+
+
+# nomes/formato de data conferidos linha a linha contra o magnus.sh real (repo
+# pbackup) -- "backup_voip_softswitch"/"recordings"/"soundfiles", DD-MM-YYYY.
+def configuration_filename(today=None):
+    today = today or datetime.date.today()
+    return f"backup_voip_softswitch.{today:%d-%m-%Y}.tgz"
+
+
+def recordings_filename(today=None):
+    today = today or datetime.date.today()
+    return f"recordings.{today:%d-%m-%Y}.tgz"
+
+
+def soundfiles_filename(today=None):
+    today = today or datetime.date.today()
+    return f"soundfiles.{today:%d-%m-%Y}.tgz"
 
 
 def _run(args, error, **kwargs):
@@ -92,6 +110,38 @@ def export_backup(db_user, db_password, output_path=None,
         _copy_dir(asterisk_dir, os.path.join(tmp_dir, "etc", "asterisk"))
         _make_archive(tmp_dir, output_path)
     return output_path, warnings
+
+
+def export_configuration(db_user, db_password, output_path=None, asterisk_dir=DEFAULT_ASTERISK_DIR):
+    # mesmo conteúdo de export_backup, só sem os soundfiles -- vira o
+    # "backup_voip_softswitch" quando os componentes são exportados em separado.
+    output_path = output_path or configuration_filename()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        _dump_database(db_user, db_password, os.path.join(tmp_dir, "tmp", "base.sql"))
+        _copy_dir(asterisk_dir, os.path.join(tmp_dir, "etc", "asterisk"))
+        _make_archive(tmp_dir, output_path)
+    return output_path
+
+
+def _export_dir_or_warn(output_path, source_dir, label):
+    # achado no magnus.sh real (repo pbackup): "tar -czf x.tgz /caminho/absoluto"
+    # -- tar simples do diretório inteiro, sem janela de dias. arcname sem a
+    # barra inicial replica o comportamento do GNU tar com path absoluto.
+    if not os.path.isdir(source_dir):
+        return None, [f"diretório de {label} não encontrado em '{source_dir}' -- pulado."]
+    with tarfile.open(output_path, "w:gz") as tar:
+        tar.add(source_dir, arcname=source_dir.lstrip("/"))
+    return output_path, []
+
+
+def export_soundfiles(output_path=None, sounds_dir=DEFAULT_SOUNDS_DIR):
+    output_path = output_path or soundfiles_filename()
+    return _export_dir_or_warn(output_path, sounds_dir, "soundfiles")
+
+
+def export_recordings(output_path=None, recordings_dir=DEFAULT_RECORDINGS_DIR):
+    output_path = output_path or recordings_filename()
+    return _export_dir_or_warn(output_path, recordings_dir, "gravações")
 
 
 def is_valid_archive(path):

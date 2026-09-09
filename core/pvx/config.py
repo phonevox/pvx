@@ -33,6 +33,10 @@ def registry_cache_path() -> Path:
     return pvx_home() / "registry.json"
 
 
+def update_check_cache_path() -> Path:
+    return pvx_home() / "update_check.json"
+
+
 def config_file_path() -> Path:
     return pvx_home() / "config.json"
 
@@ -97,4 +101,34 @@ def get_theme_name() -> str:
 def set_theme_name(name: str) -> None:
     data = read_config()
     data["theme"] = name
+    write_config(data)
+
+
+def get_symbol_set_name() -> str:
+    return read_config().get("symbol_set", "ascii")
+
+
+def set_symbol_set_name(name: str) -> None:
+    data = read_config()
+    data["symbol_set"] = name
+    write_config(data)
+
+
+def get_border_name() -> str:
+    return read_config().get("border", "duplo")
+
+
+def set_border_name(name: str) -> None:
+    data = read_config()
+    data["border"] = name
+    write_config(data)
+
+
+def get_line_format_name() -> str:
+    return read_config().get("line_format", "modern-full-color")
+
+
+def set_line_format_name(name: str) -> None:
+    data = read_config()
+    data["line_format"] = name
     write_config(data)

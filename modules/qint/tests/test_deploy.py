@@ -15,12 +15,12 @@ class ComputeConflictsTest(unittest.TestCase):
 
     def test_returns_empty_when_nothing_exists(self):
         base_dirs = {"agi": self._tmp.name}
-        self.assertEqual(deploy.compute_conflicts(base_dirs), [])
+        self.assertEqual(deploy.compute_conflicts(base_dirs, "sgp"), [])
 
     def test_flags_category_whose_destination_subfolder_already_exists(self):
-        (Path(self._tmp.name) / "qint").mkdir()
+        (Path(self._tmp.name) / "sgp").mkdir()
         base_dirs = {"agi": self._tmp.name}
-        self.assertEqual(deploy.compute_conflicts(base_dirs), ["agi"])
+        self.assertEqual(deploy.compute_conflicts(base_dirs, "sgp"), ["agi"])
 
 
 class DeployTest(unittest.TestCase):
@@ -35,19 +35,22 @@ class DeployTest(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def test_copies_source_into_a_qint_subfolder_of_the_base_dir(self):
-        deploy.deploy({"moh": str(self.source_dir)}, {"moh": str(self.base_dir)})
+    def test_copies_source_into_a_subfolder_named_after_the_tipo(self):
+        # achado ao vivo, conferido contra o instalador bash original: o destino usa o
+        # nome do tipo (ixcsoft/sgp), nunca um "qint" fixo -- as duas integrações
+        # convivem sem se pisar.
+        deploy.deploy({"moh": str(self.source_dir)}, {"moh": str(self.base_dir)}, "sgp")
 
-        dest = self.base_dir / "qint"
+        dest = self.base_dir / "sgp"
         self.assertTrue(dest.is_dir())
         self.assertEqual((dest / "script.sh").read_text(), "echo oi")
 
     def test_overwrites_an_existing_destination(self):
-        dest = self.base_dir / "qint"
+        dest = self.base_dir / "sgp"
         dest.mkdir()
         (dest / "leftover").write_text("lixo")
 
-        deploy.deploy({"moh": str(self.source_dir)}, {"moh": str(self.base_dir)})
+        deploy.deploy({"moh": str(self.source_dir)}, {"moh": str(self.base_dir)}, "sgp")
 
         self.assertFalse((dest / "leftover").exists())
         self.assertTrue((dest / "script.sh").exists())
@@ -57,6 +60,7 @@ class DeployTest(unittest.TestCase):
         deploy.deploy(
             {"agi": str(self.source_dir), "moh": str(self.source_dir)},
             {"agi": str(self.base_dir), "moh": str(self.base_dir)},
+            "sgp",
         )
 
         commands = [call.args[0][0] for call in mock_run.call_args_list]

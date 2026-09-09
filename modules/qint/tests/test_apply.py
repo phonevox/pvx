@@ -43,19 +43,22 @@ class ApplyTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def _fake_fetch(self, sftp_info, remote_base, tipo, versao, cache_dir):
-        for category in ("agi", "php", "dialplan", "moh", "audio"):
-            (Path(cache_dir) / category).mkdir(parents=True)
-        (Path(cache_dir) / "php" / "config.php").write_text(
+        # layout real do SFTP (achado ao vivo): agi/php/exten vivem sob "files/", "audio"
+        # é "audios", e toda categoria tem mais um nível "<tipo>" antes do conteúdo.
+        for remote_path in ("files/agi", "files/php", "files/exten", "moh", "audios"):
+            (Path(cache_dir) / remote_path / tipo).mkdir(parents=True)
+        (Path(cache_dir) / "files" / "php" / tipo / "config.php").write_text(
             "$server_local = '';\n$protocol_web = '';\n$servidor_web = '';\n"
             "$porta_web = '';\n$token = '';\n"
         )
-        (Path(cache_dir) / "dialplan" / "phonevox-macros-atendimento.conf").write_text(
+        (Path(cache_dir) / "files" / "exten" / tipo / "phonevox-macros-atendimento.conf").write_text(
             "Set(dep_outros_assuntos=XXX)\nSet(dep_comercial=XXX)\nSet(dep_suporte=XXX)\n"
             "Set(dep_financeiro=XXX)\nGoto(timeconditions,TIMECONDITION_DESTINO,1)\n"
             "Set(FILIAL_ID=XXX)\nSet(ocorrencia_outros_assuntos=XXX)\nSet(ocorrencia_comercial=XXX)\n"
             "Set(ocorrencia_suporte=XXX)\nSet(ocorrencia_financeiro=XXX)\nSet(setor_outros_assuntos=XXX)\n"
             "Set(setor_comercial=XXX)\nSet(setor_suporte=XXX)\nSet(setor_financeiro=XXX)\n"
         )
+        (Path(cache_dir) / "moh" / tipo / "sfx-teclado-digitando").mkdir(parents=True)
 
     @patch("deploy.subprocess.run")
     @patch("apply.reload_.reload_dialplan", return_value=True)
@@ -68,19 +71,27 @@ class ApplyTest(unittest.TestCase):
             self.base_dirs, str(self.history_path),
         )
 
-        php_dest = Path(self.base_dirs["php"]) / "qint" / "config.php"
+        # destino usa o nome do tipo como subpasta (conferido contra o instalador bash
+        # original), nunca um "qint" fixo.
+        php_dest = Path(self.base_dirs["php"]) / "ixcsoft" / "config.php"
         content = php_dest.read_text()
         self.assertIn("erp.example.com", content)
         self.assertIn("10.0.0.2", content)
 
-        macro_dest = Path(self.base_dirs["dialplan"]) / "qint" / "phonevox-macros-atendimento.conf"
-        self.assertIn("600", macro_dest.read_text())
+        macro_dest = Path(self.base_dirs["dialplan"]) / "ixcsoft" / "phonevox-macros-atendimento.conf"
+        # achado ao vivo: "600" sozinho aqui passava tanto com o valor certo quanto
+        # com o bug real (linha virando "exten => s,n,600" em vez de
+        # "exten => s,n,Set(dep_outros_assuntos=600)") -- checa a expressão inteira.
+        self.assertIn("Set(dep_outros_assuntos=600)", macro_dest.read_text())
 
         extensions = Path(self.base_dirs["dialplan"]) / "extensions_custom.conf"
-        self.assertIn('#include "qint/phonevox-macros-atendimento.conf"', extensions.read_text())
+        self.assertIn("#include ixcsoft/phonevox.conf", extensions.read_text())
 
-        moh_conf = Path(self.base_dirs["dialplan"]) / "musiconhold.conf"
-        self.assertIn("[sfx-teclado-digitando]", moh_conf.read_text())
+        moh_conf = Path(self.base_dirs["dialplan"]) / "musiconhold_custom.conf"
+        moh_conf_text = moh_conf.read_text()
+        self.assertIn("[sfx-teclado-digitando]", moh_conf_text)
+        expected_moh_dir = str(Path(self.base_dirs["moh"]) / "ixcsoft" / "sfx-teclado-digitando")
+        self.assertIn(f"directory={expected_moh_dir}", moh_conf_text)
 
         mock_reload.assert_called_once()
         self.assertIn("apply ixcsoft 1.0.0", self.history_path.read_text())

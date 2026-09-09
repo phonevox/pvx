@@ -67,6 +67,11 @@ class CheckCommandTest(MainTestCase):
         self.assertIn("203.0.113.1", result.output)
         self.assertIn("5060/udp", result.output)
 
+    def test_shows_a_title_header(self):
+        with patch("main.status_module.get_status", return_value=BASE_STATUS):
+            result = self._invoke(["check"])
+        self.assertIn("pvx > firewall > check", result.output)
+
     def test_passes_the_state_dir_so_lists_get_read(self):
         with patch("main.status_module.get_status", return_value=BASE_STATUS) as mock_get_status:
             self._invoke(["check"])
@@ -144,6 +149,50 @@ class IpCommandsTest(MainTestCase):
         result = self._invoke(["ip", "list"])
         self.assertIn("198.51.100.5", result.output)
 
+    # achado ao vivo: técnico mandou "1.1.1.1/32,2.2.2.2/8" numa tacada só -- cada CIDR
+    # sozinho é válido, mas o comando só aceitava um valor por vez.
+    def test_accept_splits_multiple_cidrs_by_comma(self):
+        result = self._invoke(["ip", "accept", "1.1.1.1/32,2.2.2.2/8"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("1.1.1.1/32", listing.output)
+        self.assertIn("2.2.2.2/8", listing.output)
+
+    def test_accept_rejects_the_whole_batch_when_one_entry_is_invalid(self):
+        result = self._invoke(["ip", "accept", "1.1.1.1/32,not-an-ip"])
+        self.assertNotEqual(result.exit_code, 0)
+        listing = self._invoke(["ip", "list"])
+        self.assertNotIn("1.1.1.1/32", listing.output)  # tudo ou nada -- não aplica parcial
+
+    def test_accept_is_idempotent_does_not_duplicate(self):
+        self._invoke(["ip", "accept", "198.51.100.5"])
+        self._invoke(["ip", "accept", "198.51.100.5"])
+        result = self._invoke(["ip", "list"])
+        self.assertEqual(result.output.count("198.51.100.5"), 1)
+
+    def test_accept_batch_only_adds_the_entry_that_is_actually_new(self):
+        self._invoke(["ip", "accept", "198.51.100.5"])
+        result = self._invoke(["ip", "accept", "198.51.100.5,198.51.100.6"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertEqual(listing.output.count("198.51.100.5"), 1)
+        self.assertIn("198.51.100.6", listing.output)
+
+    def test_deny_multiple_rejects_the_whole_batch_when_one_would_self_ban(self):
+        with patch("main.session_ip.detect_session_ip", return_value="203.0.113.9"):
+            result = self._invoke(["ip", "deny", "192.0.2.0/24,203.0.113.0/24"])
+        self.assertNotEqual(result.exit_code, 0)
+        listing = self._invoke(["ip", "list"])
+        self.assertNotIn("192.0.2.0/24", listing.output)  # tudo ou nada -- não aplica parcial
+
+    def test_deny_multiple_with_force_adds_every_entry(self):
+        with patch("main.session_ip.detect_session_ip", return_value="203.0.113.9"):
+            result = self._invoke(["ip", "deny", "192.0.2.0/24,203.0.113.0/24", "--force"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("192.0.2.0/24", listing.output)
+        self.assertIn("203.0.113.0/24", listing.output)
+
 
 class StatusCommandTest(MainTestCase):
     def test_shows_synced_state_without_success_wording(self):
@@ -168,12 +217,17 @@ class StatusCommandTest(MainTestCase):
         self.assertNotIn("falha", result.output.lower())
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
+        # achado ao vivo: o aviso vivia embutido no texto do state() ("--
+        # atenção: ..."); agora usa o widget dedicado widgets.warning(). O
+        # formato default (theme "formato" = modern, "[<simbolo>] <texto>")
+        # não repete a palavra "aviso" quando um detail é passado -- o símbolo
+        # já é quem sinaliza isso, não mais uma palavra solta.
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
         self.assertIn("sincronizado", result.output.lower())
-        self.assertIn("atenção", result.output.lower())
+        self.assertIn("failsafe", result.output.lower())
 
 
 class SyncCommandTest(MainTestCase):
@@ -328,6 +382,22 @@ class PauseAfterMutationTest(MainTestCase):
         result = self._invoke(["port", "accept", "80/tcp"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_not_called()
+
+
+class FirewalldZoneDisplayTest(MainTestCase):
+    # transparência pedida ao vivo: numa central Magnus, o pvx sincroniza na zona
+    # "public" (dele), não numa zona própria -- `check` mostra qual zona é essa em
+    # vez de deixar isso invisível (foi assim que uma zona 100% inerte passou
+    # despercebida da primeira vez).
+    def test_shows_the_firewalld_zone_in_use(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, firewalld_zone="public")):
+            result = self._invoke(["check"])
+        self.assertIn("public", result.output)
+
+    def test_omits_the_zone_line_for_iptables(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, firewalld_zone=None)):
+            result = self._invoke(["check"])
+        self.assertNotIn("zona firewalld", result.output.lower())
 
 
 if __name__ == "__main__":

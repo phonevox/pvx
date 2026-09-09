@@ -62,6 +62,16 @@ IPTABLES_DENY_CHAIN = "pdenyip"
 IPTABLES_PORT_CHAIN = "pdrop"
 
 FIREWALLD_ZONE = "pvxfw"
+# achado ao vivo: o instalador do MagnusBilling já vincula a interface real à zona
+# "public" (--change-interface) e o próprio Magnus depende do firewalld pra isso
+# (chega a desabilitar o serviço "iptables" pra não conflitar). --set-default-zone
+# (nosso jeito normal de assumir a zona pvxfw) não move uma interface que já tem
+# zona explícita -- nessa central, pvxfw fica 100% inerte. Integrar direto na
+# "public" funciona: nossas rich-rules de IP (prioridade negativa) rodam ANTES das
+# portas simples do Magnus, e as de porta (prioridade positiva) rodam DEPOIS -- ou
+# seja, o próprio allow de porta do Magnus (80/443/etc.) sempre vence o nosso
+# port_deny pra essas portas, nunca corre risco de trancar o painel do cliente.
+MAGNUS_FIREWALLD_ZONE = "public"
 FIREWALLD_PRIORITY_FAILSAFE = -2000
 FIREWALLD_PRIORITY_ICMP = -1500
 FIREWALLD_PRIORITY_DENY_IP = -1000

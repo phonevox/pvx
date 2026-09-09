@@ -167,25 +167,129 @@ def message(text):
     click.echo()
 
 
-_SUCCESS_LABEL = "✓ sucesso!"
-_FAILED_LABEL = "✗ falha!"
-_OUTCOME_LABEL_WIDTH = max(len(_SUCCESS_LABEL), len(_FAILED_LABEL))
+def _outcomes():
+    # os 3 estados de _print_outcome, na ordem success/failed/warning -- usado
+    # só pra calcular alinhamento entre eles (ver _verbose_prefix/_v2_prefix
+    # abaixo), nunca pra decidir QUAL deles imprimir. Vocabulário único de
+    # categoria (sucesso/erro/aviso) -- check_result() usa as mesmas 3.
+    return (
+        ("✓", "sucesso", "bold green"),
+        ("✗", "erro", "bold red"),
+        (theme.current_symbols()["warning"], "aviso", "bold yellow"),
+    )
 
 
-def _print_outcome(label, style, detail):
-    line = Text()
-    line.append(label.ljust(_OUTCOME_LABEL_WIDTH) if detail else label, style=style)
+def _verbose_prefix(symbol, category):
+    return f"{symbol} {category}!"
+
+
+def _verbose_v2_prefix(symbol, category):
+    return f"[{symbol}] {category}"
+
+
+def _fallback_text(category, detail):
+    # formatos sem um slot de categoria dedicado (ultra-minimal/modern/...)
+    # caem pra categoria como texto quando a chamada não passou detail (ex.:
+    # success() sem argumento) -- igual "verbose" mostra só o prefixo sozinho.
+    return detail if detail is not None else category
+
+
+def _line_verbose(symbol, category, style, detail):
+    prefix = _verbose_prefix(symbol, category)
+    width = max(len(_verbose_prefix(s, c)) for s, c, _ in _outcomes())
+    line = _styled(prefix.ljust(width) if detail else prefix, style)
     if detail:
         line.append(f" {detail}")
-    Console().print(line, highlight=False)
+    return line
+
+
+def _line_verbose_v2(symbol, category, style, detail):
+    prefix = _verbose_v2_prefix(symbol, category)
+    width = max(len(_verbose_v2_prefix(s, c)) for s, c, _ in _outcomes())
+    line = _styled(prefix.ljust(width) if detail else prefix, style)
+    if detail:
+        line.append(f" {detail}")
+    return line
+
+
+def _line_verbose_v2_full_color(symbol, category, style, detail):
+    prefix = _verbose_v2_prefix(symbol, category)
+    width = max(len(_verbose_v2_prefix(s, c)) for s, c, _ in _outcomes())
+    text = prefix.ljust(width) if detail else prefix
+    if detail:
+        text += f" {detail}"
+    return _styled(text, style)
+
+
+def _line_minimal(symbol, category, style, detail):
+    line = Text()
+    line.append(category.upper(), style=style)
+    if detail:
+        line.append(f" {detail}")
+    return line
+
+
+def _line_ultra_minimal(symbol, category, style, detail):
+    line = Text()
+    line.append(symbol, style=style)
+    line.append(f" {_fallback_text(category, detail)}")
+    return line
+
+
+def _line_modern(symbol, category, style, detail):
+    line = Text()
+    line.append("[")
+    line.append(symbol, style=style)
+    line.append(f"] {_fallback_text(category, detail)}")
+    return line
+
+
+def _line_modern_colored_brackets(symbol, category, style, detail):
+    line = Text()
+    line.append(f"[{symbol}]", style=style)
+    line.append(f" {_fallback_text(category, detail)}")
+    return line
+
+
+def _line_modern_full_color(symbol, category, style, detail):
+    return _styled(f"[{symbol}] {_fallback_text(category, detail)}", style)
+
+
+_LINE_BUILDERS = {
+    "verbose": _line_verbose,
+    "verbose-v2": _line_verbose_v2,
+    "verbose-v2-full-color": _line_verbose_v2_full_color,
+    "minimal": _line_minimal,
+    "ultra-minimal": _line_ultra_minimal,
+    "modern": _line_modern,
+    "modern-colored-brackets": _line_modern_colored_brackets,
+    "modern-full-color": _line_modern_full_color,
+}
+
+
+def preview_outcome_line(format_name, symbol="✓", category="sucesso", detail=None):
+    # usado por pvx.interactive.screens.theme_settings pra montar o preview
+    # (on-hover) de cada preset de "pvx > tema > formato" -- plain, sem cor,
+    # já que a description do questionary não renderiza estilo.
+    builder = _LINE_BUILDERS.get(format_name, _line_modern)
+    return builder(symbol, category, "", detail).plain
+
+
+def _print_outcome(symbol, category, style, detail):
+    builder = _LINE_BUILDERS.get(theme.current_line_format(), _line_modern)
+    Console().print(builder(symbol, category, style, detail), highlight=False)
 
 
 def success(detail=None):
-    _print_outcome(_SUCCESS_LABEL, "bold green", detail)
+    _print_outcome("✓", "sucesso", "bold green", detail)
 
 
 def failed(detail=None):
-    _print_outcome(_FAILED_LABEL, "bold red", detail)
+    _print_outcome("✗", "erro", "bold red", detail)
+
+
+def warning(detail=None):
+    _print_outcome(theme.current_symbols()["warning"], "aviso", "bold yellow", detail)
 
 
 def crash(traceback_text):
@@ -207,16 +311,61 @@ def state(text, ok):
 
 
 _CHECK_RESULT_STYLE = {
-    "ok": ("✓", "bold green"),
-    "warn": ("!", "bold yellow"),  # reprova mas não bloqueia (ex.: RAM baixa no preflight)
-    "error": ("✗", "bold red"),
+    # mesmo vocabulário de categoria de success/failed/warning (sucesso/erro/aviso)
+    # -- não existe um 4º estado "ok" separado de "sucesso".
+    "ok": ("✓", "sucesso", "bold green"),
+    # reprova mas não bloqueia (ex.: RAM baixa no preflight) -- mesmo símbolo
+    # temável de warning() (SYMBOL_SETS), resolvido abaixo por nível.
+    "warn": (None, "aviso", "bold yellow"),
+    "error": ("✗", "erro", "bold red"),
 }
 
 
 def check_result(text, level):
-    icon, style = _CHECK_RESULT_STYLE[level]
+    # mesmo pipeline de success()/failed()/warning() -- respeita o "formato"
+    # do tema (achado ao vivo: ficava com layout fixo, alheio ao resto).
+    fixed_symbol, category, style = _CHECK_RESULT_STYLE[level]
+    symbol = fixed_symbol or theme.current_symbols()["warning"]
+    _print_outcome(symbol, category, style, text)
+
+
+_TITLE_WIDTH = 70
+
+
+def _styled(text, style):
     line = Text()
-    line.append(f"{icon} {text}", style=style)
+    line.append(text, style=style)
+    return line
+
+
+def title(text):
+    accent = theme.current_accent_color()
+    char = theme.current_border_char()
+    bar = _styled(char * _TITLE_WIDTH, accent)
+    console = Console()
+    console.print(bar, highlight=False)
+    console.print(_styled(text.center(_TITLE_WIDTH), f"bold {accent}"), highlight=False)
+    console.print(bar, highlight=False)
+
+
+def section(text):
+    accent = theme.current_accent_color()
+    marker = theme.current_symbols()["section"]
+    Console().print(_styled(f"{marker} {text}", f"bold {accent}"), highlight=False)
+
+
+def description(text):
+    Console().print(_styled(f"  {text}", theme.SEPARATOR_COLOR), highlight=False)
+
+
+def item(text, comment=None):
+    accent = theme.current_accent_color()
+    symbol = theme.current_symbols()["item"]
+    line = Text()
+    line.append(f"  {symbol} ", style=accent)
+    line.append(text)
+    if comment:
+        line.append(f"  # {comment}", style=theme.SEPARATOR_COLOR)
     Console().print(line, highlight=False)
 
 

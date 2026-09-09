@@ -91,6 +91,108 @@ class ExportBackupTest(unittest.TestCase):
         mock_copy.assert_called_once_with("/ast", mock_copy.call_args.args[1])
 
 
+class ComponentFilenameTest(unittest.TestCase):
+    # mesmo formato de data (DD-MM-YYYY) e nomes do magnus.sh real (pbackup),
+    # conferido linha a linha contra o script -- não é suposição.
+    def test_configuration_filename(self):
+        self.assertEqual(
+            magnus_ops.configuration_filename(today=datetime.date(2026, 9, 2)),
+            "backup_voip_softswitch.02-09-2026.tgz",
+        )
+
+    def test_recordings_filename(self):
+        self.assertEqual(
+            magnus_ops.recordings_filename(today=datetime.date(2026, 9, 2)),
+            "recordings.02-09-2026.tgz",
+        )
+
+    def test_soundfiles_filename(self):
+        self.assertEqual(
+            magnus_ops.soundfiles_filename(today=datetime.date(2026, 9, 2)),
+            "soundfiles.02-09-2026.tgz",
+        )
+
+
+class ExportConfigurationTest(unittest.TestCase):
+    # mesmo conteúdo do export_backup, só sem os soundfiles -- essa vira o
+    # "backup_voip_softswitch" quando os componentes são exportados separados.
+    @patch("magnus_ops._make_archive")
+    @patch("magnus_ops._copy_dir")
+    @patch("magnus_ops._dump_database")
+    def test_orchestrates_dump_and_asterisk_copy_only(self, mock_dump, mock_copy, mock_archive):
+        result_path = magnus_ops.export_configuration(
+            "root", "s3nha", output_path="/tmp/config.tgz", asterisk_dir="/ast",
+        )
+        self.assertEqual(result_path, "/tmp/config.tgz")
+        mock_copy.assert_called_once_with("/ast", mock_copy.call_args.args[1])
+        self.assertTrue(mock_copy.call_args.args[1].endswith(os.path.join("etc", "asterisk")))
+        mock_archive.assert_called_once()
+        self.assertEqual(mock_archive.call_args.args[1], "/tmp/config.tgz")
+
+    @patch("magnus_ops._make_archive")
+    @patch("magnus_ops._copy_dir")
+    @patch("magnus_ops._dump_database")
+    @patch("magnus_ops.configuration_filename", return_value="backup_voip_softswitch.02-09-2026.tgz")
+    def test_defaults_output_path_to_configuration_filename(self, mock_name, mock_dump, mock_copy, mock_archive):
+        result_path = magnus_ops.export_configuration("root", "s3nha", asterisk_dir="/ast")
+        self.assertEqual(result_path, "backup_voip_softswitch.02-09-2026.tgz")
+
+
+class ExportSoundfilesTest(unittest.TestCase):
+    # achado no magnus.sh real: "tar -czf soundfiles.$TODAY.tgz /usr/local/src/magnus/sounds"
+    # -- tar simples do diretório inteiro, sem filtro de data.
+    def test_creates_a_real_archive_of_the_sounds_dir(self):
+        with TemporaryDirectory() as tmp:
+            sounds_dir = os.path.join(tmp, "sounds")
+            os.makedirs(sounds_dir)
+            Path(sounds_dir, "prompt.wav").write_text("audio")
+            output_path = os.path.join(tmp, "out.tgz")
+
+            result_path, warnings = magnus_ops.export_soundfiles(output_path, sounds_dir=sounds_dir)
+
+            self.assertEqual(result_path, output_path)
+            self.assertEqual(warnings, [])
+            with tarfile.open(output_path) as tar:
+                names = tar.getnames()
+            self.assertTrue(any(name.endswith("sounds/prompt.wav") for name in names))
+
+    def test_skips_missing_sounds_dir_and_returns_a_warning(self):
+        with TemporaryDirectory() as tmp:
+            output_path = os.path.join(tmp, "out.tgz")
+            result_path, warnings = magnus_ops.export_soundfiles(output_path, sounds_dir="/nonexistent")
+            self.assertIsNone(result_path)
+            self.assertEqual(len(warnings), 1)
+            self.assertIn("/nonexistent", warnings[0])
+            self.assertFalse(os.path.exists(output_path))
+
+
+class ExportRecordingsTest(unittest.TestCase):
+    # achado no magnus.sh real: "tar -czf recordings.$TODAY.tgz /var/spool/asterisk/monitor"
+    # -- diretório inteiro, sem janela de dias (diferente do issabel_upload_ops).
+    def test_creates_a_real_archive_of_the_recordings_dir(self):
+        with TemporaryDirectory() as tmp:
+            recordings_dir = os.path.join(tmp, "monitor")
+            os.makedirs(recordings_dir)
+            Path(recordings_dir, "call.wav").write_text("audio")
+            output_path = os.path.join(tmp, "out.tgz")
+
+            result_path, warnings = magnus_ops.export_recordings(output_path, recordings_dir=recordings_dir)
+
+            self.assertEqual(result_path, output_path)
+            self.assertEqual(warnings, [])
+            with tarfile.open(output_path) as tar:
+                names = tar.getnames()
+            self.assertTrue(any(name.endswith("monitor/call.wav") for name in names))
+
+    def test_skips_missing_recordings_dir_and_returns_a_warning(self):
+        with TemporaryDirectory() as tmp:
+            output_path = os.path.join(tmp, "out.tgz")
+            result_path, warnings = magnus_ops.export_recordings(output_path, recordings_dir="/nonexistent")
+            self.assertIsNone(result_path)
+            self.assertEqual(len(warnings), 1)
+            self.assertIn("/nonexistent", warnings[0])
+
+
 class RunHelperTest(unittest.TestCase):
     # ponto único de execução de subprocess do módulo -- toda falha
     # previsível (senha errada, serviço fora do ar) vira MagnusError com o

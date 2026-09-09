@@ -36,15 +36,23 @@ def gather_data():
         # indicativo, não precisa da precisão exata do total real do disco.
         disk_total_bytes = disk["total_gb"] * 2**30
         logdir = asterisk_info.find_logdir()
+        # bytes+percent numa chamada só por recurso (recordings/logs/dialer) --
+        # achado ao vivo: cada par chamava storage_bytes duas vezes pro mesmo
+        # diretório, dobrando à toa o número de `du` (ver issabel_info.storage_info).
+        recordings_bytes, recordings_percent = issabel_info.recordings_info(disk_total_bytes)
+        dialer_bytes, dialer_percent = issabel_info.dialer_info(disk_total_bytes)
+        logs_bytes, logs_percent = (
+            issabel_info.storage_info(logdir, disk_total_bytes) if logdir else (None, None)
+        )
         asterisk_details = {
             "version": asterisk_info.version(),
             "active_calls": asterisk_info.active_calls(),
-            "recordings_percent": issabel_info.recordings_percent(disk_total_bytes),
-            "recordings_bytes": issabel_info.recordings_bytes(),
-            "logs_percent": issabel_info.storage_percent(logdir, disk_total_bytes) if logdir else None,
-            "logs_bytes": issabel_info.storage_bytes(logdir) if logdir else None,
-            "dialer_percent": issabel_info.dialer_percent(disk_total_bytes),
-            "dialer_bytes": issabel_info.dialer_bytes(),
+            "recordings_percent": recordings_percent,
+            "recordings_bytes": recordings_bytes,
+            "logs_percent": logs_percent,
+            "logs_bytes": logs_bytes,
+            "dialer_percent": dialer_percent,
+            "dialer_bytes": dialer_bytes,
         }
 
     return {
@@ -72,7 +80,7 @@ def gather_data():
 
 class MotdModule(PvxModule):
     name = "motd"
-    version = "0.1.10"
+    version = "0.1.11"
 
     def cli_group(self):
         @click.group(name="motd")

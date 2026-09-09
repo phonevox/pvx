@@ -1,6 +1,6 @@
 import unittest
 
-from validators import parse_port_spec, validate_cidr
+from validators import parse_cidr_list, parse_port_spec, validate_cidr
 
 
 class ParsePortSpecTest(unittest.TestCase):
@@ -57,6 +57,30 @@ class ValidateCidrTest(unittest.TestCase):
 
     def test_rejects_prefix_out_of_range(self):
         self.assertFalse(validate_cidr("10.0.0.0/33"))
+
+
+class ParseCidrListTest(unittest.TestCase):
+    # achado ao vivo: técnico mandou "1.1.1.1/32,2.2.2.2/8" numa tacada só -- cada CIDR
+    # sozinho é válido, mas o comando só aceitava um valor por vez.
+    def test_single_cidr_still_works(self):
+        self.assertEqual(parse_cidr_list("10.0.0.0/8"), ["10.0.0.0/8"])
+
+    def test_splits_multiple_cidrs_by_comma(self):
+        self.assertEqual(
+            parse_cidr_list("1.1.1.1/32,2.2.2.2/8"), ["1.1.1.1/32", "2.2.2.2/8"],
+        )
+
+    def test_tolerates_spaces_around_commas(self):
+        self.assertEqual(
+            parse_cidr_list("1.1.1.1/32, 2.2.2.2/8 , 3.3.3.3"), ["1.1.1.1/32", "2.2.2.2/8", "3.3.3.3"],
+        )
+
+    def test_ignores_trailing_comma(self):
+        self.assertEqual(parse_cidr_list("1.1.1.1/32,"), ["1.1.1.1/32"])
+
+    def test_raises_naming_every_invalid_entry_and_adds_none(self):
+        with self.assertRaisesRegex(ValueError, r"999\.1\.1\.1.*abc|abc.*999\.1\.1\.1"):
+            parse_cidr_list("1.1.1.1/32,999.1.1.1,abc")
 
 
 if __name__ == "__main__":

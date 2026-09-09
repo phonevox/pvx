@@ -84,9 +84,63 @@ def port_rule_args(spec):
     return [(port_range, proto) for proto in protocols]
 
 
-def sync(ip_accept, ip_deny, port_accept, port_deny, failsafe_ip):
-    zone = defaults.FIREWALLD_ZONE
-    ensure_zone(zone)
+def _conflicts_with_denied(port_str, proto, specs):
+    if "-" in port_str or not port_str.isdigit():
+        return False  # faixa -- fora de escopo do reconciliador hoje.
+    port_num = int(port_str)
+    return any(
+        (spec["protocol"] is None or spec["protocol"] == proto) and spec["start"] <= port_num <= spec["end"]
+        for spec in specs
+    )
+
+
+def remove_conflicting_ports(zone, port_deny):
+    # achado ao vivo (MagnusBilling): o instalador do Magnus abre porta 22/tcp pra
+    # QUALQUER origem via --add-port simples -- isso é avaliado ANTES da nossa
+    # rich-rule de port_deny (prioridade positiva), então o allow do Magnus sempre
+    # ganha e port_deny vira decoração pras portas que ele já tinha aberto. Só dá
+    # pra fazer port_deny valer de verdade removendo a porta simples conflitante.
+    listing = _run(["--permanent", "--zone", zone, "--list-ports"], check=False)
+    if listing.returncode != 0:
+        return
+    specs = [parse_port_spec(spec_str) for spec_str, _ in port_deny]
+    for entry in listing.stdout.split():
+        port_str, _, proto = entry.partition("/")
+        if _conflicts_with_denied(port_str, proto, specs):
+            _run(["--permanent", "--zone", zone, "--remove-port", entry])
+
+
+def _service_ports(service):
+    result = _run(["--info-service", service], check=False)
+    if result.returncode != 0:
+        return []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("ports:"):
+            return line[len("ports:"):].split()
+    return []
+
+
+def remove_conflicting_services(zone, port_deny):
+    # achado ao vivo (MagnusBilling): além de porta simples, a zona também tinha o
+    # serviço nomeado "ssh" (mecanismo separado de --list-ports, mesma prioridade
+    # de avaliação) reabrindo a 22 mesmo depois da porta simples já removida.
+    listing = _run(["--permanent", "--zone", zone, "--list-services"], check=False)
+    if listing.returncode != 0:
+        return
+    specs = [parse_port_spec(spec_str) for spec_str, _ in port_deny]
+    for service in listing.stdout.split():
+        for entry in _service_ports(service):
+            port_str, _, proto = entry.partition("/")
+            if _conflicts_with_denied(port_str, proto, specs):
+                _run(["--permanent", "--zone", zone, "--remove-service", service])
+                break
+
+
+def sync(ip_accept, ip_deny, port_accept, port_deny, failsafe_ip, zone=None, manage_zone=True):
+    zone = zone or defaults.FIREWALLD_ZONE
+    if manage_zone:
+        ensure_zone(zone)
 
     failsafe_rule = None
     if failsafe_ip:
@@ -95,6 +149,12 @@ def sync(ip_accept, ip_deny, port_accept, port_deny, failsafe_ip):
             raise RuntimeError("não consegui confirmar a regra de failsafe -- abortando sem limpar nada.")
 
     clear_zone_except_failsafe(zone, failsafe_rule)
+
+    if not manage_zone:
+        # só faz sentido numa zona alheia -- a nossa própria nunca tem porta/serviço
+        # de outra ferramenta pra reconciliar.
+        remove_conflicting_ports(zone, port_deny)
+        remove_conflicting_services(zone, port_deny)
 
     # tudo abaixo é --permanent, de propósito -- só o --reload final (que
     # promove permanent -> runtime de uma vez) aplica de verdade.

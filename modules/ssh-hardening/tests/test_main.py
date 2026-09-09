@@ -185,27 +185,48 @@ class FinalConfirmationTest(unittest.TestCase):
 
 
 class ApplyOutcomeTest(unittest.TestCase):
+    # --quick marca lock_root e change_port -- toda aplicação bem sucedida
+    # aqui de fato mexe no sshd_config, então tenta reiniciar o serviço.
+    @patch("main.sshd_service.restart", return_value="sshd")
     @patch("main.widgets.pause")
     @patch("main.widgets.message")
     @patch("main.apply_module.apply")
-    def test_success_pauses_with_restart_reminder_when_interactive(
-        self, mock_apply, mock_message, mock_pause
+    def test_success_restarts_sshd_and_pauses_when_interactive(
+        self, mock_apply, mock_message, mock_pause, mock_restart
     ):
+        # pedido ao vivo: nada de "reinicie você mesmo" -- o pvx reinicia
+        # sozinho depois de aplicar.
+        mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
+
+        result = _invoke(["setup", "--quick", "--yes"], is_tty=True)
+
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_restart.assert_called_once()
+        shown = mock_message.call_args.args[0]
+        self.assertIn("aplicado", shown)
+        self.assertIn("sshd reiniciado", shown.lower())
+        mock_pause.assert_called_once_with()
+
+    @patch("main.sshd_service.restart", return_value=None)
+    @patch("main.widgets.pause")
+    @patch("main.widgets.message")
+    @patch("main.apply_module.apply")
+    def test_warns_when_the_automatic_restart_fails(self, mock_apply, mock_message, mock_pause, mock_restart):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(["setup", "--quick", "--yes"], is_tty=True)
 
         self.assertEqual(result.exit_code, 0, msg=result.output)
         shown = mock_message.call_args.args[0]
-        self.assertIn("aplicado", shown)
+        self.assertIn("não consegui reiniciar", shown.lower())
         self.assertIn("reinicie", shown.lower())
-        mock_pause.assert_called_once_with()
 
+    @patch("main.sshd_service.restart")
     @patch("main.widgets.pause")
     @patch("main.widgets.message")
     @patch("main.apply_module.apply")
     def test_invalid_resulting_config_shows_rollback_message_and_pauses(
-        self, mock_apply, mock_message, mock_pause
+        self, mock_apply, mock_message, mock_pause, mock_restart
     ):
         mock_apply.return_value = {"applied": True, "config_valid": False, "record_path": "/x", "admin_group_added": None}
 
@@ -215,11 +236,15 @@ class ApplyOutcomeTest(unittest.TestCase):
         shown = mock_message.call_args.args[0]
         self.assertIn("revertido", shown.lower())
         mock_pause.assert_called_once_with()
+        # config nunca chegou a ficar em vigor (rollback já aconteceu dentro
+        # do apply()) -- reiniciar aqui não faria sentido.
+        mock_restart.assert_not_called()
 
+    @patch("main.sshd_service.restart", return_value="sshd")
     @patch("main.widgets.pause")
     @patch("main.widgets.message")
     @patch("main.apply_module.apply")
-    def test_warns_when_no_admin_group_was_found(self, mock_apply, mock_message, mock_pause):
+    def test_warns_when_no_admin_group_was_found(self, mock_apply, mock_message, mock_pause, mock_restart):
         # achado ao vivo (Debian 11 sem grupo wheel) -- add_to_admin_group agora
         # retorna False em vez de crashar; o técnico precisa saber disso.
         mock_apply.return_value = {
@@ -232,10 +257,11 @@ class ApplyOutcomeTest(unittest.TestCase):
         shown = mock_message.call_args.args[0]
         self.assertIn("wheel/sudo", shown)
 
+    @patch("main.sshd_service.restart", return_value="sshd")
     @patch("main.widgets.pause")
     @patch("main.click.echo")
     @patch("main.apply_module.apply")
-    def test_does_not_pause_when_run_without_a_tty(self, mock_apply, mock_echo, mock_pause):
+    def test_does_not_pause_when_run_without_a_tty(self, mock_apply, mock_echo, mock_pause, mock_restart):
         mock_apply.return_value = {"applied": True, "config_valid": True, "record_path": "/x", "admin_group_added": True}
 
         result = _invoke(["setup", "--quick", "--yes"], is_tty=False)
@@ -361,15 +387,40 @@ class RevertCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("nada a reverter", result.output.lower())
 
+    @patch("main.sshd_service.restart", return_value="sshd")
     @patch("main.apply_module.revert")
     @patch("main.apply_module.find_latest_record")
-    def test_warns_the_root_password_is_never_reverted(self, mock_find, mock_revert):
+    def test_warns_the_root_password_is_never_reverted(self, mock_find, mock_revert, mock_restart):
         mock_find.return_value = {"plan": {"lock_root": True, "create_user": False}, "backup_path": "/x"}
         mock_revert.return_value = {"reverted": ["sshd_config restaurado do backup"]}
         result = _invoke(["revert", "--yes"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("senha do root", result.output.lower())
         self.assertIn("não será revertida", result.output.lower())
+
+    @patch("main.sshd_service.restart", return_value="sshd")
+    @patch("main.apply_module.revert")
+    @patch("main.apply_module.find_latest_record")
+    def test_restarts_sshd_when_the_config_was_restored(self, mock_find, mock_revert, mock_restart):
+        # pedido ao vivo: mesma lógica do apply -- se o sshd_config mudou de
+        # volta, reinicia sozinho em vez de pedir pro técnico fazer à mão.
+        mock_find.return_value = {"plan": {"lock_root": True, "create_user": False}, "backup_path": "/x"}
+        mock_revert.return_value = {"reverted": ["sshd_config restaurado do backup"]}
+        result = _invoke(["revert", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_restart.assert_called_once()
+        self.assertIn("sshd reiniciado", result.output.lower())
+
+    @patch("main.sshd_service.restart")
+    @patch("main.apply_module.revert")
+    @patch("main.apply_module.find_latest_record")
+    def test_does_not_restart_when_only_the_user_was_removed(self, mock_find, mock_revert, mock_restart):
+        # sshd_config nem foi tocado nesse caso -- reiniciar não faria nada.
+        mock_find.return_value = {"plan": {"lock_root": False, "create_user": True, "username": "phonevox"}, "backup_path": None}
+        mock_revert.return_value = {"reverted": ["usuário 'phonevox' e sua regra de sudoers removidos"]}
+        result = _invoke(["revert", "--yes"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_restart.assert_not_called()
 
     @patch("main.apply_module.revert")
     @patch("main.apply_module.find_latest_record")

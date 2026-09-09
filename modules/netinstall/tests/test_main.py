@@ -9,7 +9,6 @@ from main import cli
 BASE_ARGS = [
     "issabel5", "--astver", "18", "--yes",
     "--sql-password", "sqlpw", "--web-password", "webpw",
-    "--tweaks", "firewall",  # só firewall -- evita disparar ssh-hardening/qint nos testes genéricos
 ]
 
 
@@ -28,6 +27,7 @@ class MainTestCase(unittest.TestCase):
             else patch("main.preflight.check", return_value=preflight_result)
         )
         with preflight_patch, \
+             patch("main.tmux_ops.is_active", return_value=True), \
              patch("main.preflight.version_major", return_value=9), \
              patch("main.install_steps.add_repos", side_effect=step_side_effects.get("add_repos")), \
              patch("main.install_steps.prepare_system", side_effect=step_side_effects.get("prepare_system")), \
@@ -35,19 +35,60 @@ class MainTestCase(unittest.TestCase):
              patch("main.install_steps.install_packages") as mock_install_packages, \
              patch("main.install_steps.post_install", side_effect=step_side_effects.get("post_install")), \
              patch("main.install_steps.install_db", side_effect=step_side_effects.get("install_db")), \
-             patch("main.install_steps.install_control_panel"), \
+             patch("main.install_steps.install_control_panel") as mock_control_panel, \
              patch("main.install_steps.set_timezone"), \
              patch("main.install_steps.set_passwords", side_effect=step_side_effects.get("set_passwords")), \
              patch("main.credentials.save_credentials", return_value="/tmp/creds.txt") as mock_creds, \
-             patch("main.os_ops.run_cmd") as mock_reboot, \
-             patch("main.integrations.run_ssh_hardening", return_value={"ok": True}) as mock_ssh, \
-             patch("main.integrations.run_firewall_sync", return_value={"ok": True}) as mock_fw, \
-             patch("main.integrations.run_qint", return_value={"ok": True}) as mock_qint:
+             patch("main.os_ops.run_cmd") as mock_reboot:
             result = CliRunner().invoke(cli.cli_group(), args)
             return result, {
-                "reboot": mock_reboot, "ssh": mock_ssh, "firewall": mock_fw, "qint": mock_qint,
+                "reboot": mock_reboot, "control_panel": mock_control_panel,
                 "creds": mock_creds, "install_packages": mock_install_packages,
             }
+
+
+class TmuxRelaunchTest(MainTestCase):
+    # achado ao vivo: instalação de 20+min cortada no meio por queda de SSH -- rodar
+    # dentro de uma sessão tmux sobrevive a isso. Só relança quando é interativo de
+    # verdade (sem sentido embrulhar uma invocação por script/cron) e quando ainda
+    # não está dentro de uma sessão tmux (evita recursão infinita).
+    def _invoke_with_tmux(self, args, is_active, is_tty):
+        with patch("main._is_interactive", return_value=is_tty), \
+             patch("main.tmux_ops.is_active", return_value=is_active), \
+             patch("main.tmux_ops.ensure_installed") as mock_ensure, \
+             patch("main.tmux_ops.relaunch_inside") as mock_relaunch, \
+             patch("main.preflight.check", return_value=([], [])), \
+             patch("main.preflight.version_major", return_value=9), \
+             patch("main.install_steps.add_repos"), \
+             patch("main.install_steps.prepare_system"), \
+             patch("main.install_steps.enable_php_remi"), \
+             patch("main.install_steps.install_packages"), \
+             patch("main.install_steps.post_install"), \
+             patch("main.install_steps.install_db"), \
+             patch("main.install_steps.install_control_panel"), \
+             patch("main.install_steps.set_timezone"), \
+             patch("main.install_steps.set_passwords"), \
+             patch("main.credentials.save_credentials", return_value="/tmp/creds.txt"), \
+             patch("main.os_ops.run_cmd"):
+            CliRunner().invoke(cli.cli_group(), args)
+            return mock_ensure, mock_relaunch
+
+    def test_relaunches_inside_tmux_when_interactive_and_not_already_inside(self):
+        mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=False, is_tty=True)
+        mock_ensure.assert_called_once()
+        mock_relaunch.assert_called_once()
+
+    def test_does_not_relaunch_when_already_inside_tmux(self):
+        mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=True, is_tty=True)
+        mock_ensure.assert_not_called()
+        mock_relaunch.assert_not_called()
+
+    def test_does_not_relaunch_when_not_interactive(self):
+        # instalação por script/cron não tem terminal pra tmux tomar conta --
+        # embrulhar isso não faz sentido nenhum.
+        mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=False, is_tty=False)
+        mock_ensure.assert_not_called()
+        mock_relaunch.assert_not_called()
 
 
 class PreflightTest(MainTestCase):
@@ -75,11 +116,12 @@ class PreflightReportTest(MainTestCase):
 
         result, _ = self._invoke(BASE_ARGS, preflight_side_effect=fake_check)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("✓ root: ok", result.output)
-        self.assertIn("✓ SO: ok (Rocky/RHEL 9)", result.output)
-        self.assertIn("✓ rede: ok", result.output)
-        self.assertIn("! RAM: atenção (768 MB)", result.output)
-        self.assertIn("✗ instalação prévia: falha (detectada)", result.output)
+        self.assertIn("[✓] root: ok", result.output)
+        self.assertIn("[✓] SO: ok (Rocky/RHEL 9)", result.output)
+        self.assertIn("[✓] rede: ok", result.output)
+        # símbolo de "warn" vem do tema (SYMBOL_SETS) -- "!" é o default (ascii).
+        self.assertIn("[!] RAM: atenção (768 MB)", result.output)
+        self.assertIn("[✗] instalação prévia: falha (detectada)", result.output)
 
     def test_check_without_detail_shows_only_the_status_word(self):
         def fake_check(min_version, force=False, report=None):
@@ -88,7 +130,7 @@ class PreflightReportTest(MainTestCase):
 
         result, _ = self._invoke(BASE_ARGS, preflight_side_effect=fake_check)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("✓ root: ok", result.output)
+        self.assertIn("[✓] root: ok", result.output)
 
     def test_network_pending_phase_opens_its_own_spinner(self):
         def fake_check(min_version, force=False, report=None):
@@ -107,10 +149,7 @@ class AddpkgsDefaultsTest(MainTestCase):
         with patch("main._is_interactive", return_value=True), \
              patch("main.ask_checkbox", return_value=[]) as mock_checkbox, \
              patch("main.ask_select", return_value="Usar padrões da Phonevox (recomendado)"):
-            result, mocks = self._invoke(
-                ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-                 "--tweaks", "ssh-hardening"],
-            )
+            result, mocks = self._invoke(BASE_ARGS + ["--tweaks", "operator-panel"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_checkbox.assert_not_called()
         packages = mocks["install_packages"].call_args.args[1]
@@ -119,8 +158,7 @@ class AddpkgsDefaultsTest(MainTestCase):
         self.assertNotIn("wanpipe", packages)
 
     def test_flag_still_overrides_the_default(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "firewall", "--addpkgs", "wanpipe"]
+        args = BASE_ARGS + ["--addpkgs", "wanpipe"]
         result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
         packages = mocks["install_packages"].call_args.args[1]
@@ -142,9 +180,8 @@ class HappyPathTest(MainTestCase):
     def test_runs_base_install_sequence(self):
         result, mocks = self._invoke(BASE_ARGS)
         self.assertEqual(result.exit_code, 0, result.output)
-        mocks["firewall"].assert_called_once()
-        mocks["ssh"].assert_not_called()
-        mocks["qint"].assert_not_called()
+        mocks["install_packages"].assert_called_once()
+        mocks["control_panel"].assert_called_once()
 
     def test_reboots_by_default(self):
         result, mocks = self._invoke(BASE_ARGS)
@@ -164,7 +201,7 @@ class HappyPathTest(MainTestCase):
         # bash original nunca trava esperando senha -- sem flag e sem TTY, gera aleatória
         # (fica recuperável depois via credentials.save_credentials). Corrigido: antes
         # disso, faltar --sql-password/--web-password sem terminal dava erro.
-        args = ["issabel5", "--astver", "18", "--yes", "--tweaks", "firewall"]
+        args = ["issabel5", "--astver", "18", "--yes"]
         result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
         sql_pw, web_pw = mocks["creds"].call_args.args[2], mocks["creds"].call_args.args[3]
@@ -177,7 +214,8 @@ class StepAnnouncementTest(MainTestCase):
     # cada etapa deve anunciar sucesso ao terminar -- ver widgets.step()/_run_step().
     # duração fica só no timer ao vivo do spinner (widgets.step), não repete no texto
     # de sucesso -- linha do spinner some ao terminar (transient=True), então o que
-    # resta na tela é só a sequência de "✓ sucesso!".
+    # resta na tela é só a sequência de "[✓] <mensagem>" (formato default do tema,
+    # modern-full-color).
     DONE_MESSAGES = (
         "Repositórios adicionados.",
         "Sistema preparado.",
@@ -185,6 +223,7 @@ class StepAnnouncementTest(MainTestCase):
         "Pacotes instalados.",
         "Pós-instalação concluída.",
         "Schema do banco instalado.",
+        "Painel do operador instalado.",
         "Senhas de acesso definidas.",
     )
 
@@ -193,7 +232,7 @@ class StepAnnouncementTest(MainTestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         for done_message in self.DONE_MESSAGES:
             self.assertIn(
-                f"✓ sucesso! {done_message}", result.output,
+                f"[✓] {done_message}", result.output,
                 f"faltou anúncio de sucesso para: {done_message}",
             )
 
@@ -201,20 +240,10 @@ class StepAnnouncementTest(MainTestCase):
         result, _ = self._invoke(BASE_ARGS)
         self.assertNotRegex(result.output, r"\(\d+\.\ds\)")
 
-    def test_announces_tweak_results_too(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "ssh-hardening"]
-        with patch("main._is_interactive", return_value=True), \
-             patch("main.ask_checkbox", return_value=[]), \
-             patch("main.ask_select", return_value="Usar padrões da Phonevox (recomendado)"):
-            result, _ = self._invoke(args)
-        self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("✓ sucesso! ssh-hardening aplicado.", result.output)
-
 
 class AsteriskVersionPromptTest(MainTestCase):
     def test_defaults_to_18_when_asked_interactively(self):
-        args = ["issabel5", "--yes", "--sql-password", "a", "--web-password", "b", "--tweaks", "firewall"]
+        args = ["issabel5", "--yes", "--sql-password", "a", "--web-password", "b"]
         with patch("main._is_interactive", return_value=True), \
              patch("main.ask_checkbox", return_value=[]), \
              patch("main.ask_select", return_value="18") as mock_select:
@@ -233,53 +262,9 @@ class CoffeeBreakTest(MainTestCase):
         self.assertLess(cafe_index, packages_index)
 
 
-class SshHardeningTweakTest(MainTestCase):
-    def test_runs_ssh_hardening_with_resolved_defaults(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "ssh-hardening"]
-        result, mocks = self._invoke(args)
-        self.assertEqual(result.exit_code, 0, result.output)
-        mocks["ssh"].assert_called_once()
-        config = mocks["ssh"].call_args.args[0]
-        self.assertTrue(config["lock_root"])
-        self.assertEqual(config["username"], "phonevox")
-        self.assertEqual(config["port"], "21122")
-
-    def test_flags_override_defaults(self):
-        args = [
-            "issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-            "--tweaks", "ssh-hardening", "--tweak-ssh-username", "custom", "--tweak-ssh-port", "2222",
-        ]
-        result, mocks = self._invoke(args)
-        config = mocks["ssh"].call_args.args[0]
-        self.assertEqual(config["username"], "custom")
-        self.assertEqual(config["port"], "2222")
-
-
-class QintTweakTest(MainTestCase):
-    def test_errors_without_tipo(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "qint"]
-        result, mocks = self._invoke(args)
-        self.assertNotEqual(result.exit_code, 0)
-        mocks["qint"].assert_not_called()
-
-    def test_runs_qint_with_provided_fields(self):
-        args = [
-            "issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-            "--tweaks", "qint", "--qint-tipo", "ixcsoft", "--qint-sftp", "root@10.0.0.1:2222",
-            "--qint-url", "https://erp.example.com",
-        ]
-        result, mocks = self._invoke(args)
-        self.assertEqual(result.exit_code, 0, result.output)
-        config = mocks["qint"].call_args.args[0]
-        self.assertEqual(config["tipo"], "ixcsoft")
-        self.assertEqual(config["sftp"], "root@10.0.0.1:2222")
-
-
 class InteractivePasswordTest(MainTestCase):
     def test_empty_enter_generates_random_password(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--tweaks", "firewall"]
+        args = ["issabel5", "--astver", "18", "--yes"]
         with patch("main._is_interactive", return_value=True), \
              patch("main.ask_checkbox", return_value=[]), \
              patch("main.ask_text", return_value=""):
@@ -290,67 +275,23 @@ class InteractivePasswordTest(MainTestCase):
         self.assertNotEqual(sql_pw, web_pw)
 
     def test_esc_on_password_prompt_aborts(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--tweaks", "firewall"]
+        args = ["issabel5", "--astver", "18", "--yes"]
         with patch("main._is_interactive", return_value=True), \
              patch("main.ask_checkbox", return_value=[]), \
              patch("main.ask_text", return_value=None):
             result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
-        mocks["firewall"].assert_not_called()
-
-
-class SshHardeningQuickShortcutTest(MainTestCase):
-    def test_quick_choice_uses_defaults_without_asking_anything_else(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "ssh-hardening"]
-        with patch("main._is_interactive", return_value=True), \
-             patch("main.ask_checkbox", return_value=[]), \
-             patch("main.ask_select", return_value="Usar padrões da Phonevox (recomendado)") as mock_select:
-            result, mocks = self._invoke(args)
-        self.assertEqual(result.exit_code, 0, result.output)
-        mock_select.assert_called_once()  # só a pergunta quick-vs-customize, mais nenhuma
-        config = mocks["ssh"].call_args.args[0]
-        self.assertEqual(config["username"], "phonevox")
-        self.assertEqual(config["port"], "21122")
-
-    def test_customize_choice_falls_through_to_per_field_questions(self):
-        args = ["issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "ssh-hardening"]
-        with patch("main._is_interactive", return_value=True), \
-             patch("main.ask_checkbox", return_value=[]), \
-             patch("main.ask_select", return_value="Personalizar cada opção") as mock_select, \
-             patch("main.ask_confirm", return_value=True) as mock_confirm:
-            result, mocks = self._invoke(args)
-        self.assertEqual(result.exit_code, 0, result.output)
-        # 1 pergunta quick-vs-customize + 3 confirmações (lock_root/create_user/change_port).
-        self.assertEqual(mock_select.call_count, 1)
-        self.assertEqual(mock_confirm.call_count, 3)
-        mocks["ssh"].assert_called_once()
-
-    def test_flag_given_skips_the_quick_vs_customize_question(self):
-        args = [
-            "issabel5", "--astver", "18", "--yes", "--sql-password", "a", "--web-password", "b",
-            "--tweaks", "ssh-hardening", "--tweak-ssh-username", "custom",
-        ]
-        with patch("main._is_interactive", return_value=True), \
-             patch("main.ask_checkbox", return_value=[]), \
-             patch("main.ask_select") as mock_select, patch("main.ask_confirm", return_value=True):
-            result, mocks = self._invoke(args)
-        self.assertEqual(result.exit_code, 0, result.output)
-        mock_select.assert_not_called()  # uma flag ssh já dada pula a pergunta quick-vs-customize
-        config = mocks["ssh"].call_args.args[0]
-        self.assertEqual(config["username"], "custom")
+        mocks["install_packages"].assert_not_called()
 
 
 class ConfirmationTest(MainTestCase):
     def test_cancels_without_yes_when_confirm_declines(self):
-        args = ["issabel5", "--astver", "18", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "firewall"]
+        args = ["issabel5", "--astver", "18", "--sql-password", "a", "--web-password", "b"]
         with patch("main.ask_confirm", return_value=False):
             result, mocks = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("cancelada", result.output.lower())
-        mocks["firewall"].assert_not_called()
+        mocks["install_packages"].assert_not_called()
 
 
 class LoggingTest(MainTestCase):
@@ -376,14 +317,6 @@ class LoggingTest(MainTestCase):
         self.assertIn("falha real do passo", logger.error.call_args.args[0])
 
     @patch("main.NetinstallModule.get_logger")
-    def test_logs_tweak_results(self, mock_get_logger):
-        logger = mock_get_logger.return_value
-        result, _ = self._invoke(BASE_ARGS)
-        self.assertEqual(result.exit_code, 0, result.output)
-        info_messages = " ".join(c.args[0] for c in logger.info.call_args_list)
-        self.assertIn("firewall", info_messages)
-
-    @patch("main.NetinstallModule.get_logger")
     def test_building_the_cli_group_alone_does_not_touch_the_logger(self, mock_get_logger):
         cli.cli_group()
         mock_get_logger.assert_not_called()
@@ -397,7 +330,7 @@ class PauseOnExitTest(MainTestCase):
     @patch("main.widgets.pause")
     def test_pauses_after_a_full_successful_install_when_interactive(self, mock_pause):
         with patch("main._is_interactive", return_value=True):
-            result, _ = self._invoke(BASE_ARGS)
+            result, _ = self._invoke(BASE_ARGS + ["--tweaks", "operator-panel"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 
@@ -410,7 +343,7 @@ class PauseOnExitTest(MainTestCase):
     @patch("main.widgets.pause")
     def test_pauses_when_declining_the_final_confirmation(self, mock_pause):
         args = ["issabel5", "--astver", "18", "--sql-password", "a", "--web-password", "b",
-                "--tweaks", "firewall"]
+                "--tweaks", "operator-panel"]
         with patch("main._is_interactive", return_value=True), patch("main.ask_confirm", return_value=False):
             result, _ = self._invoke(args)
         self.assertEqual(result.exit_code, 0, result.output)

@@ -1,4 +1,7 @@
 import unittest
+from pathlib import Path
+from subprocess import CompletedProcess
+from tempfile import TemporaryDirectory
 from unittest.mock import mock_open, patch
 
 import issabel_info
@@ -25,91 +28,88 @@ class FindSpooldirTest(unittest.TestCase):
             self.assertIsNone(issabel_info.find_spooldir())
 
 
-class StoragePercentTest(unittest.TestCase):
-    def test_computes_percent_of_total_disk(self):
-        with patch("issabel_info.os.path.isdir", return_value=True), \
-             patch("issabel_info.os.walk", return_value=[("/var/spool/asterisk/monitor", [], ["a.wav", "b.wav"])]), \
-             patch("issabel_info.os.path.getsize", side_effect=[1000, 2000]):
-            percent = issabel_info.storage_percent("/var/spool/asterisk/monitor", disk_total_bytes=30000)
-        self.assertAlmostEqual(percent, 10.0)
-
-    def test_none_when_the_directory_does_not_exist(self):
-        with patch("issabel_info.os.path.isdir", return_value=False):
-            self.assertIsNone(issabel_info.storage_percent("/nope", disk_total_bytes=1000))
-
-    def test_none_when_disk_total_is_zero_or_unknown(self):
-        with patch("issabel_info.os.path.isdir", return_value=True), \
-             patch("issabel_info.os.walk", return_value=[]):
-            self.assertIsNone(issabel_info.storage_percent("/x", disk_total_bytes=0))
-
-    def test_skips_files_it_cannot_stat(self):
-        # técnico logado como não-root pode não ter permissão em alguns
-        # arquivos de gravação -- ignora aquele arquivo e soma o resto.
-        with patch("issabel_info.os.path.isdir", return_value=True), \
-             patch("issabel_info.os.walk", return_value=[("/x", [], ["a", "b"])]), \
-             patch("issabel_info.os.path.getsize", side_effect=[OSError(), 5000]):
-            percent = issabel_info.storage_percent("/x", disk_total_bytes=10000)
-        self.assertAlmostEqual(percent, 50.0)
-
-
 class StorageBytesTest(unittest.TestCase):
-    def test_sums_file_sizes_under_the_directory(self):
-        with patch("issabel_info.os.path.isdir", return_value=True), \
-             patch("issabel_info.os.walk", return_value=[("/x", [], ["a", "b"])]), \
-             patch("issabel_info.os.path.getsize", side_effect=[1000, 2000]):
-            self.assertEqual(issabel_info.storage_bytes("/x"), 3000)
+    # achado ao vivo: os.walk + os.path.getsize por arquivo, em Python, era o
+    # gargalo real do motd -- numa central de produção com anos de gravação de
+    # chamada (dezenas de milhares de arquivos), isso deixava o login lento pra
+    # caramba. du nativo (C, otimizado) resolve isso sem trocar o resultado.
+    def test_sums_real_files_under_the_directory_via_du(self):
+        # du reporta uso real em disco (bloco a bloco), não a soma exata de
+        # bytes de conteúdo -- nunca fica abaixo do conteúdo real, só igual ou
+        # arredondado pra cima (tamanho de bloco varia por filesystem/SO).
+        with TemporaryDirectory() as tmp:
+            Path(tmp, "a.wav").write_bytes(b"x" * 1000)
+            Path(tmp, "b.wav").write_bytes(b"x" * 2000)
+            size = issabel_info.storage_bytes(tmp)
+        self.assertGreaterEqual(size, 3000)
 
     def test_none_when_the_directory_does_not_exist(self):
         with patch("issabel_info.os.path.isdir", return_value=False):
             self.assertIsNone(issabel_info.storage_bytes("/nope"))
 
-    def test_skips_files_it_cannot_stat(self):
-        with patch("issabel_info.os.path.isdir", return_value=True), \
-             patch("issabel_info.os.walk", return_value=[("/x", [], ["a", "b"])]), \
-             patch("issabel_info.os.path.getsize", side_effect=[OSError(), 5000]):
-            self.assertEqual(issabel_info.storage_bytes("/x"), 5000)
+    @patch("issabel_info.subprocess.run")
+    def test_none_when_du_fails(self, mock_run):
+        mock_run.return_value = CompletedProcess(args=[], returncode=1, stdout="", stderr="deu ruim")
+        with patch("issabel_info.os.path.isdir", return_value=True):
+            self.assertIsNone(issabel_info.storage_bytes("/x"))
+
+    @patch("issabel_info.subprocess.run", side_effect=OSError)
+    def test_none_when_du_is_unavailable(self, mock_run):
+        with patch("issabel_info.os.path.isdir", return_value=True):
+            self.assertIsNone(issabel_info.storage_bytes("/x"))
 
 
-class RecordingsBytesTest(unittest.TestCase):
+class StoragePercentTest(unittest.TestCase):
+    @patch("issabel_info.storage_bytes", return_value=3000)
+    def test_computes_percent_of_total_disk(self, mock_bytes):
+        self.assertAlmostEqual(issabel_info.storage_percent("/x", disk_total_bytes=30000), 10.0)
+
+    @patch("issabel_info.storage_bytes", return_value=None)
+    def test_none_when_storage_bytes_is_none(self, mock_bytes):
+        self.assertIsNone(issabel_info.storage_percent("/nope", disk_total_bytes=1000))
+
+    @patch("issabel_info.storage_bytes", return_value=100)
+    def test_none_when_disk_total_is_zero_or_unknown(self, mock_bytes):
+        self.assertIsNone(issabel_info.storage_percent("/x", disk_total_bytes=0))
+
+
+class StorageInfoTest(unittest.TestCase):
+    # dedup: bytes e percent do mesmo path numa chamada só -- achado ao vivo,
+    # recordings/dialer/logs cada um chamava storage_bytes duas vezes (uma via
+    # *_bytes(), outra via *_percent()), dobrando à toa o número de `du`.
+    @patch("issabel_info.storage_bytes", return_value=3000)
+    def test_computes_bytes_and_percent_from_a_single_call(self, mock_bytes):
+        size, percent = issabel_info.storage_info("/x", disk_total_bytes=30000)
+        mock_bytes.assert_called_once_with("/x")
+        self.assertEqual(size, 3000)
+        self.assertAlmostEqual(percent, 10.0)
+
+    @patch("issabel_info.storage_bytes", return_value=None)
+    def test_percent_is_none_when_bytes_is_none(self, mock_bytes):
+        size, percent = issabel_info.storage_info("/nope", disk_total_bytes=1000)
+        self.assertIsNone(size)
+        self.assertIsNone(percent)
+
+
+class RecordingsInfoTest(unittest.TestCase):
     def test_joins_spooldir_with_monitor_and_delegates(self):
         with patch("issabel_info.find_spooldir", return_value="/var/spool/asterisk"), \
-             patch("issabel_info.storage_bytes", return_value=12345) as mock_storage:
-            result = issabel_info.recordings_bytes()
-        mock_storage.assert_called_once_with("/var/spool/asterisk/monitor")
-        self.assertEqual(result, 12345)
+             patch("issabel_info.storage_info", return_value=(12345, 4.6)) as mock_info:
+            size, percent = issabel_info.recordings_info(disk_total_bytes=1000)
+        mock_info.assert_called_once_with("/var/spool/asterisk/monitor", 1000)
+        self.assertEqual((size, percent), (12345, 4.6))
 
     def test_none_when_spooldir_is_unknown(self):
         with patch("issabel_info.find_spooldir", return_value=None):
-            self.assertIsNone(issabel_info.recordings_bytes())
+            self.assertEqual(issabel_info.recordings_info(disk_total_bytes=1000), (None, None))
 
 
-class DialerBytesTest(unittest.TestCase):
-    def test_delegates_to_storage_bytes_with_the_fixed_path(self):
-        with patch("issabel_info.storage_bytes", return_value=999) as mock_storage:
-            result = issabel_info.dialer_bytes()
-        mock_storage.assert_called_once_with(issabel_info.DIALER_DIR)
-        self.assertEqual(result, 999)
-
-
-class RecordingsPercentTest(unittest.TestCase):
-    def test_joins_spooldir_with_monitor_and_delegates(self):
-        with patch("issabel_info.find_spooldir", return_value="/var/spool/asterisk"), \
-             patch("issabel_info.storage_percent", return_value=12.3) as mock_storage:
-            percent = issabel_info.recordings_percent(disk_total_bytes=1000)
-        mock_storage.assert_called_once_with("/var/spool/asterisk/monitor", 1000)
-        self.assertEqual(percent, 12.3)
-
-    def test_none_when_spooldir_is_unknown(self):
-        with patch("issabel_info.find_spooldir", return_value=None):
-            self.assertIsNone(issabel_info.recordings_percent(disk_total_bytes=1000))
-
-
-class DialerPercentTest(unittest.TestCase):
-    def test_delegates_to_storage_percent_with_the_fixed_path(self):
-        with patch("issabel_info.storage_percent", return_value=4.2) as mock_storage:
-            percent = issabel_info.dialer_percent(disk_total_bytes=1000)
-        mock_storage.assert_called_once_with(issabel_info.DIALER_DIR, 1000)
-        self.assertEqual(percent, 4.2)
+class DialerInfoTest(unittest.TestCase):
+    def test_delegates_to_storage_info_with_the_fixed_path(self):
+        with patch("issabel_info.storage_info", return_value=(999, 0.1)) as mock_info:
+            size, percent = issabel_info.dialer_info(disk_total_bytes=1000)
+        mock_info.assert_called_once_with(issabel_info.DIALER_DIR, 1000)
+        self.assertEqual((size, percent), (999, 0.1))
 
 
 if __name__ == "__main__":

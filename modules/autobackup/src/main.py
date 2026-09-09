@@ -10,6 +10,8 @@ from pvx.modules.base import PvxModule
 
 import backup_scripts
 import crontab
+import issabel_upload_ops
+import magnus_upload_ops
 import pbackup_ops
 import state
 import uoe_client
@@ -30,9 +32,17 @@ _MAGNUS_MODE_LABELS = {
     "magnus.sh": "magnus",
     "pvx magnus": "magnus-pvx",
 }
+_MAGNUS_SPLIT_LABELS = {
+    "Arquivo único (config + sons)": False,
+    "Arquivos separados (config, gravações e sons)": True,
+}
+_ACCOUNT_MODE_REGISTER = "register"
+_ACCOUNT_MODE_LOGIN = "login"
+_ACCOUNT_MODE_TOKEN = "token"
 _ACCOUNT_ACTION_LABELS = {
-    "Criar novo usuário no UOE": False,
-    "Usuário já existe": True,
+    "Criar novo usuário no UOE": _ACCOUNT_MODE_REGISTER,
+    "Usuário já existe": _ACCOUNT_MODE_LOGIN,
+    "Usar um token já autenticado": _ACCOUNT_MODE_TOKEN,
 }
 
 
@@ -40,9 +50,9 @@ def _is_interactive():
     return sys.stdin.isatty()
 
 
-def _read_password_file(path):
-    # nunca senha em argumento de linha de comando (fica em ~/.bash_history, ps
-    # aux, etc.) -- mesma convenção de scripts/publish.sh.
+def _read_secret_file(path):
+    # nunca senha/token em argumento de linha de comando (fica em ~/.bash_history,
+    # ps aux, etc.) -- mesma convenção de scripts/publish.sh.
     if path is None:
         return None
     return open(path).read().strip()
@@ -135,7 +145,7 @@ def _resolve_root_path(root_path, id_cliente, id_contrato, empresa, interactive)
     return f"clientes/{id_cliente}-{id_contrato}-{empresa}"
 
 
-def _resolve_script(script, custom_command, issabel_recordings, interactive):
+def _resolve_script(script, custom_command, issabel_recordings, magnus_split, interactive):
     if script is None:
         if not interactive:
             raise click.ClickException(
@@ -143,7 +153,7 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
             )
         label = ask_select("Script pra rodar na cron:", list(_SCRIPT_LABELS))
         if label is None:
-            return None, None, None
+            return None, None, None, None
         script = _SCRIPT_LABELS[label]
 
         if script == _MAGNUS_MENU_SENTINEL:
@@ -152,7 +162,7 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
                 default="pvx magnus",
             )
             if mode_label is None:
-                return None, None, None
+                return None, None, None, None
             script = _MAGNUS_MODE_LABELS[mode_label]
 
     if script not in backup_scripts.SCRIPTS:
@@ -165,19 +175,31 @@ def _resolve_script(script, custom_command, issabel_recordings, interactive):
                 default="Somente configurações",
             )
             if mode_label is None:
-                return None, None, None
+                return None, None, None, None
             issabel_recordings = _ISSABEL_MODE_LABELS[mode_label]
         else:
             issabel_recordings = False
+
+    if script == "magnus-pvx" and magnus_split is None:
+        if interactive:
+            mode_label = ask_select(
+                "MagnusBilling (pvx) -- como enviar o backup:", list(_MAGNUS_SPLIT_LABELS),
+                default="Arquivo único (config + sons)",
+            )
+            if mode_label is None:
+                return None, None, None, None
+            magnus_split = _MAGNUS_SPLIT_LABELS[mode_label]
+        else:
+            magnus_split = False
 
     if script == "custom" and custom_command is None:
         if not interactive:
             raise click.ClickException("--script custom exige --custom-command (com {TOKEN} literal).")
         custom_command = ask_text("Comando completo (use {TOKEN} onde o token deve entrar):")
         if custom_command is None:
-            return None, None, None
+            return None, None, None, None
 
-    return script, custom_command, issabel_recordings
+    return script, custom_command, issabel_recordings, magnus_split
 
 
 def _resolve_schedule(minute, hour, interactive):
@@ -205,90 +227,108 @@ def _run_setup(logger, opts, interactive):
     # decide ANTES de qualquer outra coisa -- root_path só existe pro cadastro
     # (register), e o resto dos prompts muda de "defina" (criando algo novo)
     # pra "informe" (login em algo que já existe) uma vez que isso é sabido.
-    skip_register = opts["skip_register"]
-    if not skip_register and interactive:
-        action = ask_select(
-            "Usuário no UOE:", list(_ACCOUNT_ACTION_LABELS),
-            default="Criar novo usuário no UOE",
-        )
-        if action is None:
-            return
-        skip_register = _ACCOUNT_ACTION_LABELS[action]
+    account_mode = opts["account_mode"]
+    if account_mode is None:
+        if interactive:
+            action = ask_select(
+                "Usuário no UOE:", list(_ACCOUNT_ACTION_LABELS),
+                default="Criar novo usuário no UOE",
+            )
+            if action is None:
+                return
+            account_mode = _ACCOUNT_ACTION_LABELS[action]
+        else:
+            account_mode = _ACCOUNT_MODE_REGISTER  # headless sem flag = comportamento antigo (registra)
 
     root_path = None
-    if not skip_register:
+    if account_mode == _ACCOUNT_MODE_REGISTER:
         root_path = _resolve_root_path(
             opts["root_path"], opts["id_cliente"], opts["id_contrato"], opts["empresa"], interactive,
         )
         if root_path is None:
             return
 
-    username = opts["username"]
-    if username is None:
-        if not interactive:
-            raise click.ClickException("informe --username.")
-        prompt = "Usuário do cliente já cadastrado no UOE:" if skip_register else "Defina o usuário do cliente no UOE:"
-        username = ask_text(prompt)
-        if username is None:
-            return
-
-    # nunca deriva/hardcoda uma fórmula de senha -- repo é público, uma fórmula
-    # fixa no fonte revelaria como adivinhar a senha de qualquer cliente sabendo
-    # só o username (ver ADR 0001). o técnico sempre digita a senha de verdade.
-    password = _read_password_file(opts["password_file"])
-    if password is None:
-        if not interactive:
-            raise click.ClickException("informe --password-file (senha do cliente a ser criado).")
-        prompt = (
-            f"Senha do usuário '{username}' no UOE:" if skip_register
-            else f"Defina a senha do usuário '{username}' no UOE:"
-        )
-        password = ask_password(prompt)
-        if password is None:
-            return
-
-    if not skip_register:
-        # senha de root só é necessária pra registrar um usuário novo -- quem
-        # já existe não precisa que o técnico saiba/digite a senha do superadmin.
-        admin_password = _read_password_file(opts["admin_password_file"])
-        if admin_password is None:
+    if account_mode == _ACCOUNT_MODE_TOKEN:
+        # nem cria usuário nem loga -- o token já foi obtido em outro lugar (ex.:
+        # gerado direto no UOE). Sem senha nenhuma envolvida aqui.
+        token = _read_secret_file(opts["token_file"])
+        if token is None:
             if not interactive:
-                raise click.ClickException("informe --admin-password-file.")
-            admin_password = ask_password(
-                "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
+                raise click.ClickException("informe --token-file (token já autenticado no UOE).")
+            token = ask_password("Token já autenticado no UOE:")
+            if token is None:
+                return
+        username = opts["username"] or "-"
+    else:
+        username = opts["username"]
+        if username is None:
+            if not interactive:
+                raise click.ClickException("informe --username.")
+            prompt = (
+                "Usuário do cliente já cadastrado no UOE:" if account_mode == _ACCOUNT_MODE_LOGIN
+                else "Defina o usuário do cliente no UOE:"
             )
-            if admin_password is None:
+            username = ask_text(prompt)
+            if username is None:
                 return
 
-        with widgets.spinner("Autenticando como superadmin..."):
-            try:
-                admin_token = uoe_client.login("root", admin_password)
-            except uoe_client.UOEError as e:
-                raise click.ClickException(f"falha no login do superadmin: {e}")
-
-        try:
-            with widgets.spinner(f"Registrando '{username}' no UOE..."):
-                uoe_client.register(admin_token, username, password, root_path)
-            widgets.success(f"usuário '{username}' registrado (root_path={root_path}).")
-        except uoe_client.UOEError as e:
-            logger.error(f"register de '{username}' falhou: {e}")
-            skip = interactive and ask_confirm(
-                f"Falha ao registrar (HTTP {e.status}): {e.body}\n"
-                "Isso pode ser porque o usuário já existe. Pular pro login e continuar?",
-                default=False,
+        # nunca deriva/hardcoda uma fórmula de senha -- repo é público, uma fórmula
+        # fixa no fonte revelaria como adivinhar a senha de qualquer cliente sabendo
+        # só o username (ver ADR 0001). o técnico sempre digita a senha de verdade.
+        password = _read_secret_file(opts["password_file"])
+        if password is None:
+            if not interactive:
+                raise click.ClickException("informe --password-file (senha do cliente a ser criado).")
+            prompt = (
+                f"Senha do usuário '{username}' no UOE:" if account_mode == _ACCOUNT_MODE_LOGIN
+                else f"Defina a senha do usuário '{username}' no UOE:"
             )
-            if not skip:
-                raise click.ClickException(f"falha ao registrar '{username}' no UOE: {e}")
+            password = ask_password(prompt)
+            if password is None:
+                return
 
-    with widgets.spinner(f"Autenticando '{username}'..."):
-        try:
-            token = uoe_client.login(username, password)
-        except uoe_client.UOEError as e:
-            raise click.ClickException(f"falha no login de '{username}': {e}")
-    widgets.success("token obtido.")
+        if account_mode == _ACCOUNT_MODE_REGISTER:
+            # senha de root só é necessária pra registrar um usuário novo -- quem
+            # já existe não precisa que o técnico saiba/digite a senha do superadmin.
+            admin_password = _read_secret_file(opts["admin_password_file"])
+            if admin_password is None:
+                if not interactive:
+                    raise click.ClickException("informe --admin-password-file.")
+                admin_password = ask_password(
+                    "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
+                )
+                if admin_password is None:
+                    return
 
-    script, custom_command, issabel_recordings = _resolve_script(
-        opts["script"], opts["custom_command"], opts["issabel_recordings"], interactive,
+            with widgets.spinner("Autenticando como superadmin..."):
+                try:
+                    admin_token = uoe_client.login("root", admin_password)
+                except uoe_client.UOEError as e:
+                    raise click.ClickException(f"falha no login do superadmin: {e}")
+
+            try:
+                with widgets.spinner(f"Registrando '{username}' no UOE..."):
+                    uoe_client.register(admin_token, username, password, root_path)
+                widgets.success(f"usuário '{username}' registrado (root_path={root_path}).")
+            except uoe_client.UOEError as e:
+                logger.error(f"register de '{username}' falhou: {e}")
+                skip = interactive and ask_confirm(
+                    f"Falha ao registrar (HTTP {e.status}): {e.body}\n"
+                    "Isso pode ser porque o usuário já existe. Pular pro login e continuar?",
+                    default=False,
+                )
+                if not skip:
+                    raise click.ClickException(f"falha ao registrar '{username}' no UOE: {e}")
+
+        with widgets.spinner(f"Autenticando '{username}'..."):
+            try:
+                token = uoe_client.login(username, password)
+            except uoe_client.UOEError as e:
+                raise click.ClickException(f"falha no login de '{username}': {e}")
+        widgets.success("token obtido.")
+
+    script, custom_command, issabel_recordings, magnus_split = _resolve_script(
+        opts["script"], opts["custom_command"], opts["issabel_recordings"], opts["magnus_split"], interactive,
     )
     if script is None:
         return
@@ -299,7 +339,7 @@ def _run_setup(logger, opts, interactive):
 
     command = backup_scripts.build_command(
         script, token, pbackup_root=pbackup_root, custom_template=custom_command,
-        issabel_recordings=issabel_recordings,
+        issabel_recordings=issabel_recordings, magnus_split=magnus_split,
     )
     cron_line = f"{minute} {hour} * * * {command}"
     crontab.write_crontab(crontab.upsert_managed_entry(crontab.read_crontab(), cron_line))
@@ -308,7 +348,7 @@ def _run_setup(logger, opts, interactive):
     state.save(_state_path(), {
         "username": username, "token": token, "root_path": root_path or "-",
         "script": script, "custom_command": custom_command, "issabel_recordings": issabel_recordings,
-        "pbackup_root": pbackup_root, "cron_minute": minute, "cron_hour": hour,
+        "magnus_split": magnus_split, "pbackup_root": pbackup_root, "cron_minute": minute, "cron_hour": hour,
     })
     logger.info(f"autobackup setup concluído -- username={username} script={script}")
 
@@ -318,7 +358,7 @@ def _run_relogin(logger, password_file, interactive):
     if saved is None:
         raise click.ClickException("nada configurado ainda -- rode `pvx autobackup setup` primeiro.")
 
-    password = _read_password_file(password_file)
+    password = _read_secret_file(password_file)
     if password is None:
         if not interactive:
             raise click.ClickException("informe --password-file.")
@@ -336,6 +376,7 @@ def _run_relogin(logger, password_file, interactive):
         saved["script"], token,
         pbackup_root=saved.get("pbackup_root"), custom_template=saved.get("custom_command"),
         issabel_recordings=saved.get("issabel_recordings", False),
+        magnus_split=saved.get("magnus_split", False),
     )
     cron_line = f"{saved['cron_minute']} {saved['cron_hour']} * * * {command}"
     crontab.write_crontab(crontab.upsert_managed_entry(crontab.read_crontab(), cron_line))
@@ -370,7 +411,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
     if saved and (delete_remote_user or (interactive and ask_confirm(
         "Também apagar o usuário no UOE (ação remota, mais destrutiva)?", default=False,
     ))):
-        admin_password = _read_password_file(admin_password_file)
+        admin_password = _read_secret_file(admin_password_file)
         if admin_password is None:
             admin_password = ask_password(
                 "⚠️  Senha do usuário ROOT (superadmin) do UOE -- NÃO é a senha do cliente:"
@@ -396,7 +437,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.9"
+    version = "0.1.15"
 
     def cli_group(self):
         @click.group(name="autobackup")
@@ -411,11 +452,21 @@ class AutobackupModule(PvxModule):
         @click.option("--username", default=None)
         @click.option("--password-file", default=None, help="arquivo com a senha a definir pro cliente (sem terminal pra digitar).")
         @click.option("--admin-password-file", default=None, help="arquivo com a senha do root/superadmin do UOE.")
-        @click.option("--skip-register", is_flag=True, help="pula o registro, só loga (cliente já existe).")
+        @click.option(
+            "--account-mode", type=click.Choice(["register", "login", "token"]), default=None,
+            help="register cria o usuário, login usa um usuário já existente, "
+                 "token usa um token já autenticado (nenhum dos dois, sem senha nenhuma).",
+        )
+        @click.option("--token-file", default=None, help="arquivo com um token já autenticado (--account-mode token).")
         @click.option("--script", type=click.Choice(backup_scripts.SCRIPTS), default=None)
         @click.option(
             "--issabel-recordings/--issabel-config-only", default=None,
             help="só se --script issabel (default: config-only).",
+        )
+        @click.option(
+            "--magnus-split/--magnus-single", default=None,
+            help="só se --script magnus-pvx -- arquivos separados (config/gravações/sons) "
+                 "em vez de um único .tgz (default: single).",
         )
         @click.option("--custom-command", default=None, help="comando completo com {TOKEN} literal.")
         @click.option("--cron-minute", default=None)
@@ -464,14 +515,18 @@ class AutobackupModule(PvxModule):
 
         @group.command(name="check", help="mostra a config salva e a entrada de cron atual.")
         def check_cmd():
+            # achado ao vivo: widgets.state() só tem 2 níveis (ok=True/False) --
+            # "ainda não configurado" não é um ERRO (nada quebrou, só falta rodar
+            # o setup), mas saía vermelho igual uma falha de verdade. Usa
+            # check_result() (sucesso/aviso/erro) pra cada estado real.
             saved = state.load(_state_path())
             if saved is None:
-                widgets.state("autobackup NÃO configurado -- rode `pvx autobackup setup` primeiro.", ok=False)
+                widgets.check_result("autobackup não configurado -- rode `pvx autobackup setup` primeiro.", "warn")
                 if _is_interactive():
                     widgets.pause()
                 return
 
-            widgets.state(f"autobackup configurado (username={saved['username']})", ok=True)
+            widgets.check_result(f"autobackup configurado (username={saved['username']})", "ok")
             click.echo(f"  root_path: {saved.get('root_path', '-')}")
             click.echo(f"  script: {saved.get('script', '-')}")
             click.echo(f"  cron: {saved.get('cron_minute', '?')} {saved.get('cron_hour', '?')} * * *")
@@ -479,12 +534,55 @@ class AutobackupModule(PvxModule):
             lines = crontab.read_crontab()
             managed = crontab.find_managed_entry(lines)
             if managed is None:
-                widgets.state("aviso: entrada de cron gerenciada NÃO encontrada -- rode `setup` de novo.", ok=False)
+                widgets.check_result("entrada de cron gerenciada não encontrada -- rode `setup` de novo.", "warn")
             else:
                 click.echo(f"  cron atual: {_redact(managed[1])}")
 
             if _is_interactive():
                 widgets.pause()
+
+        @group.command(
+            name="magnus-upload", hidden=True,
+            help="gera o backup do magnus e envia pro UOE (alvo da cron do script magnus-pvx, não roda à mão).",
+        )
+        @click.option("--upload-url", required=True)
+        @click.option("--token", required=True)
+        @click.option(
+            "--split", is_flag=True,
+            help="gera config/gravações/sons em arquivos separados, cada um na sua pasta remota.",
+        )
+        def magnus_upload_cmd(upload_url, token, split):
+            # comando alvo de cron -- nunca pausa (rodaria preso esperando
+            # enter num processo sem terminal de verdade) mesmo se alguém
+            # rodar à mão num terminal real.
+            logger = self.get_logger()
+            try:
+                magnus_upload_ops.export_and_upload(upload_url, token, split=split)
+            except magnus_upload_ops.MagnusUploadError as e:
+                logger.error(f"magnus-upload falhou: {e}")
+                raise click.ClickException(str(e))
+            logger.info("autobackup magnus-upload concluído.")
+            widgets.success("backup do magnus gerado e enviado ao UOE.")
+
+        @group.command(
+            name="issabel-upload", hidden=True,
+            help="gera o backup do Issabel (via issabel-helper) e envia pro UOE (alvo da cron do script issabel).",
+        )
+        @click.option("--upload-url", required=True)
+        @click.option("--token", required=True)
+        @click.option("--recordings", is_flag=True, help="também inclui as gravações dos últimos 3 dias.")
+        def issabel_upload_cmd(upload_url, token, recordings):
+            # comando alvo de cron -- nunca pausa (rodaria preso esperando
+            # enter num processo sem terminal de verdade) mesmo se alguém
+            # rodar à mão num terminal real.
+            logger = self.get_logger()
+            try:
+                issabel_upload_ops.export_and_upload(upload_url, token, configuration=True, recordings=recordings)
+            except issabel_upload_ops.IssabelUploadError as e:
+                logger.error(f"issabel-upload falhou: {e}")
+                raise click.ClickException(str(e))
+            logger.info("autobackup issabel-upload concluído.")
+            widgets.success("backup do Issabel gerado e enviado ao UOE.")
 
         return group
 

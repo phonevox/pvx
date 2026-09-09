@@ -1,3 +1,4 @@
+import os
 import sys
 import tempfile
 
@@ -51,11 +52,62 @@ def _resolve_db_credentials(db_user, db_password_file, interactive):
     return db_user, password
 
 
-def _run_export(logger, db_user, db_password_file, output_path, interactive):
+def _report_component(logger, label, result):
+    # export_configuration devolve só o path (nunca pula); soundfiles/recordings
+    # devolvem (path, warnings) porque podem faltar no disco -- normaliza os dois
+    # formatos aqui pra não duplicar essa checagem em cada chamador.
+    path, warnings = result if isinstance(result, tuple) else (result, [])
+    for warning in warnings:
+        logger.warning(warning)
+        widgets.state(warning, ok=False)
+    if path:
+        logger.info(f"{label} exportada em {path}.")
+        widgets.success(f"{label}: {path}")
+
+
+def _run_export(
+    logger, db_user, db_password_file, output_path, output_dir,
+    configuration, soundfiles, recordings, interactive,
+):
     db_user, db_password = _resolve_db_credentials(db_user, db_password_file, interactive)
     if db_user is None:
         return
 
+    component_mode = configuration or soundfiles or recordings
+    if component_mode:
+        if output_path is not None:
+            raise click.ClickException(
+                "-o/--output não se aplica com --configuration/--soundfiles/--recordings -- use --output-dir."
+            )
+        output_dir = output_dir or "."
+        try:
+            if configuration:
+                with widgets.spinner("Gerando configuração..."):
+                    result = magnus_ops.export_configuration(
+                        db_user, db_password,
+                        output_path=os.path.join(output_dir, magnus_ops.configuration_filename()),
+                    )
+                _report_component(logger, "configuração", result)
+            if recordings:
+                with widgets.spinner("Gerando gravações..."):
+                    result = magnus_ops.export_recordings(
+                        output_path=os.path.join(output_dir, magnus_ops.recordings_filename()),
+                    )
+                _report_component(logger, "gravações", result)
+            if soundfiles:
+                with widgets.spinner("Gerando soundfiles..."):
+                    result = magnus_ops.export_soundfiles(
+                        output_path=os.path.join(output_dir, magnus_ops.soundfiles_filename()),
+                    )
+                _report_component(logger, "soundfiles", result)
+        except magnus_ops.MagnusError as e:
+            raise click.ClickException(f"falha ao gerar o backup: {e}")
+        return
+
+    if output_dir is not None:
+        raise click.ClickException(
+            "--output-dir só se aplica com --configuration/--soundfiles/--recordings -- use -o/--output."
+        )
     try:
         with widgets.spinner("Gerando backup..."):
             result_path, warnings = magnus_ops.export_backup(db_user, db_password, output_path=output_path)
@@ -144,7 +196,7 @@ def _run_install(logger, yes, interactive):
 
 class MagnusModule(PvxModule):
     name = "magnus"
-    version = "0.1.7"
+    version = "0.1.8"
 
     def cli_group(self):
         @click.group(name="magnus")
@@ -160,13 +212,35 @@ class MagnusModule(PvxModule):
         @click.option("--db-password-file", default=None, help="arquivo com a senha do banco de dados.")
         @click.option(
             "-o", "--output", "output_path", default=None,
-            help="path do .tgz gerado (default: backup-pxmagnus.<dd-mm-yyyy>.tgz).",
+            help="path do .tgz único, com tudo junto (default: backup-pxmagnus.<dd-mm-yyyy>.tgz). "
+                 "Não combina com --configuration/--soundfiles/--recordings.",
         )
-        def export_cmd(db_user, db_password_file, output_path):
+        @click.option(
+            "--output-dir", default=None,
+            help="diretório onde salvar os arquivos separados (default: diretório atual). "
+                 "Só vale com --configuration/--soundfiles/--recordings.",
+        )
+        @click.option(
+            "--configuration", is_flag=True,
+            help="gera só a configuração (banco + Asterisk) num arquivo separado: "
+                 "backup_voip_softswitch.<dd-mm-yyyy>.tgz.",
+        )
+        @click.option(
+            "--soundfiles", is_flag=True,
+            help="gera só os soundfiles da URA num arquivo separado: soundfiles.<dd-mm-yyyy>.tgz.",
+        )
+        @click.option(
+            "--recordings", is_flag=True,
+            help="gera só as gravações de chamada num arquivo separado: recordings.<dd-mm-yyyy>.tgz.",
+        )
+        def export_cmd(db_user, db_password_file, output_path, output_dir, configuration, soundfiles, recordings):
             logger = self.get_logger()
             interactive = _is_interactive()
             try:
-                _run_export(logger, db_user, db_password_file, output_path, interactive)
+                _run_export(
+                    logger, db_user, db_password_file, output_path, output_dir,
+                    configuration, soundfiles, recordings, interactive,
+                )
             except click.ClickException:
                 raise
             else:

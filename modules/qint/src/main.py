@@ -208,21 +208,25 @@ def _run_apply(logger, yes, skip_asterisk_check):
         click.echo("Operação cancelada.")
         return
 
-    for category in deploy.compute_conflicts(defaults.DESTINATION_BASE_DIRS):
+    for category in deploy.compute_conflicts(defaults.DESTINATION_BASE_DIRS, tipo):
         if not (yes or ask_confirm(f"O destino de '{category}' já existe. Sobrescrever?", default=False)):
             click.echo("Operação abortada -- nada foi alterado.")
             return
 
     state_dir = pvx_config.modules_dir() / "qint" / "state"
+    # achado ao vivo: apply() busca via SFTP, que pode pedir senha/confirmação de host key
+    # no tty -- um spinner (rich Live, redesenha a tela sozinho) por cima disso escondia
+    # o prompt do usuário, travando sem dar pista do motivo. Sem spinner aqui: SFTP é
+    # interativo por natureza, não dá pra mascarar com um indicador de "carregando".
+    click.echo("Aplicando integração (pode pedir a senha do SFTP)...")
     try:
-        with widgets.spinner("Aplicando integração..."):
-            result = apply_module.apply(
-                staged,
-                staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
-                str(state_dir / "versions"),
-                defaults.DESTINATION_BASE_DIRS,
-                str(state_dir / "history.log"),
-            )
+        result = apply_module.apply(
+            staged,
+            staged.get("sftp_remote_path", "/sfiles/qint/integracoes"),
+            str(state_dir / "versions"),
+            defaults.DESTINATION_BASE_DIRS,
+            str(state_dir / "history.log"),
+        )
     except Exception as e:
         logger.error(f"qint apply falhou: {e}")
         widgets.failed(str(e))
@@ -238,15 +242,24 @@ def _run_apply(logger, yes, skip_asterisk_check):
     widgets.success(outcome)
     logger.info(f"qint apply ({tipo}): {outcome}")
 
-    click.echo("Crie manualmente no Issabel as seguintes destinations:")
+    # cada bloco fica em linhas separadas (igual ao instalador bash original) --
+    # "name,context,1" sozinho na linha dá pra selecionar e colar direto no campo
+    # "Goto" do custom destination do Issabel, sem catar o resto do texto junto.
+    click.echo()
+    click.echo("Crie as seguintes custom destinations no Issabel:")
+    click.echo()
     for name, context, label in destinations.destination_specs(tipo):
-        click.echo(f"  {name} ({context}): {label}")
-    click.echo(f"Aponte a URA de saída pra Time Condition ID {staged['id_timecondition_exitpoint']}.")
+        click.echo(f"{name},{context},1")
+        click.echo(label)
+        click.echo()
+    click.echo(
+        f'Aponte a URA de saída pra Time Condition ID "{staged["id_timecondition_exitpoint"]}".'
+    )
 
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.8"
+    version = "0.1.16"
 
     def cli_group(self):
         @click.group(name="qint")
