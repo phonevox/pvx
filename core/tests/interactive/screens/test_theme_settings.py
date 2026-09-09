@@ -101,5 +101,45 @@ class ThemeScreenTest(unittest.TestCase):
             self.assertTrue(choice.description, msg=f"{value} sem description")
 
 
+class RenderTestTest(unittest.TestCase):
+    # "render-test" não é um eixo (não tem preset pra escolher) -- é uma ação
+    # de uma linha só, igual root.py trata "versão"/"atualizar": mostra tudo
+    # e redesenha o mesmo nível (None), pra dar pra ir e voltar ajustando eixos.
+    @patch("pvx.interactive.screens.theme_settings.widgets.pause")
+    @patch("pvx.interactive.screens.theme_settings.widgets.state")
+    @patch("pvx.interactive.screens.theme_settings.widgets.check_result")
+    @patch("pvx.interactive.screens.theme_settings.widgets.warning")
+    @patch("pvx.interactive.screens.theme_settings.widgets.failed")
+    @patch("pvx.interactive.screens.theme_settings.widgets.success")
+    @patch("pvx.interactive.screens.theme_settings.widgets.item")
+    @patch("pvx.interactive.screens.theme_settings.widgets.section")
+    @patch("pvx.interactive.screens.theme_settings.widgets.title")
+    @patch("pvx.interactive.screens.theme_settings.ask_select", return_value="render-test")
+    def test_selecting_render_test_shows_every_widget_and_stays_at_axis_level(
+        self, mock_ask_select, mock_title, mock_section, mock_item,
+        mock_success, mock_failed, mock_warning, mock_check_result, mock_state, mock_pause,
+    ):
+        result = ThemeScreen().render()
+        self.assertIsNone(result)
+        mock_title.assert_called_once()
+        mock_section.assert_called_once()
+        self.assertTrue(mock_item.called)
+        self.assertTrue(mock_success.called)
+        self.assertTrue(mock_failed.called)
+        self.assertTrue(mock_warning.called)
+        self.assertTrue(mock_check_result.called)
+        self.assertTrue(mock_state.called)
+        mock_pause.assert_called_once()
+
+    @patch("pvx.interactive.screens.theme_settings.ask_select", return_value="voltar")
+    def test_render_test_is_offered_with_a_description(self, mock_ask_select):
+        ThemeScreen().render()
+        choices = mock_ask_select.call_args.args[1]
+        choice = next(
+            c for c in choices if isinstance(c, questionary.Choice) and c.value == "render-test"
+        )
+        self.assertTrue(choice.description)
+
+
 if __name__ == "__main__":
     unittest.main()

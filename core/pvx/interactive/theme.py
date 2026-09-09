@@ -73,7 +73,7 @@ def current_accent_color():
 
 
 def current_symbols():
-    return SYMBOL_SETS.get(config.get_symbol_set_name(), SYMBOL_SETS["padrão"])
+    return SYMBOL_SETS.get(config.get_symbol_set_name(), SYMBOL_SETS["ascii"])
 
 
 def current_border_char():
@@ -82,4 +82,4 @@ def current_border_char():
 
 def current_line_format():
     name = config.get_line_format_name()
-    return name if name in LINE_FORMATS else "modern"
+    return name if name in LINE_FORMATS else "modern-full-color"

@@ -1,9 +1,12 @@
+import click
 import questionary
 
 from pvx import config
 from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_select
 from pvx.interactive.theme import ACCENT_COLORS, BORDERS, LINE_FORMATS, PRESETS, SYMBOL_SETS
+
+_RENDER_TEST = "render-test"
 
 
 def _color_preview(name):
@@ -42,12 +45,49 @@ def _choice(value, description):
     return questionary.Choice(title=value, value=value, description=description)
 
 
+def _render_test():
+    # showcase de tudo que o tema afeta -- pra rodar depois de trocar um eixo
+    # e ver de fato como ficou, sem precisar ir atrás de uma tela real.
+    widgets.clear()
+    widgets.title("pvx > tema > render-test")
+
+    widgets.section("Seção de exemplo")
+    widgets.description("Descrição discreta, usada pra explicar uma seção.")
+    widgets.item("item de exemplo", "comentário")
+    widgets.item("item sem comentário")
+
+    click.echo()
+    widgets.success()
+    widgets.success("lorem ipsum dolor sit amet")
+    widgets.failed()
+    widgets.failed("lorem ipsum dolor sit amet")
+    widgets.warning()
+    widgets.warning("lorem ipsum dolor sit amet")
+
+    click.echo()
+    widgets.check_result("checagem ok", "ok")
+    widgets.check_result("checagem com ressalva", "warn")
+    widgets.check_result("checagem falhou", "error")
+
+    click.echo()
+    widgets.state("estado positivo", ok=True)
+    widgets.state("estado negativo", ok=False)
+
+    widgets.pause()
+
+
 class ThemeScreen:
     def render(self):
-        axis_choices = [_choice(axis, desc) for axis, (_, _, _, desc) in _AXES.items()] + ["voltar"]
+        axis_choices = [_choice(axis, desc) for axis, (_, _, _, desc) in _AXES.items()]
+        axis_choices.append(_choice(_RENDER_TEST, "mostra todos os elementos de tela com o tema atual"))
+        axis_choices.append("voltar")
         axis = ask_select("pvx > tema >", axis_choices)
         if axis is None or axis == "voltar":
             return "BACK"
+
+        if axis == _RENDER_TEST:
+            _render_test()
+            return None
 
         presets, setter_name, preview, _ = _AXES[axis]
         # sem isso, a pergunta do eixo (já respondida) fica presa na tela e a

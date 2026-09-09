@@ -101,7 +101,7 @@ def set_theme_name(name: str) -> None:
 
 
 def get_symbol_set_name() -> str:
-    return read_config().get("symbol_set", "padrão")
+    return read_config().get("symbol_set", "ascii")
 
 
 def set_symbol_set_name(name: str) -> None:
@@ -121,7 +121,7 @@ def set_border_name(name: str) -> None:
 
 
 def get_line_format_name() -> str:
-    return read_config().get("line_format", "modern")
+    return read_config().get("line_format", "modern-full-color")
 
 
 def set_line_format_name(name: str) -> None:

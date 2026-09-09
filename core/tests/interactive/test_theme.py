@@ -93,8 +93,8 @@ class CurrentStyleTest(unittest.TestCase):
         config.set_theme_name("verde")
         self.assertEqual(current_accent_color(), "#00af5f")
 
-    def test_current_symbols_defaults_to_padrao(self):
-        self.assertEqual(current_symbols(), SYMBOL_SETS["padrão"])
+    def test_current_symbols_defaults_to_ascii(self):
+        self.assertEqual(current_symbols(), SYMBOL_SETS["ascii"])
 
     def test_current_symbols_reflects_configured_set(self):
         from pvx import config
@@ -111,8 +111,8 @@ class CurrentStyleTest(unittest.TestCase):
         config.set_border_name("simples")
         self.assertEqual(current_border_char(), "─")
 
-    def test_current_line_format_defaults_to_modern(self):
-        self.assertEqual(current_line_format(), "modern")
+    def test_current_line_format_defaults_to_modern_full_color(self):
+        self.assertEqual(current_line_format(), "modern-full-color")
 
     def test_current_line_format_reflects_configured_format(self):
         from pvx import config
@@ -120,11 +120,11 @@ class CurrentStyleTest(unittest.TestCase):
         config.set_line_format_name("minimal")
         self.assertEqual(current_line_format(), "minimal")
 
-    def test_current_line_format_falls_back_to_modern_on_unknown_value(self):
+    def test_current_line_format_falls_back_to_modern_full_color_on_unknown_value(self):
         from pvx import config
 
         config.set_line_format_name("isso-nao-existe")
-        self.assertEqual(current_line_format(), "modern")
+        self.assertEqual(current_line_format(), "modern-full-color")
 
 
 class SymbolAndFormatPresetsTest(unittest.TestCase):
