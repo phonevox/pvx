@@ -66,6 +66,7 @@ class ExportAndUploadTest(unittest.TestCase):
         with patch("magnus_upload_ops.subprocess.run", return_value=self._run_result()) as mock_run, \
              patch("magnus_upload_ops.datetime") as mock_dt, \
              patch("magnus_upload_ops.os.makedirs") as mock_makedirs, \
+             patch("magnus_upload_ops.os.path.isfile", return_value=True), \
              patch("magnus_upload_ops.os.remove") as mock_remove:
             mock_dt.date.today.return_value = datetime.date(2026, 9, 4)
             ops.export_and_upload("http://uoe.example/v1/upload", "tok123", split=True)
@@ -80,6 +81,42 @@ class ExportAndUploadTest(unittest.TestCase):
         self.assertIn("recordings.04-09-2026.tgz:/recordings", files_arg)
         self.assertIn("soundfiles.04-09-2026.tgz:/soundfiles", files_arg)
         self.assertEqual(mock_remove.call_count, 3)
+
+    def test_split_skips_a_component_that_the_export_did_not_actually_create(self):
+        # achado ao vivo: /usr/local/src/magnus/sounds não existia nessa central --
+        # magnus_ops.export_soundfiles() pula com aviso (não falha o export inteiro,
+        # mesma regra do modo single), mas o soundfiles.tgz nunca é criado. Sem
+        # checar existência, o upload tentava mandar um arquivo inexistente e o
+        # cleanup crashava com FileNotFoundError.
+        def fake_isfile(path):
+            return "soundfiles" not in path
+
+        with patch("magnus_upload_ops.subprocess.run", return_value=self._run_result()) as mock_run, \
+             patch("magnus_upload_ops.datetime") as mock_dt, \
+             patch("magnus_upload_ops.os.makedirs"), \
+             patch("magnus_upload_ops.os.path.isfile", side_effect=fake_isfile), \
+             patch("magnus_upload_ops.os.remove") as mock_remove:
+            mock_dt.date.today.return_value = datetime.date(2026, 9, 4)
+            ops.export_and_upload("http://uoe.example/v1/upload", "tok123", split=True)
+
+        upload_call = mock_run.call_args_list[1]
+        files_arg = upload_call.args[0][upload_call.args[0].index("--files") + 1]
+        self.assertNotIn("soundfiles", files_arg)
+        self.assertIn("backup_voip_softswitch.04-09-2026.tgz:/configuration", files_arg)
+        self.assertIn("recordings.04-09-2026.tgz:/recordings", files_arg)
+        self.assertEqual(mock_remove.call_count, 2)
+        for call in mock_remove.call_args_list:
+            self.assertNotIn("soundfiles", call.args[0])
+
+    def test_split_raises_a_clear_error_when_nothing_was_actually_generated(self):
+        with patch("magnus_upload_ops.subprocess.run", return_value=self._run_result()) as mock_run, \
+             patch("magnus_upload_ops.os.makedirs"), \
+             patch("magnus_upload_ops.os.path.isfile", return_value=False), \
+             patch("magnus_upload_ops.os.remove") as mock_remove:
+            with self.assertRaises(ops.MagnusUploadError):
+                ops.export_and_upload("http://uoe.example/v1/upload", "tok123", split=True)
+        mock_run.assert_called_once()  # nunca chega a chamar o pbackup
+        mock_remove.assert_not_called()
 
     def test_split_export_failure_never_uploads_or_cleans_up(self):
         with patch(

@@ -437,7 +437,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.13"
+    version = "0.1.14"
 
     def cli_group(self):
         @click.group(name="autobackup")

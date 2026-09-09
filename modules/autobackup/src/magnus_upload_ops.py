@@ -48,11 +48,16 @@ def _split_filename(prefix, today=None):
 
 
 def _split_files():
-    return [
+    candidates = [
         (os.path.join(SPLIT_OUTPUT_DIR, _split_filename(_CONFIG_PREFIX)), REMOTE_CONFIG_FOLDER),
         (os.path.join(SPLIT_OUTPUT_DIR, _split_filename(_RECORDINGS_PREFIX)), REMOTE_RECORDINGS_FOLDER),
         (os.path.join(SPLIT_OUTPUT_DIR, _split_filename(_SOUNDFILES_PREFIX)), REMOTE_SOUNDFILES_FOLDER),
     ]
+    # achado ao vivo: cada componente é opcional (magnus_ops.export_soundfiles/
+    # export_recordings pulam com aviso se o diretório de origem não existir
+    # nesse host, sem falhar o `pvx magnus backup export` inteiro -- mesma regra
+    # do modo single) -- só sobe/limpa o que de fato foi gerado.
+    return [(local, remote) for local, remote in candidates if os.path.isfile(local)]
 
 
 def export_and_upload(upload_url, token, split=False):
@@ -69,6 +74,8 @@ def export_and_upload(upload_url, token, split=False):
             "falha ao gerar o backup do magnus",
         )
         files = _split_files()
+        if not files:
+            raise MagnusUploadError("nenhum arquivo foi gerado pelo export -- nada pra enviar.")
     else:
         _run(["pvx", "magnus", "backup", "export", "-o", OUTPUT_PATH], "falha ao gerar o backup do magnus")
         files = [(OUTPUT_PATH, remote_name())]
