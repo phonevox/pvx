@@ -1,16 +1,54 @@
-from pvx import config
-from pvx.interactive.inputs import ask_select
-from pvx.interactive.theme import PRESETS
+import questionary
 
-LABELS = {name: name for name in PRESETS}
+from pvx import config
+from pvx.interactive import widgets
+from pvx.interactive.inputs import ask_select
+from pvx.interactive.theme import ACCENT_COLORS, FORMATS, PRESETS, SYMBOL_SETS
+
+
+def _color_preview(name):
+    return f"cor: {ACCENT_COLORS[name]}"
+
+
+def _symbol_preview(name):
+    s = SYMBOL_SETS[name]
+    return f"aviso {s['warning']} aviso!  ·  seção {s['section']} título  ·  item {s['item']} texto"
+
+
+def _format_preview(name):
+    return FORMATS[name] * 24
+
+
+# (presets, nome do setter em config, preview por preset, descrição do eixo) --
+# nome do setter (não a função em si) resolvido via getattr(config, ...) na hora
+# de chamar: guardar a referência direta congelaria o mock de teste no valor lido
+# no import do módulo, antes do @patch de config.<setter> agir.
+_AXES = {
+    "cor": (PRESETS, "set_theme_name", _color_preview, "cor de destaque usada em título, seção e item"),
+    "símbolos": (SYMBOL_SETS, "set_symbol_set_name", _symbol_preview, "glifos de aviso, seção e item"),
+    "formato": (FORMATS, "set_format_name", _format_preview, "caractere da moldura do título"),
+}
+
+
+def _choice(value, description):
+    return questionary.Choice(title=value, value=value, description=description)
 
 
 class ThemeScreen:
     def render(self):
-        selected = ask_select("pvx > tema >", list(LABELS.values()) + ["voltar"])
-        if selected is None or selected == "voltar":
+        axis_choices = [_choice(axis, desc) for axis, (_, _, _, desc) in _AXES.items()] + ["voltar"]
+        axis = ask_select("pvx > tema >", axis_choices)
+        if axis is None or axis == "voltar":
             return "BACK"
 
-        name = next(key for key, label in LABELS.items() if label == selected)
-        config.set_theme_name(name)
-        return "BACK"
+        presets, setter_name, preview, _ = _AXES[axis]
+        # sem isso, a pergunta do eixo (já respondida) fica presa na tela e a
+        # pergunta do preset aparece duplicada embaixo -- achado ao vivo.
+        widgets.clear()
+        preset_choices = [_choice(name, preview(name)) for name in presets] + ["voltar"]
+        selected = ask_select(f"pvx > tema > {axis} >", preset_choices)
+        if selected is None or selected == "voltar":
+            return None
+
+        getattr(config, setter_name)(selected)
+        return None

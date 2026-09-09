@@ -6,11 +6,15 @@ import questionary
 
 from pvx.interactive.theme import (
     ACCENT_COLORS,
+    FORMATS,
     PRESETS,
+    SYMBOL_SETS,
     THEME,
     THEME_RULES,
     current_accent_color,
+    current_format_char,
     current_style,
+    current_symbols,
     current_theme_rules,
 )
 
@@ -86,6 +90,36 @@ class CurrentStyleTest(unittest.TestCase):
 
         config.set_theme_name("verde")
         self.assertEqual(current_accent_color(), "#00af5f")
+
+    def test_current_symbols_defaults_to_padrao(self):
+        self.assertEqual(current_symbols(), SYMBOL_SETS["padrão"])
+
+    def test_current_symbols_reflects_configured_set(self):
+        from pvx import config
+
+        config.set_symbol_set_name("ascii")
+        self.assertEqual(current_symbols(), SYMBOL_SETS["ascii"])
+
+    def test_current_format_char_defaults_to_duplo(self):
+        self.assertEqual(current_format_char(), "═")
+
+    def test_current_format_char_reflects_configured_format(self):
+        from pvx import config
+
+        config.set_format_name("simples")
+        self.assertEqual(current_format_char(), "─")
+
+
+class SymbolAndFormatPresetsTest(unittest.TestCase):
+    def test_more_symbol_sets_available(self):
+        self.assertIn("padrão", SYMBOL_SETS)
+        self.assertIn("ascii", SYMBOL_SETS)
+        self.assertIn("geométrico", SYMBOL_SETS)
+
+    def test_more_formats_available(self):
+        self.assertEqual(FORMATS["duplo"], "═")
+        self.assertEqual(FORMATS["simples"], "─")
+        self.assertEqual(FORMATS["grosso"], "━")
 
 
 if __name__ == "__main__":

@@ -124,6 +124,20 @@ class ThemeConfigTest(unittest.TestCase):
         self.assertEqual(data["outra_chave"], 123)
         self.assertEqual(data["theme"], "roxo")
 
+    def test_symbol_set_name_defaults_to_padrao(self):
+        self.assertEqual(config.get_symbol_set_name(), "padrão")
+
+    def test_set_symbol_set_name_persists_and_is_read_back(self):
+        config.set_symbol_set_name("ascii")
+        self.assertEqual(config.get_symbol_set_name(), "ascii")
+
+    def test_format_name_defaults_to_duplo(self):
+        self.assertEqual(config.get_format_name(), "duplo")
+
+    def test_set_format_name_persists_and_is_read_back(self):
+        config.set_format_name("simples")
+        self.assertEqual(config.get_format_name(), "simples")
+
 
 if __name__ == "__main__":
     unittest.main()

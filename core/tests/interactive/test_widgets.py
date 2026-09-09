@@ -11,16 +11,21 @@ from pvx.interactive.widgets import (
     checkbox_answer,
     clear,
     crash,
+    description,
     failed,
+    item,
     message,
     pause,
     print_modules_table,
+    section,
     select_answer,
     spinner,
     state,
     step,
     step_with_log,
     success,
+    title,
+    warning,
 )
 from pvx.interactive.widgets import _ElapsedColumn
 
@@ -332,6 +337,37 @@ class CheckResultTest(unittest.TestCase):
         self.assertEqual(printed.spans[0].style, "bold red")
 
 
+_PADRAO_SYMBOLS = {"warning": "⚠", "section": "▸", "item": "•"}
+
+
+class WarningTest(unittest.TestCase):
+    # reprova/alerta sem ser nem sucesso nem falha (ex.: IP da sessão sem
+    # failsafe confirmado) -- terceiro estado visual ao lado de success()/failed().
+    # símbolo vem do tema (SYMBOL_SETS) -- mockado aqui pro preset "padrão", que é
+    # o default de config.get_symbol_set_name().
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_label_alone_when_no_detail(self, mock_console_cls, mock_symbols):
+        warning()
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "⚠ aviso!")
+
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
+    @patch("pvx.interactive.widgets.Console")
+    def test_appends_detail_inline_after_the_label(self, mock_console_cls, mock_symbols):
+        warning("rode `apply` de novo.")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertTrue(printed.plain.startswith("⚠ aviso!"))
+        self.assertTrue(printed.plain.endswith("rode `apply` de novo."))
+
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
+    @patch("pvx.interactive.widgets.Console")
+    def test_label_is_bold_yellow(self, mock_console_cls, mock_symbols):
+        warning()
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "bold yellow")
+
+
 class SuccessFailedAlignmentTest(unittest.TestCase):
     def test_detail_starts_at_the_same_column_for_both(self):
         # "✓ sucesso!" e "✗ falha!" têm tamanhos diferentes -- o texto
@@ -345,6 +381,75 @@ class SuccessFailedAlignmentTest(unittest.TestCase):
             failed_line = mock_console_cls.return_value.print.call_args.args[0].plain
 
         self.assertEqual(success_line.index("x"), failed_line.index("x"))
+
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
+    def test_warning_also_aligns_with_success_and_failed(self, mock_symbols):
+        with patch("pvx.interactive.widgets.Console") as mock_console_cls:
+            warning("x")
+            warning_line = mock_console_cls.return_value.print.call_args.args[0].plain
+        with patch("pvx.interactive.widgets.Console") as mock_console_cls:
+            failed("x")
+            failed_line = mock_console_cls.return_value.print.call_args.args[0].plain
+
+        self.assertEqual(warning_line.index("x"), failed_line.index("x"))
+
+
+class TitleTest(unittest.TestCase):
+    # título de tela com moldura -- caractere vem do tema (FORMATS), texto
+    # centralizado em negrito, tudo na cor de destaque do tema.
+    @patch("pvx.interactive.widgets.theme.current_format_char", return_value="═")
+    @patch("pvx.interactive.widgets.theme.current_accent_color", return_value="#0087ff")
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_bar_centered_text_and_bar_in_accent_color(self, mock_console_cls, mock_accent, mock_format):
+        title("pvx > firewall > check")
+        calls = mock_console_cls.return_value.print.call_args_list
+        self.assertEqual(len(calls), 3)
+
+        top, middle, bottom = (call.args[0] for call in calls)
+        self.assertEqual(top.plain, bottom.plain)
+        self.assertEqual(top.spans[0].style, "#0087ff")
+        self.assertEqual(bottom.spans[0].style, "#0087ff")
+        self.assertIn("pvx > firewall > check", middle.plain)
+        self.assertEqual(middle.spans[0].style, "bold #0087ff")
+
+
+class SectionTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
+    @patch("pvx.interactive.widgets.theme.current_accent_color", return_value="#0087ff")
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_marker_and_text_bold_in_accent_color(self, mock_console_cls, mock_accent, mock_symbols):
+        section("IPs confiáveis")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "▸ IPs confiáveis")
+        self.assertEqual(printed.spans[0].style, "bold #0087ff")
+
+
+class DescriptionTest(unittest.TestCase):
+    def test_prints_indented_dim_text(self, ):
+        with patch("pvx.interactive.widgets.Console") as mock_console_cls:
+            description("Lista de IPs com acesso total.")
+            printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "  Lista de IPs com acesso total.")
+        self.assertEqual(printed.spans[0].style, theme.SEPARATOR_COLOR)
+
+
+class ItemTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
+    @patch("pvx.interactive.widgets.theme.current_accent_color", return_value="#0087ff")
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_bullet_in_accent_color_and_plain_text(self, mock_console_cls, mock_accent, mock_symbols):
+        item("189.124.85.75")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "  • 189.124.85.75")
+        self.assertEqual(printed.spans[0].style, "#0087ff")
+
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
+    @patch("pvx.interactive.widgets.theme.current_accent_color", return_value="#0087ff")
+    @patch("pvx.interactive.widgets.Console")
+    def test_appends_dim_comment_when_given(self, mock_console_cls, mock_accent, mock_symbols):
+        item("189.124.85.75", comment="PHONEVOX PRINCIPAL")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "  • 189.124.85.75  # PHONEVOX PRINCIPAL")
 
 
 if __name__ == "__main__":

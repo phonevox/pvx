@@ -98,3 +98,23 @@ def set_theme_name(name: str) -> None:
     data = read_config()
     data["theme"] = name
     write_config(data)
+
+
+def get_symbol_set_name() -> str:
+    return read_config().get("symbol_set", "padrão")
+
+
+def set_symbol_set_name(name: str) -> None:
+    data = read_config()
+    data["symbol_set"] = name
+    write_config(data)
+
+
+def get_format_name() -> str:
+    return read_config().get("format", "duplo")
+
+
+def set_format_name(name: str) -> None:
+    data = read_config()
+    data["format"] = name
+    write_config(data)

@@ -173,8 +173,12 @@ _OUTCOME_LABEL_WIDTH = max(len(_SUCCESS_LABEL), len(_FAILED_LABEL))
 
 
 def _print_outcome(label, style, detail):
+    # warning() tem o próprio símbolo (tema, SYMBOL_SETS) e pode ser mais largo
+    # que _OUTCOME_LABEL_WIDTH -- alinha no maior dos dois, sem exigir que
+    # success()/failed() conheçam o tema de símbolos pra isso.
+    width = max(_OUTCOME_LABEL_WIDTH, len(label))
     line = Text()
-    line.append(label.ljust(_OUTCOME_LABEL_WIDTH) if detail else label, style=style)
+    line.append(label.ljust(width) if detail else label, style=style)
     if detail:
         line.append(f" {detail}")
     Console().print(line, highlight=False)
@@ -186,6 +190,11 @@ def success(detail=None):
 
 def failed(detail=None):
     _print_outcome(_FAILED_LABEL, "bold red", detail)
+
+
+def warning(detail=None):
+    label = f"{theme.current_symbols()['warning']} aviso!"
+    _print_outcome(label, "bold yellow", detail)
 
 
 def crash(traceback_text):
@@ -217,6 +226,46 @@ def check_result(text, level):
     icon, style = _CHECK_RESULT_STYLE[level]
     line = Text()
     line.append(f"{icon} {text}", style=style)
+    Console().print(line, highlight=False)
+
+
+_TITLE_WIDTH = 70
+
+
+def _styled(text, style):
+    line = Text()
+    line.append(text, style=style)
+    return line
+
+
+def title(text):
+    accent = theme.current_accent_color()
+    char = theme.current_format_char()
+    bar = _styled(char * _TITLE_WIDTH, accent)
+    console = Console()
+    console.print(bar, highlight=False)
+    console.print(_styled(text.center(_TITLE_WIDTH), f"bold {accent}"), highlight=False)
+    console.print(bar, highlight=False)
+
+
+def section(text):
+    accent = theme.current_accent_color()
+    marker = theme.current_symbols()["section"]
+    Console().print(_styled(f"{marker} {text}", f"bold {accent}"), highlight=False)
+
+
+def description(text):
+    Console().print(_styled(f"  {text}", theme.SEPARATOR_COLOR), highlight=False)
+
+
+def item(text, comment=None):
+    accent = theme.current_accent_color()
+    symbol = theme.current_symbols()["item"]
+    line = Text()
+    line.append(f"  {symbol} ", style=accent)
+    line.append(text)
+    if comment:
+        line.append(f"  # {comment}", style=theme.SEPARATOR_COLOR)
     Console().print(line, highlight=False)
 
 

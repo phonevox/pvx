@@ -35,6 +35,21 @@ PRESETS = {name: _rules_for(accent) for name, accent in ACCENT_COLORS.items()}
 THEME_RULES = PRESETS["azul"]
 THEME = questionary.Style(THEME_RULES)
 
+# glyphs usados pelas primitivas de tela (widgets.warning/section/item) --
+# eixo independente da cor, escolhido separadamente em "pvx > tema > símbolos".
+SYMBOL_SETS = {
+    "padrão": {"warning": "⚠", "section": "▸", "item": "•"},
+    "ascii": {"warning": "!", "section": "==>", "item": "-"},
+    "geométrico": {"warning": "‼", "section": "■", "item": "○"},
+}
+
+# caractere da moldura de widgets.title() -- eixo independente, "pvx > tema > formato".
+FORMATS = {
+    "duplo": "═",
+    "simples": "─",
+    "grosso": "━",
+}
+
 
 def current_theme_rules():
     return PRESETS.get(config.get_theme_name(), PRESETS["azul"])
@@ -46,3 +61,11 @@ def current_style():
 
 def current_accent_color():
     return ACCENT_COLORS.get(config.get_theme_name(), ACCENT_COLORS["azul"])
+
+
+def current_symbols():
+    return SYMBOL_SETS.get(config.get_symbol_set_name(), SYMBOL_SETS["padrão"])
+
+
+def current_format_char():
+    return FORMATS.get(config.get_format_name(), FORMATS["duplo"])
