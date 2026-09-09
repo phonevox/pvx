@@ -67,6 +67,11 @@ class CheckCommandTest(MainTestCase):
         self.assertIn("203.0.113.1", result.output)
         self.assertIn("5060/udp", result.output)
 
+    def test_shows_a_title_header(self):
+        with patch("main.status_module.get_status", return_value=BASE_STATUS):
+            result = self._invoke(["check"])
+        self.assertIn("pvx > firewall > check", result.output)
+
     def test_passes_the_state_dir_so_lists_get_read(self):
         with patch("main.status_module.get_status", return_value=BASE_STATUS) as mock_get_status:
             self._invoke(["check"])
@@ -212,12 +217,16 @@ class StatusCommandTest(MainTestCase):
         self.assertNotIn("falha", result.output.lower())
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
+        # achado ao vivo: o aviso vivia embutido no texto do state() ("--
+        # atenção: ..."); agora usa o widget dedicado widgets.warning(), que
+        # imprime "aviso!", não mais a palavra solta "atenção".
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
         self.assertIn("sincronizado", result.output.lower())
-        self.assertIn("atenção", result.output.lower())
+        self.assertIn("aviso", result.output.lower())
+        self.assertIn("failsafe", result.output.lower())
 
 
 class SyncCommandTest(MainTestCase):

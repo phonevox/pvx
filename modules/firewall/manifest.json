@@ -1,10 +1,10 @@
 {
   "name": "firewall",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "entrypoint": "main:cli",
   "description": "Gerenciamento de firewall (iptables/firewalld) com listas de IP/porta e failsafe de sess\u00e3o SSH.",
   "author": "pvx",
-  "min_pvx_version": "0.2.0",
+  "min_pvx_version": "0.2.19",
   "checksum_sha256": "",
   "dependencies": []
 }
