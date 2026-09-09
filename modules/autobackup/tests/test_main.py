@@ -550,6 +550,28 @@ class CheckCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
 
+    def test_not_configured_is_a_warning_not_an_error(self):
+        # achado ao vivo: "ainda não configurado" saía vermelho (mesmo nível
+        # visual de um erro de verdade) -- nada quebrou, só falta rodar o
+        # setup. Isso é aviso, não erro.
+        with patch("main.widgets.check_result") as mock_check_result, \
+             patch("main._is_interactive", return_value=False), \
+             patch("main.state.load", return_value=None):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
+    def test_fully_configured_is_a_success(self):
+        saved = {"username": "empresa", "root_path": "x", "script": "issabel", "cron_minute": "0", "cron_hour": "2"}
+        with patch("main.widgets.check_result") as mock_check_result, \
+             patch("main._is_interactive", return_value=False), \
+             patch("main.state.load", return_value=saved), \
+             patch("main.crontab.read_crontab", return_value=[]), \
+             patch("main.crontab.find_managed_entry", return_value=(1, "0 2 * * * bash issabel.sh")):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        levels = [call.args[1] for call in mock_check_result.call_args_list]
+        self.assertEqual(levels, ["ok"])
+
     @patch("main.widgets.pause")
     def test_pauses_when_interactive(self, mock_pause):
         self._invoke(is_tty=True, saved=None)
@@ -576,6 +598,17 @@ class CheckCommandTest(unittest.TestCase):
         result = self._invoke(saved=saved, managed=None)
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não encontrada", result.output.lower())
+
+    def test_missing_managed_entry_uses_warning_level(self):
+        saved = {"username": "empresa", "root_path": "x", "script": "issabel", "cron_minute": "0", "cron_hour": "2"}
+        with patch("main.widgets.check_result") as mock_check_result, \
+             patch("main._is_interactive", return_value=False), \
+             patch("main.state.load", return_value=saved), \
+             patch("main.crontab.read_crontab", return_value=[]), \
+             patch("main.crontab.find_managed_entry", return_value=None):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        levels = [call.args[1] for call in mock_check_result.call_args_list]
+        self.assertEqual(levels, ["ok", "warn"])
 
 
 class MagnusUploadCommandTest(unittest.TestCase):

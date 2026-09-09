@@ -437,7 +437,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.14"
+    version = "0.1.15"
 
     def cli_group(self):
         @click.group(name="autobackup")
@@ -515,14 +515,18 @@ class AutobackupModule(PvxModule):
 
         @group.command(name="check", help="mostra a config salva e a entrada de cron atual.")
         def check_cmd():
+            # achado ao vivo: widgets.state() só tem 2 níveis (ok=True/False) --
+            # "ainda não configurado" não é um ERRO (nada quebrou, só falta rodar
+            # o setup), mas saía vermelho igual uma falha de verdade. Usa
+            # check_result() (sucesso/aviso/erro) pra cada estado real.
             saved = state.load(_state_path())
             if saved is None:
-                widgets.state("autobackup NÃO configurado -- rode `pvx autobackup setup` primeiro.", ok=False)
+                widgets.check_result("autobackup não configurado -- rode `pvx autobackup setup` primeiro.", "warn")
                 if _is_interactive():
                     widgets.pause()
                 return
 
-            widgets.state(f"autobackup configurado (username={saved['username']})", ok=True)
+            widgets.check_result(f"autobackup configurado (username={saved['username']})", "ok")
             click.echo(f"  root_path: {saved.get('root_path', '-')}")
             click.echo(f"  script: {saved.get('script', '-')}")
             click.echo(f"  cron: {saved.get('cron_minute', '?')} {saved.get('cron_hour', '?')} * * *")
@@ -530,7 +534,7 @@ class AutobackupModule(PvxModule):
             lines = crontab.read_crontab()
             managed = crontab.find_managed_entry(lines)
             if managed is None:
-                widgets.state("aviso: entrada de cron gerenciada NÃO encontrada -- rode `setup` de novo.", ok=False)
+                widgets.check_result("entrada de cron gerenciada não encontrada -- rode `setup` de novo.", "warn")
             else:
                 click.echo(f"  cron atual: {_redact(managed[1])}")
 
