@@ -79,7 +79,10 @@ class ApplyTest(unittest.TestCase):
         self.assertIn("10.0.0.2", content)
 
         macro_dest = Path(self.base_dirs["dialplan"]) / "ixcsoft" / "phonevox-macros-atendimento.conf"
-        self.assertIn("600", macro_dest.read_text())
+        # achado ao vivo: "600" sozinho aqui passava tanto com o valor certo quanto
+        # com o bug real (linha virando "exten => s,n,600" em vez de
+        # "exten => s,n,Set(dep_outros_assuntos=600)") -- checa a expressão inteira.
+        self.assertIn("Set(dep_outros_assuntos=600)", macro_dest.read_text())
 
         extensions = Path(self.base_dirs["dialplan"]) / "extensions_custom.conf"
         self.assertIn('#include "ixcsoft/phonevox.conf"', extensions.read_text())

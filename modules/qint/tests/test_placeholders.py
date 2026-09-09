@@ -66,11 +66,18 @@ class BuildPhpReplacementsTest(unittest.TestCase):
 
 
 class BuildMacroReplacementsTest(unittest.TestCase):
+    # achado ao vivo: mesmo bug já corrigido em build_php_replacements -- devolver só
+    # o valor bruto pra um placeholder que é uma EXPRESSÃO inteira ("Set(nome=XXX)")
+    # faz o patch() substituir a linha toda pelo número solto (ex.: "exten => s,n,600"
+    # em vez de "exten => s,n,Set(dep_outros_assuntos=600)"), quebrando a sintaxe do
+    # dialplan. Preserva a expressão, só troca o marcador (XXX ou TIMECONDITION_DESTINO).
     def test_maps_common_queue_and_timecondition_placeholders(self):
         result = placeholders.build_macro_replacements({**_BASE_CONFIG, "type": "ixcsoft"})
-        self.assertEqual(result["Set(dep_outros_assuntos=XXX)"], "600")
-        self.assertEqual(result["Set(dep_comercial=XXX)"], "601")
-        self.assertEqual(result["Goto(timeconditions,TIMECONDITION_DESTINO,1)"], "10")
+        self.assertEqual(result["Set(dep_outros_assuntos=XXX)"], "Set(dep_outros_assuntos=600)")
+        self.assertEqual(result["Set(dep_comercial=XXX)"], "Set(dep_comercial=601)")
+        self.assertEqual(
+            result["Goto(timeconditions,TIMECONDITION_DESTINO,1)"], "Goto(timeconditions,10,1)",
+        )
 
     def test_ixcsoft_maps_filial_departamento_and_assunto(self):
         config = {
@@ -78,16 +85,20 @@ class BuildMacroReplacementsTest(unittest.TestCase):
             "id_departamento_geral": "10", "id_assunto_comercial": "20",
         }
         result = placeholders.build_macro_replacements(config)
-        self.assertEqual(result["Set(FILIAL_ID=XXX)"], "1")
-        self.assertEqual(result["Set(setor_outros_assuntos=XXX)"], "10")
-        self.assertEqual(result["Set(ocorrencia_comercial=XXX)"], "20")
+        self.assertEqual(result["Set(FILIAL_ID=XXX)"], "Set(FILIAL_ID=1)")
+        self.assertEqual(result["Set(setor_outros_assuntos=XXX)"], "Set(setor_outros_assuntos=10)")
+        self.assertEqual(result["Set(ocorrencia_comercial=XXX)"], "Set(ocorrencia_comercial=20)")
 
     def test_sgp_maps_multiple_placeholders_to_the_same_config_key(self):
         config = {**_BASE_CONFIG, "type": "sgp", "id_ocorrencia_comercial": "42"}
         result = placeholders.build_macro_replacements(config)
-        self.assertEqual(result["Set(ocorrencia_comercial=XXX)"], "42")
-        self.assertEqual(result["Set(ocorrencia_comercial_adesao=XXX)"], "42")
-        self.assertEqual(result["Set(ocorrencia_comercial_cancelamento=XXX)"], "42")
+        self.assertEqual(result["Set(ocorrencia_comercial=XXX)"], "Set(ocorrencia_comercial=42)")
+        self.assertEqual(
+            result["Set(ocorrencia_comercial_adesao=XXX)"], "Set(ocorrencia_comercial_adesao=42)",
+        )
+        self.assertEqual(
+            result["Set(ocorrencia_comercial_cancelamento=XXX)"], "Set(ocorrencia_comercial_cancelamento=42)",
+        )
 
     def test_sgp_does_not_include_ixcsoft_only_placeholders(self):
         result = placeholders.build_macro_replacements({**_BASE_CONFIG, "type": "sgp"})

@@ -83,4 +83,15 @@ def build_macro_replacements(config):
     elif config["type"] == "sgp":
         placeholders_.update(MACRO_SGP)
 
-    return {placeholder: str(config[key]) for placeholder, key in placeholders_.items()}
+    # achado ao vivo, mesmo bug já corrigido em build_php_replacements: cada
+    # placeholder aqui é uma expressão inteira ("Set(nome=XXX)" ou
+    # "Goto(timeconditions,TIMECONDITION_DESTINO,1)") -- devolver só o valor bruto
+    # fazia o patch() substituir a linha toda pelo número solto (ex.:
+    # "exten => s,n,600" em vez de "exten => s,n,Set(dep_outros_assuntos=600)"),
+    # quebrando a sintaxe do dialplan inteiro. Preserva a expressão, só troca
+    # o marcador.
+    result = {}
+    for placeholder, key in placeholders_.items():
+        marker = "TIMECONDITION_DESTINO" if "TIMECONDITION_DESTINO" in placeholder else "XXX"
+        result[placeholder] = placeholder.replace(marker, str(config[key]))
+    return result
