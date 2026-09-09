@@ -6,7 +6,7 @@ from pvx.interactive.screens.module_list import ModuleListScreen
 
 class ModuleListScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.module_list.widgets.pause")
-    @patch("pvx.interactive.screens.module_list.widgets.print_modules_table")
+    @patch("pvx.interactive.screens.module_list.widgets.print_module_list")
     @patch(
         "pvx.interactive.screens.module_list.listing.list_modules",
         return_value=[
@@ -19,16 +19,13 @@ class ModuleListScreenTest(unittest.TestCase):
     )
     @patch("pvx.interactive.screens.module_list.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.module_list.widgets.spinner")
-    @patch("pvx.interactive.screens.module_list.widgets.breadcrumb")
-    def test_shows_table_then_pause_and_returns_back(
-        self, mock_breadcrumb, mock_spinner, mock_discover, mock_url, mock_list_modules,
-        mock_print_table, mock_pause,
+    def test_shows_list_then_pause_and_returns_back(
+        self, mock_spinner, mock_discover, mock_url, mock_list_modules, mock_print_list, mock_pause,
     ):
         result = ModuleListScreen().render()
         self.assertEqual(result, "BACK")
-        mock_breadcrumb.assert_called_once_with("pvx > módulos > listar")
         mock_spinner.assert_called_once()
-        mock_print_table.assert_called_once_with(mock_list_modules.return_value)
+        mock_print_list.assert_called_once_with(mock_list_modules.return_value)
         mock_pause.assert_called_once_with()
 
     @patch("pvx.interactive.screens.module_list.widgets.pause")

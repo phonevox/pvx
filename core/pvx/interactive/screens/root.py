@@ -8,6 +8,7 @@ from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
 from pvx.interactive.auto_menu import build_choices
 from pvx.interactive.inputs import ask_confirm, ask_select
+from pvx.interactive.screens.module_update import update_modules
 from pvx.logging_.setup import get_module_logger
 from pvx.version import __version__
 
@@ -37,7 +38,7 @@ def _show_version():
     widgets.pause()
 
 
-def _self_update():
+def _update_core():
     channel = build_info.describe()
     if channel is not None and not ask_confirm(
         f"Você está rodando um build {channel} -- atualizar vai substituir pela "
@@ -52,12 +53,17 @@ def _self_update():
     except PermissionError:
         _core_logger().error("self-update falhou: sem privilégios de root.")
         widgets.failed("self-update precisa de privilégios de root (rode com sudo).")
-        widgets.pause()
         return
 
     _core_logger().info(f"pvx atualizado pra versão {version}.")
     widgets.success(f"pvx atualizado pra versão {version}.")
-    widgets.pause()
+
+
+_UPDATE_TARGET_DESCRIPTIONS = {
+    "tudo": "atualiza o core e todos os módulos instalados",
+    "core": "atualiza o pvx em si pra versão mais recente",
+    "módulos": "atalho pra pvx > módulos > atualizar",
+}
 
 
 class RootScreen:
@@ -100,7 +106,22 @@ class RootScreen:
             return None
 
         if selected == "atualizar":
-            _self_update()
+            choices = [
+                questionary.Choice(title=v, value=v, description=_UPDATE_TARGET_DESCRIPTIONS[v])
+                for v in _UPDATE_TARGET_DESCRIPTIONS
+            ] + ["voltar"]
+            # sem isso, "pvx >" (já respondida) fica presa na tela junto com
+            # "pvx > atualizar >" -- mesmo achado do submenu de tema.
+            widgets.clear()
+            target = ask_select("pvx > atualizar >", choices)
+            if target is None or target == "voltar":
+                return None
+            if target == "módulos":
+                return "modules.update"
+            _update_core()
+            if target == "tudo":
+                update_modules(list(modules))
+            widgets.pause()
             return None
 
         if selected in SCREEN_BY_SYSTEM_CHOICE:

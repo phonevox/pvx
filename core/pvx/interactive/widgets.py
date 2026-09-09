@@ -6,7 +6,6 @@ import click
 from rich.console import Console, Group
 from rich.live import Live
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.table import Table
 from rich.text import Text
 
 from pvx.interactive import theme
@@ -369,24 +368,30 @@ def item(text, comment=None):
     Console().print(line, highlight=False)
 
 
-def _status_style(status, accent):
-    return {
-        "atualizado": "bold green",
-        "atualização disponível": "bold yellow",
-        "à frente do registry": f"bold {accent}",
-        "local": f"bold {accent}",
-        "disponível": theme.SEPARATOR_COLOR,
-    }.get(status, "")
+def print_module_list(rows):
+    # achado ao vivo: era uma rich.Table solta, alheia ao "formato" do tema
+    # (mesma queixa que motivou unificar success/failed/check_result) -- usa
+    # as primitivas novas. "atualizado"/"à frente do registry" (nada quebrado)
+    # viram sucesso; "atualização disponível" vira aviso; "local"/módulos
+    # ainda não instalados são só informativos (item(), sem nível de check).
+    title("pvx > módulos")
 
+    installed = [r for r in rows if r["installed_version"] != "-"]
+    available = [r for r in rows if r["installed_version"] == "-"]
 
-def print_modules_table(rows):
-    accent = theme.current_accent_color()
-    table = Table()
-    for column in ("Módulo", "Instalado", "Disponível", "Status"):
-        table.add_column(column)
-    for row in rows:
-        table.add_row(
-            row["name"], row["installed_version"], row["latest_version"],
-            Text(row["status"], style=_status_style(row["status"], accent)),
-        )
-    Console().print(table)
+    section("Instalados")
+    if not installed:
+        description("nenhum módulo instalado.")
+    for row in installed:
+        name, inst, latest = row["name"], row["installed_version"], row["latest_version"]
+        if row["status"] == "local":
+            item(name, f"{inst} -- não está no registry")
+        elif row["status"] == "atualização disponível":
+            check_result(f"{name}: {inst} -> {latest} disponível", "warn")
+        else:
+            check_result(f"{name}: {inst} ({row['status']})", "ok")
+
+    if available:
+        section("Disponíveis pra instalar")
+        for row in available:
+            item(row["name"], row["latest_version"])

@@ -66,7 +66,7 @@ def build_module_group():
             rows = listing.list_modules(discover_installed_modules(), config.registry_index_url())
         except RuntimeError as e:
             raise click.ClickException(str(e))
-        widgets.print_modules_table(rows)
+        widgets.print_module_list(rows)
 
     @module_group.command(name="uninstall")
     @click.argument("name")

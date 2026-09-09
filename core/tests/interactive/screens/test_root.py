@@ -374,8 +374,8 @@ class RootScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.root.widgets.success")
     @patch("pvx.interactive.screens.root.self_update.self_update", return_value="0.3.0")
     @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
-    @patch("pvx.interactive.screens.root.ask_select", return_value="atualizar")
-    def test_selecting_atualizar_runs_self_update_without_confirm_on_official_build(
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["atualizar", "core"])
+    def test_selecting_atualizar_core_runs_self_update_without_confirm_on_official_build(
         self, mock_ask_select, mock_describe, mock_self_update, mock_success, mock_pause, mock_discover
     ):
         result = RootScreen().render()
@@ -385,12 +385,13 @@ class RootScreenTest(unittest.TestCase):
         mock_pause.assert_called_once()
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.widgets.pause")
     @patch("pvx.interactive.screens.root.self_update.self_update")
     @patch("pvx.interactive.screens.root.ask_confirm", return_value=False)
     @patch("pvx.interactive.screens.root.build_info.describe", return_value="nightly, abc123")
-    @patch("pvx.interactive.screens.root.ask_select", return_value="atualizar")
-    def test_atualizar_asks_confirmation_on_nightly_build_and_bails_out_if_declined(
-        self, mock_ask_select, mock_describe, mock_ask_confirm, mock_self_update, mock_discover
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["atualizar", "core"])
+    def test_atualizar_core_asks_confirmation_on_nightly_build_and_bails_out_if_declined(
+        self, mock_ask_select, mock_describe, mock_ask_confirm, mock_self_update, mock_pause, mock_discover
     ):
         result = RootScreen().render()
         self.assertIsNone(result)
@@ -402,14 +403,51 @@ class RootScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.root.widgets.failed")
     @patch("pvx.interactive.screens.root.self_update.self_update", side_effect=PermissionError())
     @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
-    @patch("pvx.interactive.screens.root.ask_select", return_value="atualizar")
-    def test_atualizar_shows_failed_when_not_root(
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["atualizar", "core"])
+    def test_atualizar_core_shows_failed_when_not_root(
         self, mock_ask_select, mock_describe, mock_self_update, mock_failed, mock_pause, mock_discover
     ):
         result = RootScreen().render()
         self.assertIsNone(result)
         mock_failed.assert_called_once()
         mock_pause.assert_called_once()
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.widgets.clear")
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["atualizar", "voltar"])
+    def test_atualizar_voltar_at_target_level_redraws_root(self, mock_ask_select, mock_clear, mock_discover):
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_clear.assert_called_once()
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["atualizar", "módulos"])
+    def test_atualizar_modulos_is_a_shortcut_to_the_module_update_screen(self, mock_ask_select, mock_discover):
+        self.assertEqual(RootScreen().render(), "modules.update")
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={"firewall": object()})
+    @patch("pvx.interactive.screens.root.widgets.pause")
+    @patch("pvx.interactive.screens.root.update_modules")
+    @patch("pvx.interactive.screens.root.self_update.self_update", return_value="0.3.0")
+    @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["atualizar", "tudo"])
+    def test_atualizar_tudo_updates_core_and_every_module(
+        self, mock_ask_select, mock_describe, mock_self_update, mock_update_modules, mock_pause, mock_discover
+    ):
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_self_update.assert_called_once()
+        mock_update_modules.assert_called_once_with(["firewall"])
+        mock_pause.assert_called_once()
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", side_effect=["atualizar", "voltar"])
+    def test_every_update_target_has_a_description(self, mock_ask_select, mock_discover):
+        RootScreen().render()
+        choices = mock_ask_select.call_args_list[1].args[1]
+        for value in ("tudo", "core", "módulos"):
+            choice = next(c for c in choices if isinstance(c, questionary.Choice) and c.value == value)
+            self.assertTrue(choice.description, msg=f"{value} sem description")
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
