@@ -6,7 +6,6 @@ import click
 from rich.console import Console, Group
 from rich.live import Live
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-from rich.table import Table
 from rich.text import Text
 
 from pvx.interactive import theme
@@ -354,8 +353,8 @@ def section(text):
     Console().print(_styled(f"{marker} {text}", f"bold {accent}"), highlight=False)
 
 
-def description(text):
-    Console().print(_styled(f"  {text}", theme.SEPARATOR_COLOR), highlight=False)
+def description(text, color=None):
+    Console().print(_styled(f"  {text}", color or theme.SEPARATOR_COLOR), highlight=False)
 
 
 def item(text, comment=None):
@@ -369,24 +368,53 @@ def item(text, comment=None):
     Console().print(line, highlight=False)
 
 
-def _status_style(status, accent):
-    return {
-        "atualizado": "bold green",
-        "atualização disponível": "bold yellow",
-        "à frente do registry": f"bold {accent}",
-        "local": f"bold {accent}",
-        "disponível": theme.SEPARATOR_COLOR,
-    }.get(status, "")
+_MODULE_STATUS_COLOR = {
+    "atualização disponível": theme.ACCENT_COLORS["amarelo"],
+}
+_MODULE_NOT_INSTALLED_COLOR = theme.SEPARATOR_COLOR
 
 
-def print_modules_table(rows):
-    accent = theme.current_accent_color()
-    table = Table()
-    for column in ("Módulo", "Instalado", "Disponível", "Status"):
-        table.add_column(column)
+def _module_status_line(row, name_width):
+    # achado ao vivo: status de um módulo instalado não é resultado de uma
+    # AÇÃO (não é sucesso/erro/aviso) -- é só um fato, e usar
+    # check_result()/title() aqui (rodada anterior deste widget) confundia
+    # navegação (breadcrumb sumia) com conteúdo, e gritava "SUCESSO" pra
+    # coisa nenhuma ter acontecido. Bola colorida substitui o rótulo: verde
+    # (atualizado, ou à frente do registry -- nada quebrado), amarela
+    # (atualização disponível), cinza vazia (não instalado, versão "-").
+    line = Text()
+    if row["installed_version"] == "-":
+        line.append("○ ", style=_MODULE_NOT_INSTALLED_COLOR)
+        line.append(row["name"].ljust(name_width), style=_MODULE_NOT_INSTALLED_COLOR)
+        line.append("-", style=_MODULE_NOT_INSTALLED_COLOR)
+        return line
+
+    color = _MODULE_STATUS_COLOR.get(row["status"], theme.ACCENT_COLORS["verde"])
+    line.append("● ", style=color)
+    line.append(row["name"].ljust(name_width))
+    if row["status"] == "atualização disponível":
+        line.append(f"{row['installed_version']} -> ", style=theme.SEPARATOR_COLOR)
+        line.append(row["latest_version"], style=f"bold {color}")
+    else:
+        line.append(row["installed_version"], style=theme.SEPARATOR_COLOR)
+    return line
+
+
+def _module_status_legend():
+    line = Text()
+    line.append("  ● atualizado", style=theme.ACCENT_COLORS["verde"])
+    line.append("  ·  ", style=theme.SEPARATOR_COLOR)
+    line.append("● atualização disponível", style=theme.ACCENT_COLORS["amarelo"])
+    line.append("  ·  ", style=theme.SEPARATOR_COLOR)
+    line.append("○ não instalado", style=theme.SEPARATOR_COLOR)
+    return line
+
+
+def print_module_list(rows):
+    section("Catálogo")
+    Console().print(_module_status_legend(), highlight=False)
+    Console().print()
+
+    name_width = max((len(r["name"]) for r in rows), default=0) + 2
     for row in rows:
-        table.add_row(
-            row["name"], row["installed_version"], row["latest_version"],
-            Text(row["status"], style=_status_style(row["status"], accent)),
-        )
-    Console().print(table)
+        Console().print(_module_status_line(row, name_width), highlight=False)

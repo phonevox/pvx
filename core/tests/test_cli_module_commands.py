@@ -146,13 +146,14 @@ class ModuleListCommandTest(unittest.TestCase):
             },
         ],
     )
-    def test_lists_modules_in_a_table(self, mock_list_modules):
+    def test_lists_installed_and_available_modules(self, mock_list_modules):
         result = CliRunner().invoke(build_cli(), ["module", "list"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         self.assertIn("dummy", result.output)
+        self.assertIn("1.0.0", result.output)
+        self.assertIn("1.1.0", result.output)
         self.assertIn("ssh-hardening", result.output)
-        self.assertIn("atualização disponível", result.output)
-        self.assertIn("disponível", result.output)
+        self.assertIn("Catálogo", result.output)
 
     @patch(
         "pvx.cli.listing.list_modules",

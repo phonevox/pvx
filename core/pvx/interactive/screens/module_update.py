@@ -5,6 +5,19 @@ from pvx.interactive.inputs import ask_select
 from pvx.modules import installer
 
 
+def update_modules(names):
+    # extraído pra reuso -- pvx.interactive.screens.root usa isso direto pro
+    # atalho "pvx > atualizar > tudo" (core + todos os módulos numa ação só).
+    for name in names:
+        try:
+            with widgets.spinner(f"Atualizando {name}..."):
+                installer.install(name, config.registry_index_url())
+        except (RuntimeError, ValueError) as e:
+            widgets.failed(str(e))
+        else:
+            widgets.success(f"{name} atualizado.")
+
+
 class ModuleUpdateScreen:
     def render(self):
         modules = discover_installed_modules()
@@ -21,14 +34,7 @@ class ModuleUpdateScreen:
             return "BACK"
 
         names = list(modules) if selected == "todos" else [selected]
-        for name in names:
-            try:
-                with widgets.spinner(f"Atualizando {name}..."):
-                    installer.install(name, config.registry_index_url())
-            except (RuntimeError, ValueError) as e:
-                widgets.failed(str(e))
-            else:
-                widgets.success(f"{name} atualizado.")
+        update_modules(names)
 
         widgets.pause()
         return "BACK"
