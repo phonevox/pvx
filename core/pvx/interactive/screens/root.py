@@ -3,19 +3,61 @@ import traceback
 import click
 import questionary
 
+from pvx import build_info, self_update
 from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
 from pvx.interactive.auto_menu import build_choices
-from pvx.interactive.inputs import ask_select
+from pvx.interactive.inputs import ask_confirm, ask_select
+from pvx.logging_.setup import get_module_logger
+from pvx.version import __version__
 
 SCREEN_BY_SYSTEM_CHOICE = {"módulos": "modules", "logs": "logs", "tema": "theme"}
+# "versão"/"atualizar" não empurram tela própria -- são ações de uma linha só,
+# tratadas inline (ver RootScreen.render()), igual "sair".
+_SYSTEM_ACTIONS = list(SCREEN_BY_SYSTEM_CHOICE) + ["versão", "atualizar", "sair"]
 
 _SYSTEM_DESCRIPTIONS = {
     "módulos": "instalar, atualizar, remover e listar módulos",
     "logs": "ver o log do core e de cada módulo, ao vivo",
-    "tema": "trocar a cor de destaque do menu",
+    "tema": "personalizar cor, símbolos e formato do menu",
+    "versão": "mostra a versão instalada do pvx",
+    "atualizar": "atualiza o pvx pra versão mais recente",
     "sair": "fecha o pvx",
 }
+
+
+def _core_logger():
+    return get_module_logger("core")
+
+
+def _show_version():
+    channel = build_info.describe()
+    version_string = f"{__version__} ({channel})" if channel else __version__
+    widgets.message(f"pvx {version_string}")
+    widgets.pause()
+
+
+def _self_update():
+    channel = build_info.describe()
+    if channel is not None and not ask_confirm(
+        f"Você está rodando um build {channel} -- atualizar vai substituir pela "
+        "versão oficial mais recente. Continuar?",
+        default=False,
+    ):
+        return
+
+    try:
+        with widgets.spinner("Baixando atualização..."):
+            version = self_update.self_update()
+    except PermissionError:
+        _core_logger().error("self-update falhou: sem privilégios de root.")
+        widgets.failed("self-update precisa de privilégios de root (rode com sudo).")
+        widgets.pause()
+        return
+
+    _core_logger().info(f"pvx atualizado pra versão {version}.")
+    widgets.success(f"pvx atualizado pra versão {version}.")
+    widgets.pause()
 
 
 class RootScreen:
@@ -30,8 +72,7 @@ class RootScreen:
         # separado no fim da lista inteira.
         choices = [
             questionary.Separator("Sistema"),
-            *(indented(c, _SYSTEM_DESCRIPTIONS[c]) for c in SCREEN_BY_SYSTEM_CHOICE),
-            indented("sair", _SYSTEM_DESCRIPTIONS["sair"]),
+            *(indented(c, _SYSTEM_DESCRIPTIONS[c]) for c in _SYSTEM_ACTIONS),
         ]
         if modules:
             choices += [
@@ -46,6 +87,14 @@ class RootScreen:
         selected = ask_select("pvx >", choices, window_size=None)
         if selected is None or selected == "sair":
             return "EXIT"
+
+        if selected == "versão":
+            _show_version()
+            return None
+
+        if selected == "atualizar":
+            _self_update()
+            return None
 
         if selected in SCREEN_BY_SYSTEM_CHOICE:
             return SCREEN_BY_SYSTEM_CHOICE[selected]

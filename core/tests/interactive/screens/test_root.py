@@ -308,7 +308,7 @@ class RootScreenTest(unittest.TestCase):
     def test_every_sistema_item_has_a_description(self, mock_ask_select, mock_discover):
         RootScreen().render()
         choices = mock_ask_select.call_args.args[1]
-        for value in ("módulos", "logs", "tema", "sair"):
+        for value in ("módulos", "logs", "tema", "versão", "atualizar", "sair"):
             choice = next(c for c in choices if isinstance(c, questionary.Choice) and c.value == value)
             self.assertTrue(choice.description, msg=f"{value} sem description")
 
@@ -346,6 +346,62 @@ class RootScreenTest(unittest.TestCase):
         )
         self.assertIsInstance(choices[modules_index - 1], questionary.Separator)
         self.assertEqual(choices[modules_index - 1].line, " ")
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.widgets.pause")
+    @patch("pvx.interactive.screens.root.widgets.message")
+    @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
+    @patch("pvx.interactive.screens.root.ask_select", return_value="versão")
+    def test_selecting_versao_shows_the_version_and_stays_at_root(
+        self, mock_ask_select, mock_describe, mock_message, mock_pause, mock_discover
+    ):
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_message.assert_called_once()
+        self.assertIn("pvx", mock_message.call_args.args[0].lower())
+        mock_pause.assert_called_once()
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.widgets.pause")
+    @patch("pvx.interactive.screens.root.widgets.success")
+    @patch("pvx.interactive.screens.root.self_update.self_update", return_value="0.3.0")
+    @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
+    @patch("pvx.interactive.screens.root.ask_select", return_value="atualizar")
+    def test_selecting_atualizar_runs_self_update_without_confirm_on_official_build(
+        self, mock_ask_select, mock_describe, mock_self_update, mock_success, mock_pause, mock_discover
+    ):
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_self_update.assert_called_once()
+        mock_success.assert_called_once()
+        mock_pause.assert_called_once()
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.self_update.self_update")
+    @patch("pvx.interactive.screens.root.ask_confirm", return_value=False)
+    @patch("pvx.interactive.screens.root.build_info.describe", return_value="nightly, abc123")
+    @patch("pvx.interactive.screens.root.ask_select", return_value="atualizar")
+    def test_atualizar_asks_confirmation_on_nightly_build_and_bails_out_if_declined(
+        self, mock_ask_select, mock_describe, mock_ask_confirm, mock_self_update, mock_discover
+    ):
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_ask_confirm.assert_called_once()
+        mock_self_update.assert_not_called()
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.widgets.pause")
+    @patch("pvx.interactive.screens.root.widgets.failed")
+    @patch("pvx.interactive.screens.root.self_update.self_update", side_effect=PermissionError())
+    @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
+    @patch("pvx.interactive.screens.root.ask_select", return_value="atualizar")
+    def test_atualizar_shows_failed_when_not_root(
+        self, mock_ask_select, mock_describe, mock_self_update, mock_failed, mock_pause, mock_discover
+    ):
+        result = RootScreen().render()
+        self.assertIsNone(result)
+        mock_failed.assert_called_once()
+        mock_pause.assert_called_once()
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
