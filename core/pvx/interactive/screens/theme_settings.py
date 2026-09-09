@@ -20,7 +20,10 @@ def _border_preview(name):
 
 
 def _format_preview(name):
-    return widgets.preview_outcome_line(name, "✓", "sucesso")
+    # "lorem ipsum" só pra deixar claro onde o texto (detail) cai em cada
+    # layout -- sem ele, formatos como modern/ultra-minimal caem no fallback
+    # da categoria e escondem esse pedaço do preview.
+    return widgets.preview_outcome_line(name, "✓", "sucesso", "lorem ipsum")
 
 
 # (presets, nome do setter em config, preview por preset, descrição do eixo) --
