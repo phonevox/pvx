@@ -85,7 +85,7 @@ class ApplyTest(unittest.TestCase):
         self.assertIn("Set(dep_outros_assuntos=600)", macro_dest.read_text())
 
         extensions = Path(self.base_dirs["dialplan"]) / "extensions_custom.conf"
-        self.assertIn('#include "ixcsoft/phonevox.conf"', extensions.read_text())
+        self.assertIn("#include ixcsoft/phonevox.conf", extensions.read_text())
 
         moh_conf = Path(self.base_dirs["dialplan"]) / "musiconhold_custom.conf"
         moh_conf_text = moh_conf.read_text()

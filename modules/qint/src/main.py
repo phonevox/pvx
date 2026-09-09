@@ -259,7 +259,7 @@ def _run_apply(logger, yes, skip_asterisk_check):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.15"
+    version = "0.1.16"
 
     def cli_group(self):
         @click.group(name="qint")

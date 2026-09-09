@@ -2,7 +2,7 @@ _INCLUDE_DIRECTIVE = {"ixcsoft": "#include", "sgp": "#tryinclude"}
 
 
 def build_include_line(tipo, filename):
-    return f'{_INCLUDE_DIRECTIVE[tipo]} "{filename}"'
+    return f"{_INCLUDE_DIRECTIVE[tipo]} {filename}"
 
 
 def add_include_if_absent(text, include_line):
