@@ -3,7 +3,7 @@ import questionary
 from pvx import config
 from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_select
-from pvx.interactive.theme import ACCENT_COLORS, FORMATS, PRESETS, SYMBOL_SETS
+from pvx.interactive.theme import ACCENT_COLORS, BORDERS, LINE_FORMATS, PRESETS, SYMBOL_SETS
 
 
 def _color_preview(name):
@@ -15,8 +15,12 @@ def _symbol_preview(name):
     return f"aviso {s['warning']} aviso!  ·  seção {s['section']} título  ·  item {s['item']} texto"
 
 
+def _border_preview(name):
+    return BORDERS[name] * 24
+
+
 def _format_preview(name):
-    return FORMATS[name] * 24
+    return widgets.preview_outcome_line(name, "✓", "sucesso")
 
 
 # (presets, nome do setter em config, preview por preset, descrição do eixo) --
@@ -26,7 +30,8 @@ def _format_preview(name):
 _AXES = {
     "cor": (PRESETS, "set_theme_name", _color_preview, "cor de destaque usada em título, seção e item"),
     "símbolos": (SYMBOL_SETS, "set_symbol_set_name", _symbol_preview, "glifos de aviso, seção e item"),
-    "formato": (FORMATS, "set_format_name", _format_preview, "caractere da moldura do título"),
+    "moldura": (BORDERS, "set_border_name", _border_preview, "caractere da moldura do título"),
+    "formato": (LINE_FORMATS, "set_line_format_name", _format_preview, "layout de sucesso/falha/aviso"),
 }
 
 

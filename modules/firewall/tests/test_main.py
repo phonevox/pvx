@@ -218,14 +218,15 @@ class StatusCommandTest(MainTestCase):
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
         # achado ao vivo: o aviso vivia embutido no texto do state() ("--
-        # atenção: ..."); agora usa o widget dedicado widgets.warning(), que
-        # imprime "aviso!", não mais a palavra solta "atenção".
+        # atenção: ..."); agora usa o widget dedicado widgets.warning(). O
+        # formato default (theme "formato" = modern, "[<simbolo>] <texto>")
+        # não repete a palavra "aviso" quando um detail é passado -- o símbolo
+        # já é quem sinaliza isso, não mais uma palavra solta.
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
         self.assertIn("sincronizado", result.output.lower())
-        self.assertIn("aviso", result.output.lower())
         self.assertIn("failsafe", result.output.lower())
 
 

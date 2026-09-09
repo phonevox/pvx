@@ -2,7 +2,7 @@ import time
 import unittest
 from unittest.mock import call, patch
 
-from pvx.interactive import theme
+from pvx.interactive import theme, widgets
 from pvx.interactive.widgets import (
     BANNER,
     banner,
@@ -233,21 +233,22 @@ class MessageTest(unittest.TestCase):
 
 
 class SuccessTest(unittest.TestCase):
+    # formato default é "modern" ("[<simbolo>] <texto>") -- sem detail, cai no
+    # fallback da categoria como texto.
     @patch("pvx.interactive.widgets.Console")
-    def test_prints_label_alone_when_no_detail(self, mock_console_cls):
+    def test_prints_category_alone_when_no_detail(self, mock_console_cls):
         success()
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertEqual(printed.plain, "✓ sucesso!")
+        self.assertEqual(printed.plain, "[✓] sucesso")
 
     @patch("pvx.interactive.widgets.Console")
-    def test_appends_detail_inline_after_the_label(self, mock_console_cls):
+    def test_detail_replaces_the_fallback_text(self, mock_console_cls):
         success("dummy instalado.")
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertTrue(printed.plain.startswith("✓ sucesso!"))
-        self.assertTrue(printed.plain.endswith("dummy instalado."))
+        self.assertEqual(printed.plain, "[✓] dummy instalado.")
 
     @patch("pvx.interactive.widgets.Console")
-    def test_label_is_bold_green(self, mock_console_cls):
+    def test_symbol_is_bold_green(self, mock_console_cls):
         success()
         printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.spans[0].style, "bold green")
@@ -255,20 +256,19 @@ class SuccessTest(unittest.TestCase):
 
 class FailedTest(unittest.TestCase):
     @patch("pvx.interactive.widgets.Console")
-    def test_prints_label_alone_when_no_detail(self, mock_console_cls):
+    def test_prints_category_alone_when_no_detail(self, mock_console_cls):
         failed()
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertEqual(printed.plain, "✗ falha!")
+        self.assertEqual(printed.plain, "[✗] falha")
 
     @patch("pvx.interactive.widgets.Console")
-    def test_appends_detail_inline_after_the_label(self, mock_console_cls):
+    def test_detail_replaces_the_fallback_text(self, mock_console_cls):
         failed("erro de rede.")
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertTrue(printed.plain.startswith("✗ falha!"))
-        self.assertTrue(printed.plain.endswith("erro de rede."))
+        self.assertEqual(printed.plain, "[✗] erro de rede.")
 
     @patch("pvx.interactive.widgets.Console")
-    def test_label_is_bold_red(self, mock_console_cls):
+    def test_symbol_is_bold_red(self, mock_console_cls):
         failed()
         printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.spans[0].style, "bold red")
@@ -347,22 +347,21 @@ class WarningTest(unittest.TestCase):
     # o default de config.get_symbol_set_name().
     @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
     @patch("pvx.interactive.widgets.Console")
-    def test_prints_label_alone_when_no_detail(self, mock_console_cls, mock_symbols):
+    def test_prints_category_alone_when_no_detail(self, mock_console_cls, mock_symbols):
         warning()
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertEqual(printed.plain, "⚠ aviso!")
+        self.assertEqual(printed.plain, "[⚠] aviso")
 
     @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
     @patch("pvx.interactive.widgets.Console")
-    def test_appends_detail_inline_after_the_label(self, mock_console_cls, mock_symbols):
+    def test_detail_replaces_the_fallback_text(self, mock_console_cls, mock_symbols):
         warning("rode `apply` de novo.")
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertTrue(printed.plain.startswith("⚠ aviso!"))
-        self.assertTrue(printed.plain.endswith("rode `apply` de novo."))
+        self.assertEqual(printed.plain, "[⚠] rode `apply` de novo.")
 
     @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
     @patch("pvx.interactive.widgets.Console")
-    def test_label_is_bold_yellow(self, mock_console_cls, mock_symbols):
+    def test_symbol_is_bold_yellow(self, mock_console_cls, mock_symbols):
         warning()
         printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.spans[0].style, "bold yellow")
@@ -395,9 +394,9 @@ class SuccessFailedAlignmentTest(unittest.TestCase):
 
 
 class TitleTest(unittest.TestCase):
-    # título de tela com moldura -- caractere vem do tema (FORMATS), texto
+    # título de tela com moldura -- caractere vem do tema (BORDERS), texto
     # centralizado em negrito, tudo na cor de destaque do tema.
-    @patch("pvx.interactive.widgets.theme.current_format_char", return_value="═")
+    @patch("pvx.interactive.widgets.theme.current_border_char", return_value="═")
     @patch("pvx.interactive.widgets.theme.current_accent_color", return_value="#0087ff")
     @patch("pvx.interactive.widgets.Console")
     def test_prints_bar_centered_text_and_bar_in_accent_color(self, mock_console_cls, mock_accent, mock_format):
@@ -450,6 +449,96 @@ class ItemTest(unittest.TestCase):
         item("189.124.85.75", comment="PHONEVOX PRINCIPAL")
         printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.plain, "  • 189.124.85.75  # PHONEVOX PRINCIPAL")
+
+
+class PreviewOutcomeLineTest(unittest.TestCase):
+    # preview_outcome_line() é o texto plano usado no on-hover de "pvx > tema >
+    # formato" -- um teste por preset, sem depender do tema atual (símbolo e
+    # categoria passados direto).
+    def test_verbose_keeps_the_exclamation_label(self):
+        self.assertEqual(widgets.preview_outcome_line("verbose", "✓", "sucesso"), "✓ sucesso!")
+        self.assertEqual(widgets.preview_outcome_line("verbose", "✓", "sucesso", "ok"), "✓ sucesso! ok")
+
+    def test_verbose_v2_drops_the_exclamation_and_brackets_the_symbol(self):
+        self.assertEqual(widgets.preview_outcome_line("verbose-v2", "✓", "sucesso"), "[✓] sucesso")
+        self.assertEqual(widgets.preview_outcome_line("verbose-v2", "✓", "sucesso", "ok"), "[✓] sucesso ok")
+
+    def test_verbose_v2_full_color_has_the_same_text_as_v2(self):
+        self.assertEqual(
+            widgets.preview_outcome_line("verbose-v2-full-color", "✓", "sucesso", "ok"),
+            widgets.preview_outcome_line("verbose-v2", "✓", "sucesso", "ok"),
+        )
+
+    def test_minimal_is_the_uppercase_category_with_no_symbol(self):
+        self.assertEqual(widgets.preview_outcome_line("minimal", "✓", "sucesso"), "SUCESSO")
+        self.assertEqual(widgets.preview_outcome_line("minimal", "✓", "sucesso", "ok"), "SUCESSO ok")
+
+    def test_ultra_minimal_is_symbol_plus_category_fallback(self):
+        self.assertEqual(widgets.preview_outcome_line("ultra-minimal", "✓", "sucesso"), "✓ sucesso")
+        self.assertEqual(widgets.preview_outcome_line("ultra-minimal", "✓", "sucesso", "ok"), "✓ ok")
+
+    def test_modern_is_bracketed_symbol_plus_category_fallback(self):
+        self.assertEqual(widgets.preview_outcome_line("modern", "✓", "sucesso"), "[✓] sucesso")
+        self.assertEqual(widgets.preview_outcome_line("modern", "✓", "sucesso", "ok"), "[✓] ok")
+
+    def test_modern_colored_brackets_has_the_same_text_as_modern(self):
+        self.assertEqual(
+            widgets.preview_outcome_line("modern-colored-brackets", "✓", "sucesso", "ok"),
+            widgets.preview_outcome_line("modern", "✓", "sucesso", "ok"),
+        )
+
+    def test_modern_full_color_has_the_same_text_as_modern(self):
+        self.assertEqual(
+            widgets.preview_outcome_line("modern-full-color", "✓", "sucesso", "ok"),
+            widgets.preview_outcome_line("modern", "✓", "sucesso", "ok"),
+        )
+
+    def test_unknown_format_falls_back_to_modern(self):
+        self.assertEqual(
+            widgets.preview_outcome_line("isso-nao-existe", "✓", "sucesso"),
+            widgets.preview_outcome_line("modern", "✓", "sucesso"),
+        )
+
+
+class LineFormatColorSpanTest(unittest.TestCase):
+    # os "-full-color"/"-colored-brackets" existem só pra mudar QUANTO da linha
+    # é colorido -- o texto já é coberto pelo teste de cima, aqui confere só o
+    # span de estilo.
+    def test_verbose_v2_colors_only_the_prefix_not_the_detail(self):
+        line = widgets._LINE_BUILDERS["verbose-v2"]("✓", "sucesso", "bold green", "ok")
+        self.assertEqual(line.spans[0].style, "bold green")
+        self.assertNotEqual(line.plain[line.spans[0].end:].strip(), "")
+
+    def test_verbose_v2_full_color_colors_the_whole_line(self):
+        line = widgets._LINE_BUILDERS["verbose-v2-full-color"]("✓", "sucesso", "bold green", "ok")
+        self.assertEqual(len(line.spans), 1)
+        self.assertEqual(line.spans[0].end - line.spans[0].start, len(line.plain))
+
+    def test_modern_colors_only_the_symbol(self):
+        line = widgets._LINE_BUILDERS["modern"]("✓", "sucesso", "bold green", None)
+        self.assertEqual(line.plain[line.spans[0].start:line.spans[0].end], "✓")
+
+    def test_modern_colored_brackets_colors_symbol_and_brackets(self):
+        line = widgets._LINE_BUILDERS["modern-colored-brackets"]("✓", "sucesso", "bold green", None)
+        self.assertEqual(line.plain[line.spans[0].start:line.spans[0].end], "[✓]")
+
+    def test_modern_full_color_colors_the_whole_line(self):
+        line = widgets._LINE_BUILDERS["modern-full-color"]("✓", "sucesso", "bold green", "ok")
+        self.assertEqual(len(line.spans), 1)
+        self.assertEqual(line.spans[0].end - line.spans[0].start, len(line.plain))
+
+    def test_minimal_colors_only_the_category(self):
+        line = widgets._LINE_BUILDERS["minimal"]("✓", "sucesso", "bold green", "ok")
+        self.assertEqual(line.plain[line.spans[0].start:line.spans[0].end], "SUCESSO")
+
+
+class PrintOutcomeUsesConfiguredFormatTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.theme.current_line_format", return_value="verbose")
+    @patch("pvx.interactive.widgets.Console")
+    def test_success_respects_the_configured_line_format(self, mock_console_cls, mock_format):
+        success()
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "✓ sucesso!")
 
 
 if __name__ == "__main__":

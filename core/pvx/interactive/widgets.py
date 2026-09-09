@@ -167,34 +167,128 @@ def message(text):
     click.echo()
 
 
-_SUCCESS_LABEL = "✓ sucesso!"
-_FAILED_LABEL = "✗ falha!"
-_OUTCOME_LABEL_WIDTH = max(len(_SUCCESS_LABEL), len(_FAILED_LABEL))
+def _outcomes():
+    # os 3 estados de _print_outcome, na ordem success/failed/warning -- usado
+    # só pra calcular alinhamento entre eles (ver _verbose_prefix/_v2_prefix
+    # abaixo), nunca pra decidir QUAL deles imprimir.
+    return (
+        ("✓", "sucesso", "bold green"),
+        ("✗", "falha", "bold red"),
+        (theme.current_symbols()["warning"], "aviso", "bold yellow"),
+    )
 
 
-def _print_outcome(label, style, detail):
-    # warning() tem o próprio símbolo (tema, SYMBOL_SETS) e pode ser mais largo
-    # que _OUTCOME_LABEL_WIDTH -- alinha no maior dos dois, sem exigir que
-    # success()/failed() conheçam o tema de símbolos pra isso.
-    width = max(_OUTCOME_LABEL_WIDTH, len(label))
-    line = Text()
-    line.append(label.ljust(width) if detail else label, style=style)
+def _verbose_prefix(symbol, category):
+    return f"{symbol} {category}!"
+
+
+def _verbose_v2_prefix(symbol, category):
+    return f"[{symbol}] {category}"
+
+
+def _fallback_text(category, detail):
+    # formatos sem um slot de categoria dedicado (ultra-minimal/modern/...)
+    # caem pra categoria como texto quando a chamada não passou detail (ex.:
+    # success() sem argumento) -- igual "verbose" mostra só o prefixo sozinho.
+    return detail if detail is not None else category
+
+
+def _line_verbose(symbol, category, style, detail):
+    prefix = _verbose_prefix(symbol, category)
+    width = max(len(_verbose_prefix(s, c)) for s, c, _ in _outcomes())
+    line = _styled(prefix.ljust(width) if detail else prefix, style)
     if detail:
         line.append(f" {detail}")
-    Console().print(line, highlight=False)
+    return line
+
+
+def _line_verbose_v2(symbol, category, style, detail):
+    prefix = _verbose_v2_prefix(symbol, category)
+    width = max(len(_verbose_v2_prefix(s, c)) for s, c, _ in _outcomes())
+    line = _styled(prefix.ljust(width) if detail else prefix, style)
+    if detail:
+        line.append(f" {detail}")
+    return line
+
+
+def _line_verbose_v2_full_color(symbol, category, style, detail):
+    prefix = _verbose_v2_prefix(symbol, category)
+    width = max(len(_verbose_v2_prefix(s, c)) for s, c, _ in _outcomes())
+    text = prefix.ljust(width) if detail else prefix
+    if detail:
+        text += f" {detail}"
+    return _styled(text, style)
+
+
+def _line_minimal(symbol, category, style, detail):
+    line = Text()
+    line.append(category.upper(), style=style)
+    if detail:
+        line.append(f" {detail}")
+    return line
+
+
+def _line_ultra_minimal(symbol, category, style, detail):
+    line = Text()
+    line.append(symbol, style=style)
+    line.append(f" {_fallback_text(category, detail)}")
+    return line
+
+
+def _line_modern(symbol, category, style, detail):
+    line = Text()
+    line.append("[")
+    line.append(symbol, style=style)
+    line.append(f"] {_fallback_text(category, detail)}")
+    return line
+
+
+def _line_modern_colored_brackets(symbol, category, style, detail):
+    line = Text()
+    line.append(f"[{symbol}]", style=style)
+    line.append(f" {_fallback_text(category, detail)}")
+    return line
+
+
+def _line_modern_full_color(symbol, category, style, detail):
+    return _styled(f"[{symbol}] {_fallback_text(category, detail)}", style)
+
+
+_LINE_BUILDERS = {
+    "verbose": _line_verbose,
+    "verbose-v2": _line_verbose_v2,
+    "verbose-v2-full-color": _line_verbose_v2_full_color,
+    "minimal": _line_minimal,
+    "ultra-minimal": _line_ultra_minimal,
+    "modern": _line_modern,
+    "modern-colored-brackets": _line_modern_colored_brackets,
+    "modern-full-color": _line_modern_full_color,
+}
+
+
+def preview_outcome_line(format_name, symbol="✓", category="sucesso", detail=None):
+    # usado por pvx.interactive.screens.theme_settings pra montar o preview
+    # (on-hover) de cada preset de "pvx > tema > formato" -- plain, sem cor,
+    # já que a description do questionary não renderiza estilo.
+    builder = _LINE_BUILDERS.get(format_name, _line_modern)
+    return builder(symbol, category, "", detail).plain
+
+
+def _print_outcome(symbol, category, style, detail):
+    builder = _LINE_BUILDERS.get(theme.current_line_format(), _line_modern)
+    Console().print(builder(symbol, category, style, detail), highlight=False)
 
 
 def success(detail=None):
-    _print_outcome(_SUCCESS_LABEL, "bold green", detail)
+    _print_outcome("✓", "sucesso", "bold green", detail)
 
 
 def failed(detail=None):
-    _print_outcome(_FAILED_LABEL, "bold red", detail)
+    _print_outcome("✗", "falha", "bold red", detail)
 
 
 def warning(detail=None):
-    label = f"{theme.current_symbols()['warning']} aviso!"
-    _print_outcome(label, "bold yellow", detail)
+    _print_outcome(theme.current_symbols()["warning"], "aviso", "bold yellow", detail)
 
 
 def crash(traceback_text):
@@ -240,7 +334,7 @@ def _styled(text, style):
 
 def title(text):
     accent = theme.current_accent_color()
-    char = theme.current_format_char()
+    char = theme.current_border_char()
     bar = _styled(char * _TITLE_WIDTH, accent)
     console = Console()
     console.print(bar, highlight=False)

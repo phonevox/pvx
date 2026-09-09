@@ -110,11 +110,21 @@ def set_symbol_set_name(name: str) -> None:
     write_config(data)
 
 
-def get_format_name() -> str:
-    return read_config().get("format", "duplo")
+def get_border_name() -> str:
+    return read_config().get("border", "duplo")
 
 
-def set_format_name(name: str) -> None:
+def set_border_name(name: str) -> None:
     data = read_config()
-    data["format"] = name
+    data["border"] = name
+    write_config(data)
+
+
+def get_line_format_name() -> str:
+    return read_config().get("line_format", "modern")
+
+
+def set_line_format_name(name: str) -> None:
+    data = read_config()
+    data["line_format"] = name
     write_config(data)

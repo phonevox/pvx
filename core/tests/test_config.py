@@ -131,12 +131,19 @@ class ThemeConfigTest(unittest.TestCase):
         config.set_symbol_set_name("ascii")
         self.assertEqual(config.get_symbol_set_name(), "ascii")
 
-    def test_format_name_defaults_to_duplo(self):
-        self.assertEqual(config.get_format_name(), "duplo")
+    def test_border_name_defaults_to_duplo(self):
+        self.assertEqual(config.get_border_name(), "duplo")
 
-    def test_set_format_name_persists_and_is_read_back(self):
-        config.set_format_name("simples")
-        self.assertEqual(config.get_format_name(), "simples")
+    def test_set_border_name_persists_and_is_read_back(self):
+        config.set_border_name("simples")
+        self.assertEqual(config.get_border_name(), "simples")
+
+    def test_line_format_name_defaults_to_modern(self):
+        self.assertEqual(config.get_line_format_name(), "modern")
+
+    def test_set_line_format_name_persists_and_is_read_back(self):
+        config.set_line_format_name("minimal")
+        self.assertEqual(config.get_line_format_name(), "minimal")
 
 
 if __name__ == "__main__":

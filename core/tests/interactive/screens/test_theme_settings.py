@@ -7,10 +7,10 @@ from pvx.interactive.screens.theme_settings import ThemeScreen
 
 
 class ThemeScreenTest(unittest.TestCase):
-    # tema tem 3 eixos independentes (cor, símbolos, formato) -- primeiro
-    # pergunta o eixo, depois o preset desse eixo. Redesenha o mesmo nível
-    # (None) após aplicar, igual auto-menu, pra dar pra ajustar mais de um
-    # eixo na mesma visita.
+    # tema tem 4 eixos independentes (cor, símbolos, moldura, formato) --
+    # primeiro pergunta o eixo, depois o preset desse eixo. Redesenha o mesmo
+    # nível (None) após aplicar, igual auto-menu, pra dar pra ajustar mais de
+    # um eixo na mesma visita.
     @patch("pvx.interactive.screens.theme_settings.config.set_theme_name")
     @patch("pvx.interactive.screens.theme_settings.ask_select", side_effect=["cor", "verde"])
     def test_choosing_cor_then_a_preset_persists_it(self, mock_ask_select, mock_set_theme):
@@ -25,12 +25,19 @@ class ThemeScreenTest(unittest.TestCase):
         self.assertIsNone(result)
         mock_set_symbols.assert_called_once_with("ascii")
 
-    @patch("pvx.interactive.screens.theme_settings.config.set_format_name")
-    @patch("pvx.interactive.screens.theme_settings.ask_select", side_effect=["formato", "simples"])
-    def test_choosing_formato_then_a_preset_persists_it(self, mock_ask_select, mock_set_format):
+    @patch("pvx.interactive.screens.theme_settings.config.set_border_name")
+    @patch("pvx.interactive.screens.theme_settings.ask_select", side_effect=["moldura", "simples"])
+    def test_choosing_moldura_then_a_preset_persists_it(self, mock_ask_select, mock_set_border):
         result = ThemeScreen().render()
         self.assertIsNone(result)
-        mock_set_format.assert_called_once_with("simples")
+        mock_set_border.assert_called_once_with("simples")
+
+    @patch("pvx.interactive.screens.theme_settings.config.set_line_format_name")
+    @patch("pvx.interactive.screens.theme_settings.ask_select", side_effect=["formato", "ultra-minimal"])
+    def test_choosing_formato_then_a_preset_persists_it(self, mock_ask_select, mock_set_line_format):
+        result = ThemeScreen().render()
+        self.assertIsNone(result)
+        mock_set_line_format.assert_called_once_with("ultra-minimal")
 
     @patch("pvx.interactive.screens.theme_settings.ask_select", return_value="voltar")
     def test_voltar_at_axis_level_returns_back(self, mock_ask_select):
@@ -68,7 +75,7 @@ class ThemeScreenTest(unittest.TestCase):
     def test_every_axis_has_a_preview_description(self, mock_ask_select):
         ThemeScreen().render()
         choices = mock_ask_select.call_args.args[1]
-        for value in ("cor", "símbolos", "formato"):
+        for value in ("cor", "símbolos", "moldura", "formato"):
             choice = next(c for c in choices if isinstance(c, questionary.Choice) and c.value == value)
             self.assertTrue(choice.description, msg=f"{value} sem description")
 
@@ -78,6 +85,18 @@ class ThemeScreenTest(unittest.TestCase):
         ThemeScreen().render()
         choices = mock_ask_select.call_args_list[1].args[1]
         for value in ("padrão", "ascii", "geométrico"):
+            choice = next(c for c in choices if isinstance(c, questionary.Choice) and c.value == value)
+            self.assertTrue(choice.description, msg=f"{value} sem description")
+
+    @patch("pvx.interactive.screens.theme_settings.config.set_line_format_name")
+    @patch("pvx.interactive.screens.theme_settings.ask_select", side_effect=["formato", "voltar"])
+    def test_every_line_format_preset_has_a_preview_description(self, mock_ask_select, mock_set_line_format):
+        ThemeScreen().render()
+        choices = mock_ask_select.call_args_list[1].args[1]
+        for value in (
+            "verbose", "verbose-v2", "verbose-v2-full-color", "minimal", "ultra-minimal",
+            "modern", "modern-colored-brackets", "modern-full-color",
+        ):
             choice = next(c for c in choices if isinstance(c, questionary.Choice) and c.value == value)
             self.assertTrue(choice.description, msg=f"{value} sem description")
 

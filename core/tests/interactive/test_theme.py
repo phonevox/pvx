@@ -6,13 +6,15 @@ import questionary
 
 from pvx.interactive.theme import (
     ACCENT_COLORS,
-    FORMATS,
+    BORDERS,
+    LINE_FORMATS,
     PRESETS,
     SYMBOL_SETS,
     THEME,
     THEME_RULES,
     current_accent_color,
-    current_format_char,
+    current_border_char,
+    current_line_format,
     current_style,
     current_symbols,
     current_theme_rules,
@@ -100,14 +102,29 @@ class CurrentStyleTest(unittest.TestCase):
         config.set_symbol_set_name("ascii")
         self.assertEqual(current_symbols(), SYMBOL_SETS["ascii"])
 
-    def test_current_format_char_defaults_to_duplo(self):
-        self.assertEqual(current_format_char(), "═")
+    def test_current_border_char_defaults_to_duplo(self):
+        self.assertEqual(current_border_char(), "═")
 
-    def test_current_format_char_reflects_configured_format(self):
+    def test_current_border_char_reflects_configured_border(self):
         from pvx import config
 
-        config.set_format_name("simples")
-        self.assertEqual(current_format_char(), "─")
+        config.set_border_name("simples")
+        self.assertEqual(current_border_char(), "─")
+
+    def test_current_line_format_defaults_to_modern(self):
+        self.assertEqual(current_line_format(), "modern")
+
+    def test_current_line_format_reflects_configured_format(self):
+        from pvx import config
+
+        config.set_line_format_name("minimal")
+        self.assertEqual(current_line_format(), "minimal")
+
+    def test_current_line_format_falls_back_to_modern_on_unknown_value(self):
+        from pvx import config
+
+        config.set_line_format_name("isso-nao-existe")
+        self.assertEqual(current_line_format(), "modern")
 
 
 class SymbolAndFormatPresetsTest(unittest.TestCase):
@@ -116,10 +133,20 @@ class SymbolAndFormatPresetsTest(unittest.TestCase):
         self.assertIn("ascii", SYMBOL_SETS)
         self.assertIn("geométrico", SYMBOL_SETS)
 
-    def test_more_formats_available(self):
-        self.assertEqual(FORMATS["duplo"], "═")
-        self.assertEqual(FORMATS["simples"], "─")
-        self.assertEqual(FORMATS["grosso"], "━")
+    def test_more_borders_available(self):
+        self.assertEqual(BORDERS["duplo"], "═")
+        self.assertEqual(BORDERS["simples"], "─")
+        self.assertEqual(BORDERS["grosso"], "━")
+
+    def test_all_line_formats_available(self):
+        self.assertEqual(
+            LINE_FORMATS,
+            (
+                "verbose", "verbose-v2", "verbose-v2-full-color",
+                "minimal", "ultra-minimal",
+                "modern", "modern-colored-brackets", "modern-full-color",
+            ),
+        )
 
 
 if __name__ == "__main__":

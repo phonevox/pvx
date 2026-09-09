@@ -43,12 +43,21 @@ SYMBOL_SETS = {
     "geométrico": {"warning": "‼", "section": "■", "item": "○"},
 }
 
-# caractere da moldura de widgets.title() -- eixo independente, "pvx > tema > formato".
-FORMATS = {
+# caractere da moldura de widgets.title() -- eixo independente, "pvx > tema > moldura".
+BORDERS = {
     "duplo": "═",
     "simples": "─",
     "grosso": "━",
 }
+
+# layout de widgets.success()/failed()/warning() -- eixo independente,
+# "pvx > tema > formato". Não é um dict de valor-por-nome como os de cima: o
+# nome JÁ é o comportamento (widgets._LINE_BUILDERS dispatcha por ele).
+LINE_FORMATS = (
+    "verbose", "verbose-v2", "verbose-v2-full-color",
+    "minimal", "ultra-minimal",
+    "modern", "modern-colored-brackets", "modern-full-color",
+)
 
 
 def current_theme_rules():
@@ -67,5 +76,10 @@ def current_symbols():
     return SYMBOL_SETS.get(config.get_symbol_set_name(), SYMBOL_SETS["padrão"])
 
 
-def current_format_char():
-    return FORMATS.get(config.get_format_name(), FORMATS["duplo"])
+def current_border_char():
+    return BORDERS.get(config.get_border_name(), BORDERS["duplo"])
+
+
+def current_line_format():
+    name = config.get_line_format_name()
+    return name if name in LINE_FORMATS else "modern"
