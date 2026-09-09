@@ -170,10 +170,11 @@ def message(text):
 def _outcomes():
     # os 3 estados de _print_outcome, na ordem success/failed/warning -- usado
     # só pra calcular alinhamento entre eles (ver _verbose_prefix/_v2_prefix
-    # abaixo), nunca pra decidir QUAL deles imprimir.
+    # abaixo), nunca pra decidir QUAL deles imprimir. Vocabulário único de
+    # categoria (sucesso/erro/aviso) -- check_result() usa as mesmas 3.
     return (
         ("✓", "sucesso", "bold green"),
-        ("✗", "falha", "bold red"),
+        ("✗", "erro", "bold red"),
         (theme.current_symbols()["warning"], "aviso", "bold yellow"),
     )
 
@@ -284,7 +285,7 @@ def success(detail=None):
 
 
 def failed(detail=None):
-    _print_outcome("✗", "falha", "bold red", detail)
+    _print_outcome("✗", "erro", "bold red", detail)
 
 
 def warning(detail=None):
@@ -310,7 +311,9 @@ def state(text, ok):
 
 
 _CHECK_RESULT_STYLE = {
-    "ok": ("✓", "ok", "bold green"),
+    # mesmo vocabulário de categoria de success/failed/warning (sucesso/erro/aviso)
+    # -- não existe um 4º estado "ok" separado de "sucesso".
+    "ok": ("✓", "sucesso", "bold green"),
     # reprova mas não bloqueia (ex.: RAM baixa no preflight) -- mesmo símbolo
     # temável de warning() (SYMBOL_SETS), resolvido abaixo por nível.
     "warn": (None, "aviso", "bold yellow"),

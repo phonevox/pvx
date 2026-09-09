@@ -259,7 +259,7 @@ class FailedTest(unittest.TestCase):
     def test_prints_category_alone_when_no_detail(self, mock_console_cls):
         failed()
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertEqual(printed.plain, "[✗] falha")
+        self.assertEqual(printed.plain, "[✗] erro")
 
     @patch("pvx.interactive.widgets.Console")
     def test_detail_replaces_the_fallback_text(self, mock_console_cls):
