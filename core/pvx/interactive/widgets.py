@@ -310,17 +310,20 @@ def state(text, ok):
 
 
 _CHECK_RESULT_STYLE = {
-    "ok": ("✓", "bold green"),
-    "warn": ("!", "bold yellow"),  # reprova mas não bloqueia (ex.: RAM baixa no preflight)
-    "error": ("✗", "bold red"),
+    "ok": ("✓", "ok", "bold green"),
+    # reprova mas não bloqueia (ex.: RAM baixa no preflight) -- mesmo símbolo
+    # temável de warning() (SYMBOL_SETS), resolvido abaixo por nível.
+    "warn": (None, "aviso", "bold yellow"),
+    "error": ("✗", "erro", "bold red"),
 }
 
 
 def check_result(text, level):
-    icon, style = _CHECK_RESULT_STYLE[level]
-    line = Text()
-    line.append(f"{icon} {text}", style=style)
-    Console().print(line, highlight=False)
+    # mesmo pipeline de success()/failed()/warning() -- respeita o "formato"
+    # do tema (achado ao vivo: ficava com layout fixo, alheio ao resto).
+    fixed_symbol, category, style = _CHECK_RESULT_STYLE[level]
+    symbol = fixed_symbol or theme.current_symbols()["warning"]
+    _print_outcome(symbol, category, style, text)
 
 
 _TITLE_WIDTH = 70

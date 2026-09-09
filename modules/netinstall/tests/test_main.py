@@ -116,11 +116,12 @@ class PreflightReportTest(MainTestCase):
 
         result, _ = self._invoke(BASE_ARGS, preflight_side_effect=fake_check)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("✓ root: ok", result.output)
-        self.assertIn("✓ SO: ok (Rocky/RHEL 9)", result.output)
-        self.assertIn("✓ rede: ok", result.output)
-        self.assertIn("! RAM: atenção (768 MB)", result.output)
-        self.assertIn("✗ instalação prévia: falha (detectada)", result.output)
+        self.assertIn("[✓] root: ok", result.output)
+        self.assertIn("[✓] SO: ok (Rocky/RHEL 9)", result.output)
+        self.assertIn("[✓] rede: ok", result.output)
+        # símbolo de "warn" vem do tema (SYMBOL_SETS) -- "!" é o default (ascii).
+        self.assertIn("[!] RAM: atenção (768 MB)", result.output)
+        self.assertIn("[✗] instalação prévia: falha (detectada)", result.output)
 
     def test_check_without_detail_shows_only_the_status_word(self):
         def fake_check(min_version, force=False, report=None):
@@ -129,7 +130,7 @@ class PreflightReportTest(MainTestCase):
 
         result, _ = self._invoke(BASE_ARGS, preflight_side_effect=fake_check)
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("✓ root: ok", result.output)
+        self.assertIn("[✓] root: ok", result.output)
 
     def test_network_pending_phase_opens_its_own_spinner(self):
         def fake_check(min_version, force=False, report=None):
@@ -213,7 +214,8 @@ class StepAnnouncementTest(MainTestCase):
     # cada etapa deve anunciar sucesso ao terminar -- ver widgets.step()/_run_step().
     # duração fica só no timer ao vivo do spinner (widgets.step), não repete no texto
     # de sucesso -- linha do spinner some ao terminar (transient=True), então o que
-    # resta na tela é só a sequência de "✓ sucesso!".
+    # resta na tela é só a sequência de "[✓] <mensagem>" (formato default do tema,
+    # modern-full-color).
     DONE_MESSAGES = (
         "Repositórios adicionados.",
         "Sistema preparado.",
@@ -230,7 +232,7 @@ class StepAnnouncementTest(MainTestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         for done_message in self.DONE_MESSAGES:
             self.assertIn(
-                f"✓ sucesso! {done_message}", result.output,
+                f"[✓] {done_message}", result.output,
                 f"faltou anúncio de sucesso para: {done_message}",
             )
 

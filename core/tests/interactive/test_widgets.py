@@ -311,33 +311,36 @@ class StateTest(unittest.TestCase):
         self.assertEqual(printed.spans[0].style, "bold red")
 
 
+_PADRAO_SYMBOLS = {"warning": "⚠", "section": "▸", "item": "•"}
+
+
 class CheckResultTest(unittest.TestCase):
     # três níveis (não só ok/not-ok): usado onde uma checagem pode reprovar sem
     # bloquear o processo (ex.: RAM baixa no preflight do netinstall -- é aviso,
     # não erro) -- amarelo/símbolo próprio distingue isso de uma falha de verdade.
+    # achado ao vivo: tinha layout fixo, alheio ao "formato" do tema -- agora
+    # passa pelo mesmo _print_outcome de success/failed/warning.
     @patch("pvx.interactive.widgets.Console")
     def test_ok_is_green_with_check_mark(self, mock_console_cls):
         check_result("root: ok", "ok")
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertEqual(printed.plain, "✓ root: ok")
+        self.assertEqual(printed.plain, "[✓] root: ok")
         self.assertEqual(printed.spans[0].style, "bold green")
 
+    @patch("pvx.interactive.widgets.theme.current_symbols", return_value=_PADRAO_SYMBOLS)
     @patch("pvx.interactive.widgets.Console")
-    def test_warn_is_yellow_with_a_different_mark(self, mock_console_cls):
+    def test_warn_uses_the_themed_warning_symbol(self, mock_console_cls, mock_symbols):
         check_result("RAM: atenção (768 MB)", "warn")
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertEqual(printed.plain, "! RAM: atenção (768 MB)")
+        self.assertEqual(printed.plain, "[⚠] RAM: atenção (768 MB)")
         self.assertEqual(printed.spans[0].style, "bold yellow")
 
     @patch("pvx.interactive.widgets.Console")
     def test_error_is_red_with_the_failed_mark(self, mock_console_cls):
         check_result("instalação prévia: falha", "error")
         printed = mock_console_cls.return_value.print.call_args.args[0]
-        self.assertEqual(printed.plain, "✗ instalação prévia: falha")
+        self.assertEqual(printed.plain, "[✗] instalação prévia: falha")
         self.assertEqual(printed.spans[0].style, "bold red")
-
-
-_PADRAO_SYMBOLS = {"warning": "⚠", "section": "▸", "item": "•"}
 
 
 class WarningTest(unittest.TestCase):
