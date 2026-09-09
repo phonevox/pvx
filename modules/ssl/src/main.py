@@ -126,18 +126,25 @@ def _run_setup(logger, domain, email, interactive):
 
 
 def _echo_expiry(domain, days_left):
+    # sucesso/aviso/erro, igual o resto do pvx -- achado ao vivo: isso era
+    # click.echo puro (sem cor nenhuma), não dava pra saber de longe o que
+    # precisa de atenção. Expirado é ERRO de verdade (HTTPS quebrado); perto
+    # de expirar (mesmo limiar do auto-renew, _RENEW_WARNING_DAYS) é AVISO;
+    # sem certificado ainda não é erro, só falta rodar o setup -- AVISO.
     if days_left is None:
-        click.echo(f"{domain}: sem certificado emitido.")
+        widgets.check_result(f"{domain}: sem certificado emitido.", "warn")
     elif days_left < 0:
-        click.echo(f"{domain}: expirado há {-days_left} dia(s).")
+        widgets.check_result(f"{domain}: expirado há {-days_left} dia(s).", "error")
+    elif days_left <= _RENEW_WARNING_DAYS:
+        widgets.check_result(f"{domain}: expira em {days_left} dia(s).", "warn")
     else:
-        click.echo(f"{domain}: expira em {days_left} dia(s).")
+        widgets.check_result(f"{domain}: expira em {days_left} dia(s).", "ok")
 
 
 def _run_check(domain):
     domains = [domain] if domain else certbot_ops.list_domains()
     if not domains:
-        click.echo("nenhum domínio com certificado gerenciado por este host ainda.")
+        widgets.check_result("nenhum domínio com certificado gerenciado por este host ainda.", "warn")
         return
     for d in domains:
         _echo_expiry(d, certbot_ops.days_until_expiry(d))
@@ -190,7 +197,7 @@ def _run_remove(logger, domain, interactive, yes):
 
 class SslModule(PvxModule):
     name = "ssl"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="ssl")

@@ -173,6 +173,39 @@ class CheckCommandTest(unittest.TestCase):
         )
         self.assertIn("expirado", result.output.lower())
 
+    def _level_for(self, days_until_expiry):
+        with patch("main.widgets.check_result") as mock_check_result:
+            _invoke(
+                ["check", "example.com"],
+                **{
+                    "main.certbot_ops.days_until_expiry": patch(
+                        "main.certbot_ops.days_until_expiry", return_value=days_until_expiry,
+                    ),
+                },
+            )
+        return mock_check_result.call_args.args[1]
+
+    def test_plenty_of_time_left_is_a_success(self):
+        self.assertEqual(self._level_for(60), "ok")
+
+    def test_close_to_the_renew_threshold_is_a_warning(self):
+        self.assertEqual(self._level_for(15), "warn")
+
+    def test_expired_is_an_error_not_just_a_warning(self):
+        self.assertEqual(self._level_for(-3), "error")
+
+    def test_no_certificate_issued_yet_is_a_warning_not_an_error(self):
+        self.assertEqual(self._level_for(None), "warn")
+
+    def test_nothing_managed_yet_is_a_warning(self):
+        with patch("main.widgets.check_result") as mock_check_result:
+            _invoke(
+                ["check"],
+                **{"main.certbot_ops.list_domains": patch("main.certbot_ops.list_domains", return_value=[])},
+            )
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
 
 class RenewCommandTest(unittest.TestCase):
     def test_normal_renew_does_not_force(self):
