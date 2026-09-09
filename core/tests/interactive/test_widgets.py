@@ -27,7 +27,7 @@ from pvx.interactive.widgets import (
     title,
     warning,
 )
-from pvx.interactive.widgets import _ElapsedColumn
+from pvx.interactive.widgets import _ElapsedColumn, _module_status_line
 
 
 class ClearTest(unittest.TestCase):
@@ -127,57 +127,72 @@ class BannerTest(unittest.TestCase):
         mock_console_cls.return_value.print.assert_called_once_with(BANNER + "\n", style="#0087ff")
 
 
+class ModuleStatusLineTest(unittest.TestCase):
+    # achado ao vivo: status de módulo não é resultado de ação nenhuma --
+    # check_result()/title() (rodada anterior) confundiam navegação com
+    # conteúdo e gritavam "SUCESSO" sem ação nenhuma ter rodado. Bola
+    # colorida no lugar do rótulo: verde = tudo certo (atualizado, à frente
+    # do registry, ou só local -- nenhum desses é problema), amarela =
+    # atualização disponível, cinza vazia = não instalado (versão "-").
+    def test_up_to_date_gets_a_green_ball(self):
+        row = {"name": "dummy", "installed_version": "1.0.0", "latest_version": "1.0.0", "status": "atualizado"}
+        line = _module_status_line(row, name_width=10)
+        self.assertTrue(line.plain.startswith("● dummy"))
+        self.assertIn("1.0.0", line.plain)
+        self.assertEqual(line.spans[0].style, theme.ACCENT_COLORS["verde"])
+
+    def test_ahead_of_registry_also_gets_a_green_ball(self):
+        row = {"name": "magnus", "installed_version": "1.2.0", "latest_version": "1.1.0", "status": "à frente do registry"}
+        line = _module_status_line(row, name_width=10)
+        self.assertEqual(line.spans[0].style, theme.ACCENT_COLORS["verde"])
+
+    def test_local_module_also_gets_a_green_ball(self):
+        row = {"name": "custom", "installed_version": "0.1.0", "latest_version": "-", "status": "local"}
+        line = _module_status_line(row, name_width=10)
+        self.assertEqual(line.spans[0].style, theme.ACCENT_COLORS["verde"])
+
+    def test_update_available_gets_a_yellow_ball_and_shows_the_arrow(self):
+        row = {"name": "ssl", "installed_version": "0.1.1", "latest_version": "0.1.2", "status": "atualização disponível"}
+        line = _module_status_line(row, name_width=10)
+        self.assertEqual(line.spans[0].style, theme.ACCENT_COLORS["amarelo"])
+        self.assertIn("0.1.1", line.plain)
+        self.assertIn("0.1.2", line.plain)
+        self.assertIn("->", line.plain)
+
+    def test_not_installed_gets_a_hollow_ball_and_a_dash_for_version(self):
+        row = {"name": "zabbix", "installed_version": "-", "latest_version": "1.0.0", "status": "disponível"}
+        line = _module_status_line(row, name_width=10)
+        self.assertTrue(line.plain.startswith("○ zabbix"))
+        self.assertTrue(line.plain.endswith("-"))
+        self.assertNotIn("1.0.0", line.plain)
+
+
 class PrintModuleListTest(unittest.TestCase):
-    # achado ao vivo: era uma rich.Table solta, sem passar pelas primitivas
-    # novas (title/section/item/check_result) nem pelo "formato" do tema.
-    @patch("pvx.interactive.widgets.check_result")
+    @patch("pvx.interactive.widgets.Console")
     @patch("pvx.interactive.widgets.section")
-    @patch("pvx.interactive.widgets.title")
-    def test_shows_a_title_and_installed_section(self, mock_title, mock_section, mock_check_result):
+    def test_shows_a_single_catalogo_section(self, mock_section, mock_console_cls):
         rows = [{"name": "dummy", "installed_version": "1.0.0", "latest_version": "1.0.0", "status": "atualizado"}]
         print_module_list(rows)
-        mock_title.assert_called_once_with("pvx > módulos")
-        mock_section.assert_any_call("Instalados")
+        mock_section.assert_called_once_with("Catálogo")
 
-    @patch("pvx.interactive.widgets.check_result")
-    def test_up_to_date_and_ahead_of_registry_are_shown_as_success(self, mock_check_result):
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_the_legend_a_blank_line_and_one_line_per_module(self, mock_console_cls):
         rows = [
             {"name": "a", "installed_version": "1.0.0", "latest_version": "1.0.0", "status": "atualizado"},
-            {"name": "b", "installed_version": "1.2.0", "latest_version": "1.1.0", "status": "à frente do registry"},
+            {"name": "b", "installed_version": "-", "latest_version": "1.0.0", "status": "disponível"},
         ]
         print_module_list(rows)
-        levels = [c.args[1] for c in mock_check_result.call_args_list]
-        self.assertEqual(levels, ["ok", "ok"])
+        # section("Catálogo") + legenda + linha em branco + 2 módulos.
+        self.assertEqual(mock_console_cls.return_value.print.call_count, 5)
 
-    @patch("pvx.interactive.widgets.check_result")
-    def test_update_available_is_shown_as_warning(self, mock_check_result):
-        rows = [{"name": "b", "installed_version": "1.0.0", "latest_version": "1.1.0", "status": "atualização disponível"}]
-        print_module_list(rows)
-        mock_check_result.assert_called_once()
-        text, level = mock_check_result.call_args.args
-        self.assertEqual(level, "warn")
-        self.assertIn("1.0.0", text)
-        self.assertIn("1.1.0", text)
-
-    @patch("pvx.interactive.widgets.item")
-    def test_local_module_is_shown_as_a_plain_item_not_a_check(self, mock_item):
-        rows = [{"name": "custom", "installed_version": "0.1.0", "latest_version": "-", "status": "local"}]
-        print_module_list(rows)
-        mock_item.assert_called_once_with("custom", "0.1.0 -- não está no registry")
-
-    @patch("pvx.interactive.widgets.item")
-    @patch("pvx.interactive.widgets.section")
-    def test_modules_not_installed_go_under_their_own_section(self, mock_section, mock_item):
-        rows = [{"name": "zabbix", "installed_version": "-", "latest_version": "1.0.0", "status": "disponível"}]
-        print_module_list(rows)
-        mock_section.assert_any_call("Disponíveis pra instalar")
-        mock_item.assert_called_once_with("zabbix", "1.0.0")
-
-    @patch("pvx.interactive.widgets.description")
-    def test_no_installed_modules_shows_a_description_instead_of_items(self, mock_description):
-        rows = [{"name": "zabbix", "installed_version": "-", "latest_version": "1.0.0", "status": "disponível"}]
-        print_module_list(rows)
-        mock_description.assert_called_once_with("nenhum módulo instalado.")
+    @patch("pvx.interactive.widgets.Console")
+    def test_legend_mentions_all_three_states_in_one_line(self, mock_console_cls):
+        print_module_list([])
+        legend = mock_console_cls.return_value.print.call_args_list[1].args[0]
+        self.assertIn("atualizado", legend.plain)
+        self.assertIn("atualização disponível", legend.plain)
+        self.assertIn("não instalado", legend.plain)
+        self.assertEqual(legend.plain.count("\n"), 0)
 
 
 class PauseTest(unittest.TestCase):
@@ -459,6 +474,12 @@ class DescriptionTest(unittest.TestCase):
             printed = mock_console_cls.return_value.print.call_args.args[0]
         self.assertEqual(printed.plain, "  Lista de IPs com acesso total.")
         self.assertEqual(printed.spans[0].style, theme.SEPARATOR_COLOR)
+
+    def test_accepts_a_custom_color(self):
+        with patch("pvx.interactive.widgets.Console") as mock_console_cls:
+            description("atualizado", color="bold green")
+            printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "bold green")
 
 
 class ItemTest(unittest.TestCase):

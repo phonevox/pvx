@@ -353,8 +353,8 @@ def section(text):
     Console().print(_styled(f"{marker} {text}", f"bold {accent}"), highlight=False)
 
 
-def description(text):
-    Console().print(_styled(f"  {text}", theme.SEPARATOR_COLOR), highlight=False)
+def description(text, color=None):
+    Console().print(_styled(f"  {text}", color or theme.SEPARATOR_COLOR), highlight=False)
 
 
 def item(text, comment=None):
@@ -368,30 +368,53 @@ def item(text, comment=None):
     Console().print(line, highlight=False)
 
 
+_MODULE_STATUS_COLOR = {
+    "atualização disponível": theme.ACCENT_COLORS["amarelo"],
+}
+_MODULE_NOT_INSTALLED_COLOR = theme.SEPARATOR_COLOR
+
+
+def _module_status_line(row, name_width):
+    # achado ao vivo: status de um módulo instalado não é resultado de uma
+    # AÇÃO (não é sucesso/erro/aviso) -- é só um fato, e usar
+    # check_result()/title() aqui (rodada anterior deste widget) confundia
+    # navegação (breadcrumb sumia) com conteúdo, e gritava "SUCESSO" pra
+    # coisa nenhuma ter acontecido. Bola colorida substitui o rótulo: verde
+    # (atualizado, ou à frente do registry -- nada quebrado), amarela
+    # (atualização disponível), cinza vazia (não instalado, versão "-").
+    line = Text()
+    if row["installed_version"] == "-":
+        line.append("○ ", style=_MODULE_NOT_INSTALLED_COLOR)
+        line.append(row["name"].ljust(name_width), style=_MODULE_NOT_INSTALLED_COLOR)
+        line.append("-", style=_MODULE_NOT_INSTALLED_COLOR)
+        return line
+
+    color = _MODULE_STATUS_COLOR.get(row["status"], theme.ACCENT_COLORS["verde"])
+    line.append("● ", style=color)
+    line.append(row["name"].ljust(name_width))
+    if row["status"] == "atualização disponível":
+        line.append(f"{row['installed_version']} -> ", style=theme.SEPARATOR_COLOR)
+        line.append(row["latest_version"], style=f"bold {color}")
+    else:
+        line.append(row["installed_version"], style=theme.SEPARATOR_COLOR)
+    return line
+
+
+def _module_status_legend():
+    line = Text()
+    line.append("  ● atualizado", style=theme.ACCENT_COLORS["verde"])
+    line.append("  ·  ", style=theme.SEPARATOR_COLOR)
+    line.append("● atualização disponível", style=theme.ACCENT_COLORS["amarelo"])
+    line.append("  ·  ", style=theme.SEPARATOR_COLOR)
+    line.append("○ não instalado", style=theme.SEPARATOR_COLOR)
+    return line
+
+
 def print_module_list(rows):
-    # achado ao vivo: era uma rich.Table solta, alheia ao "formato" do tema
-    # (mesma queixa que motivou unificar success/failed/check_result) -- usa
-    # as primitivas novas. "atualizado"/"à frente do registry" (nada quebrado)
-    # viram sucesso; "atualização disponível" vira aviso; "local"/módulos
-    # ainda não instalados são só informativos (item(), sem nível de check).
-    title("pvx > módulos")
+    section("Catálogo")
+    Console().print(_module_status_legend(), highlight=False)
+    Console().print()
 
-    installed = [r for r in rows if r["installed_version"] != "-"]
-    available = [r for r in rows if r["installed_version"] == "-"]
-
-    section("Instalados")
-    if not installed:
-        description("nenhum módulo instalado.")
-    for row in installed:
-        name, inst, latest = row["name"], row["installed_version"], row["latest_version"]
-        if row["status"] == "local":
-            item(name, f"{inst} -- não está no registry")
-        elif row["status"] == "atualização disponível":
-            check_result(f"{name}: {inst} -> {latest} disponível", "warn")
-        else:
-            check_result(f"{name}: {inst} ({row['status']})", "ok")
-
-    if available:
-        section("Disponíveis pra instalar")
-        for row in available:
-            item(row["name"], row["latest_version"])
+    name_width = max((len(r["name"]) for r in rows), default=0) + 2
+    for row in rows:
+        Console().print(_module_status_line(row, name_width), highlight=False)

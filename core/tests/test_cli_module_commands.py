@@ -153,7 +153,7 @@ class ModuleListCommandTest(unittest.TestCase):
         self.assertIn("1.0.0", result.output)
         self.assertIn("1.1.0", result.output)
         self.assertIn("ssh-hardening", result.output)
-        self.assertIn("Disponíveis pra instalar", result.output)
+        self.assertIn("Catálogo", result.output)
 
     @patch(
         "pvx.cli.listing.list_modules",
