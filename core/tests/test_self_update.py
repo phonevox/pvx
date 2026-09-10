@@ -4,6 +4,7 @@ import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from pvx import config, self_update
 
@@ -15,13 +16,16 @@ class SelfUpdateTest(unittest.TestCase):
         self._old_lib = os.environ.get("PVX_CORE_LIB_PATH")
         self._old_core_url = os.environ.get("PVX_CORE_URL")
         self._old_manifest_url = os.environ.get("PVX_CORE_MANIFEST_URL")
+        self._old_home = os.environ.get("PVX_HOME")
         os.environ["PVX_CORE_LIB_PATH"] = str(self._lib_path)
+        os.environ["PVX_HOME"] = str(Path(self._tmp.name) / "home")
 
     def tearDown(self):
         for key, old in [
             ("PVX_CORE_LIB_PATH", self._old_lib),
             ("PVX_CORE_URL", self._old_core_url),
             ("PVX_CORE_MANIFEST_URL", self._old_manifest_url),
+            ("PVX_HOME", self._old_home),
         ]:
             if old is None:
                 os.environ.pop(key, None)
@@ -59,6 +63,31 @@ class SelfUpdateTest(unittest.TestCase):
                 self_update.self_update()
 
         self.assertEqual(self._lib_path.read_bytes(), b"old core.pyz content")
+
+    @patch("pvx.self_update.update_check.clear_cache")
+    def test_clears_the_update_check_cache_on_success(self, mock_clear):
+        # achado ao vivo: o cache de update_check.py sobrevive à troca do
+        # core.pyz -- um aviso calculado pela lógica antiga continuava sendo
+        # servido até o TTL expirar sozinho, mesmo já rodando o core novo.
+        new_core_bytes = b"fake core.pyz content v3"
+        with TemporaryDirectory() as source_tmp:
+            self._publish_fake_release(
+                Path(source_tmp), new_core_bytes, hashlib.sha256(new_core_bytes).hexdigest()
+            )
+            self_update.self_update()
+
+        mock_clear.assert_called_once()
+
+    @patch("pvx.self_update.update_check.clear_cache")
+    def test_does_not_clear_the_cache_when_checksum_mismatches(self, mock_clear):
+        self._lib_path.write_bytes(b"old core.pyz content")
+
+        with TemporaryDirectory() as source_tmp:
+            self._publish_fake_release(Path(source_tmp), b"tampered content", "sha256-errado")
+            with self.assertRaises(ValueError):
+                self_update.self_update()
+
+        mock_clear.assert_not_called()
 
 
 class UninstallTest(unittest.TestCase):

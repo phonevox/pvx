@@ -3,7 +3,7 @@ import json
 import shutil
 import urllib.request
 
-from pvx import config
+from pvx import config, update_check
 
 
 def self_update():
@@ -25,6 +25,12 @@ def self_update():
     tmp_path = lib_path.with_suffix(".tmp")
     tmp_path.write_bytes(data)
     tmp_path.replace(lib_path)
+
+    # achado ao vivo: o cache de update_check.py sobrevive à troca do
+    # core.pyz (TTL não sabe que a lógica mudou) -- um aviso calculado pela
+    # versão ANTIGA (ex.: formato de linha diferente) continuava sendo
+    # servido até o cache expirar sozinho, mesmo já rodando o core novo.
+    update_check.clear_cache()
 
     return manifest.get("version")
 
