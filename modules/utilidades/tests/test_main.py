@@ -39,10 +39,10 @@ class ChecklistPhonevoxCommandTest(unittest.TestCase):
 
         mock_table.assert_called_once()
         columns, rows = mock_table.call_args.args
-        self.assertEqual(columns, ["Seção", "Status", "Detalhe"])
+        self.assertEqual(columns, ["Seção", "Detalhe", "Status"])
         self.assertEqual(rows, [
-            ["SSL", "ok", "central.example.com expira em 60 dia(s)"],
-            ["Autobackup", "warn", "não configurado"],
+            ["SSL", "central.example.com expira em 60 dia(s)", "ok"],
+            ["Autobackup", "não configurado", "warn"],
         ])
 
     @patch(
@@ -53,12 +53,12 @@ class ChecklistPhonevoxCommandTest(unittest.TestCase):
         ],
     )
     @patch("main.issabel_detect.is_issabel", return_value=True)
-    def test_adjacent_items_of_the_same_section_leave_the_section_cell_blank(self, mock_is_issabel, mock_run_all):
+    def test_adjacent_items_of_the_same_section_repeat_the_section_name(self, mock_is_issabel, mock_run_all):
         with patch("main.widgets.table") as mock_table, patch("main.widgets.status_cell", side_effect=lambda lvl: lvl):
             _invoke(["checklist", "phonevox"])
 
         _, rows = mock_table.call_args.args
-        self.assertEqual([row[0] for row in rows], ["Zabbix", ""])
+        self.assertEqual([row[0] for row in rows], ["Zabbix", "Zabbix"])
 
     @patch("main.checklist_phonevox.run_all", return_value=[])
     @patch("main.issabel_detect.is_issabel", return_value=True)

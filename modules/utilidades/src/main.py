@@ -14,21 +14,16 @@ def _is_interactive():
 
 
 def _print_checklist(results):
-    # célula de seção fica em branco quando repete a de cima -- itens
-    # adjacentes da mesma seção (zabbix: config + script de auditoria) ficam
-    # visualmente agrupados sem repetir o nome em toda linha.
-    rows = []
-    last_section = None
-    for result in results:
-        section_cell = result["section"] if result["section"] != last_section else ""
-        last_section = result["section"]
-        rows.append([section_cell, widgets.status_cell(result["level"]), result["text"]])
-    widgets.table(["Seção", "Status", "Detalhe"], rows)
+    rows = [
+        [result["section"], result["text"], widgets.status_cell(result["level"])]
+        for result in results
+    ]
+    widgets.table(["Seção", "Detalhe", "Status"], rows)
 
 
 class UtilidadesModule(PvxModule):
     name = "utilidades"
-    version = "0.1.2"
+    version = "0.1.3"
 
     def cli_group(self):
         @click.group(name="utilidades")
