@@ -80,6 +80,14 @@ def _write_cache(notices):
     path.write_text(json.dumps({"checked_at": time.time(), "notices": notices}))
 
 
+def clear_cache():
+    # achado ao vivo: trocar o core.pyz (self-update) não afeta o TTL do
+    # cache -- um aviso calculado pela lógica ANTIGA continuava sendo
+    # servido até o cache expirar sozinho, mesmo já rodando o core novo.
+    # self_update.self_update() chama isso depois de trocar o binário.
+    config.update_check_cache_path().unlink(missing_ok=True)
+
+
 def pending_notices(installed, force=False):
     cache = _read_cache()
     if not force and cache and time.time() - cache.get("checked_at", 0) < _CACHE_TTL_SECONDS:

@@ -114,6 +114,22 @@ class PendingNoticesTest(unittest.TestCase):
 
     @patch("pvx.update_check.listing.list_modules", return_value=[])
     @patch("pvx.update_check._fetch_core_latest", return_value="99.0.0")
+    def test_clear_cache_makes_the_next_call_recompute(self, mock_fetch, mock_list):
+        # achado ao vivo: trocar o core.pyz (self-update) não muda o TTL do
+        # cache -- um aviso calculado pela lógica ANTIGA (ex.: formato de
+        # linha diferente) continuava sendo servido até o cache expirar
+        # sozinho, mesmo já rodando o core novo.
+        update_check.pending_notices({})
+        mock_fetch.reset_mock()
+        update_check.clear_cache()
+        update_check.pending_notices({})
+        mock_fetch.assert_called_once()
+
+    def test_clear_cache_is_a_no_op_when_there_is_no_cache_yet(self):
+        update_check.clear_cache()
+
+    @patch("pvx.update_check.listing.list_modules", return_value=[])
+    @patch("pvx.update_check._fetch_core_latest", return_value="99.0.0")
     def test_expired_cache_triggers_a_new_check(self, mock_fetch, mock_list):
         update_check.pending_notices({})
         cache_path = config.update_check_cache_path()
