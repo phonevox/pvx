@@ -21,9 +21,11 @@ from pvx.interactive.widgets import (
     select_answer,
     spinner,
     state,
+    status_cell,
     step,
     step_with_log,
     success,
+    table,
     title,
     warning,
 )
@@ -193,6 +195,36 @@ class PrintModuleListTest(unittest.TestCase):
         self.assertIn("atualização disponível", legend.plain)
         self.assertIn("não instalado", legend.plain)
         self.assertEqual(legend.plain.count("\n"), 0)
+
+
+class StatusCellTest(unittest.TestCase):
+    # célula de status pra widgets.table() -- vocabulário fixo sucesso/aviso/
+    # erro, cor semântica fixa (nunca a cor do tema), igual success/failed/warning.
+    def test_ok_is_sucesso_bold_green(self):
+        cell = status_cell("ok")
+        self.assertEqual(cell.plain, "SUCESSO")
+        self.assertEqual(cell.spans[0].style, "bold green")
+
+    def test_warn_is_aviso_bold_yellow(self):
+        cell = status_cell("warn")
+        self.assertEqual(cell.plain, "AVISO")
+        self.assertEqual(cell.spans[0].style, "bold yellow")
+
+    def test_error_is_erro_bold_red(self):
+        cell = status_cell("error")
+        self.assertEqual(cell.plain, "ERRO")
+        self.assertEqual(cell.spans[0].style, "bold red")
+
+
+class TableTest(unittest.TestCase):
+    @patch("pvx.interactive.widgets.theme.current_accent_color", return_value="#0087ff")
+    @patch("pvx.interactive.widgets.Console")
+    def test_prints_a_table_with_the_given_columns_and_rows(self, mock_console_cls, mock_accent):
+        table(["A", "B"], [["1", "2"], ["3", "4"]])
+        mock_console_cls.return_value.print.assert_called_once()
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(len(printed.columns), 2)
+        self.assertEqual(printed.header_style, "bold #0087ff")
 
 
 class PauseTest(unittest.TestCase):

@@ -33,18 +33,17 @@ class ChecklistPhonevoxCommandTest(unittest.TestCase):
         ],
     )
     @patch("main.issabel_detect.is_issabel", return_value=True)
-    def test_shows_a_section_and_a_check_result_line_per_item(self, mock_is_issabel, mock_run_all):
-        with patch("main.widgets.section") as mock_section, patch("main.widgets.check_result") as mock_check_result:
+    def test_shows_a_table_with_a_row_per_item(self, mock_is_issabel, mock_run_all):
+        with patch("main.widgets.table") as mock_table, patch("main.widgets.status_cell", side_effect=lambda lvl: lvl):
             _invoke(["checklist", "phonevox"])
 
-        self.assertEqual([c.args[0] for c in mock_section.call_args_list], ["SSL", "Autobackup"])
-        self.assertEqual(mock_check_result.call_count, 2)
-        first_text, first_level = mock_check_result.call_args_list[0].args
-        self.assertIn("60 dia(s)", first_text)
-        self.assertEqual(first_level, "ok")
-        second_text, second_level = mock_check_result.call_args_list[1].args
-        self.assertIn("não configurado", second_text)
-        self.assertEqual(second_level, "warn")
+        mock_table.assert_called_once()
+        columns, rows = mock_table.call_args.args
+        self.assertEqual(columns, ["Seção", "Status", "Detalhe"])
+        self.assertEqual(rows, [
+            ["SSL", "ok", "central.example.com expira em 60 dia(s)"],
+            ["Autobackup", "warn", "não configurado"],
+        ])
 
     @patch(
         "main.checklist_phonevox.run_all",
@@ -54,12 +53,12 @@ class ChecklistPhonevoxCommandTest(unittest.TestCase):
         ],
     )
     @patch("main.issabel_detect.is_issabel", return_value=True)
-    def test_adjacent_items_of_the_same_section_share_a_single_header(self, mock_is_issabel, mock_run_all):
-        with patch("main.widgets.section") as mock_section, patch("main.widgets.check_result") as mock_check_result:
+    def test_adjacent_items_of_the_same_section_leave_the_section_cell_blank(self, mock_is_issabel, mock_run_all):
+        with patch("main.widgets.table") as mock_table, patch("main.widgets.status_cell", side_effect=lambda lvl: lvl):
             _invoke(["checklist", "phonevox"])
 
-        mock_section.assert_called_once_with("Zabbix")
-        self.assertEqual(mock_check_result.call_count, 2)
+        _, rows = mock_table.call_args.args
+        self.assertEqual([row[0] for row in rows], ["Zabbix", ""])
 
     @patch("main.checklist_phonevox.run_all", return_value=[])
     @patch("main.issabel_detect.is_issabel", return_value=True)
