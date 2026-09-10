@@ -50,6 +50,7 @@ def migrate_legacy_modules(legacy_homes=None):
     os.chmod(dest_modules, 0o755)
 
     best_by_name = {}
+    seen_legacy_dirs = []
     for legacy_home in legacy_homes:
         legacy_modules = legacy_home / "modules"
         if not legacy_modules.is_dir():
@@ -58,6 +59,7 @@ def migrate_legacy_modules(legacy_homes=None):
             if not module_dir.is_dir():
                 continue
             name = module_dir.name
+            seen_legacy_dirs.append(module_dir)
             if (dest_modules / name).exists():
                 continue  # já migrado (ou já reinstalado) -- nunca sobrescreve
             version = _module_version(module_dir)
@@ -68,4 +70,14 @@ def migrate_legacy_modules(legacy_homes=None):
     for name, (_, src) in best_by_name.items():
         shutil.copytree(src, dest_modules / name)
         migrated.append(name)
+
+    # achado ao vivo: um módulo removido de propósito (`pvx module
+    # uninstall`) "ressuscitava" sozinho no próximo `pvx` rodado como root,
+    # porque a cópia legada nunca morria -- "idempotente" só olhava "falta
+    # no destino", nunca "o usuário já decidiu o destino desse módulo".
+    # Uma vez considerada aqui (migrada ou não), a origem legada é limpa --
+    # nada sobra pra ressuscitar depois.
+    for module_dir in seen_legacy_dirs:
+        shutil.rmtree(module_dir, ignore_errors=True)
+
     return migrated
