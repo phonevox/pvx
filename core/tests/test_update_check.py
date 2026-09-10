@@ -56,8 +56,33 @@ class PendingNoticesTest(unittest.TestCase):
         notices = update_check.pending_notices(installed)
         self.assertEqual(len(notices), 1)
         self.assertIn("firewall", notices[0])
-        self.assertIn("0.2.10", notices[0])
-        self.assertIn("0.2.11", notices[0])
+        self.assertNotIn("ssl", notices[0])
+
+    @patch(
+        "pvx.update_check.listing.list_modules",
+        return_value=[
+            {
+                "name": "firewall", "installed_version": "0.2.1", "latest_version": "0.2.11",
+                "status": "atualização disponível",
+            },
+            {
+                "name": "zabbix", "installed_version": "0.2.0", "latest_version": "0.2.2",
+                "status": "atualização disponível",
+            },
+            {"name": "ssl", "installed_version": "0.1.2", "latest_version": "0.1.2", "status": "atualizado"},
+        ],
+    )
+    @patch("pvx.update_check._fetch_core_latest", return_value="0.0.1")
+    def test_multiple_outdated_modules_collapse_into_a_single_line(self, mock_fetch, mock_list):
+        # achado ao vivo: um aviso por módulo lotava o banner (7+ linhas numa
+        # central com vários módulos pendentes) -- uma linha só, com a
+        # contagem e os nomes, dá a mesma informação sem amontoar a tela.
+        installed = {"firewall": FakeInstalled("0.2.1"), "zabbix": FakeInstalled("0.2.0"), "ssl": FakeInstalled("0.1.2")}
+        notices = update_check.pending_notices(installed)
+        self.assertEqual(len(notices), 1)
+        self.assertIn("firewall", notices[0])
+        self.assertIn("zabbix", notices[0])
+        self.assertIn("2", notices[0])
 
     @patch("pvx.update_check.listing.list_modules", return_value=[])
     @patch("pvx.update_check._fetch_core_latest", side_effect=OSError("timeout"))

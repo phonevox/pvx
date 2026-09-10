@@ -42,14 +42,17 @@ def _core_notice():
 
 
 def _module_notices(installed):
+    # achado ao vivo: um aviso por módulo lotava o banner (uma linha por
+    # módulo pendente) -- colapsa numa linha só, mesmo padrão de "core: ..."
+    # (widgets.warning() sempre imprime no máximo 1 linha por chamador).
     try:
         rows = listing.list_modules(installed, config.registry_index_url())
     except RuntimeError:
         return []
-    return [
-        f"{row['name']}: atualização disponível ({row['installed_version']} -> {row['latest_version']})"
-        for row in rows if row["status"] == "atualização disponível"
-    ]
+    outdated = [row["name"] for row in rows if row["status"] == "atualização disponível"]
+    if not outdated:
+        return []
+    return [f"módulos: {len(outdated)} atualização(ões) disponível(is) ({', '.join(outdated)})"]
 
 
 def _run_check(installed):

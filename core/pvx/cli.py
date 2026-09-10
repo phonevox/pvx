@@ -2,7 +2,7 @@ import time
 
 import click
 
-from pvx import build_info, config, self_update
+from pvx import build_info, config, self_update, update_check
 from pvx.interactive import widgets
 from pvx.logging_ import viewer
 from pvx.logging_.setup import get_module_logger
@@ -58,6 +58,13 @@ def build_module_group():
         except (RuntimeError, ValueError) as e:
             _core_logger().error(f"falha ao atualizar módulo: {e}")
             raise click.ClickException(str(e))
+
+        # achado ao vivo: esse loop é uma implementação separada da usada
+        # pelo menu interativo (module_update.update_modules()) -- o fix de
+        # invalidar o cache do aviso de update só tinha sido aplicado lá,
+        # nunca aqui. Quem atualiza via CLI direta (`pvx module update`)
+        # nunca via o cache refletir a atualização.
+        update_check.pending_notices(discover_installed_modules(), force=True)
         click.echo("atualizado.")
 
     @module_group.command(name="list")

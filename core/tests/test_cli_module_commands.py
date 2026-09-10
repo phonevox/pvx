@@ -62,23 +62,42 @@ class ModuleInstallCommandTest(unittest.TestCase):
 
 
 class ModuleUpdateCommandTest(unittest.TestCase):
+    @patch("pvx.cli.update_check.pending_notices")
     @patch("pvx.cli.installer.install")
     @patch(
         "pvx.cli.discover_installed_modules",
         return_value={"dummy": FakeModule(), "other": FakeModule()},
     )
-    def test_update_all_reinstalls_every_installed_module(self, mock_discover, mock_install):
+    def test_update_all_reinstalls_every_installed_module(self, mock_discover, mock_install, mock_pending_notices):
         result = CliRunner().invoke(build_cli(), ["module", "update", "--all"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         self.assertEqual(mock_install.call_count, 2)
 
+    @patch("pvx.cli.update_check.pending_notices")
     @patch("pvx.cli.installer.install")
     @patch("pvx.cli.widgets.spinner")
     @patch("pvx.cli.discover_installed_modules", return_value={"dummy": FakeModule()})
-    def test_update_shows_spinner(self, mock_discover, mock_spinner, mock_install):
+    def test_update_shows_spinner(self, mock_discover, mock_spinner, mock_install, mock_pending_notices):
         result = CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_spinner.assert_called_once()
+
+    @patch("pvx.cli.update_check.pending_notices")
+    @patch("pvx.cli.installer.install")
+    @patch(
+        "pvx.cli.discover_installed_modules",
+        return_value={"dummy": FakeModule()},
+    )
+    def test_refreshes_the_update_check_cache_with_a_fresh_discover_after_updating(
+        self, mock_discover, mock_install, mock_pending_notices
+    ):
+        # achado ao vivo: `pvx module update` (CLI direta) tinha seu PRÓPRIO
+        # loop de atualização, separado do usado pelo menu interativo -- o
+        # fix de invalidar o cache do aviso de update só tinha sido aplicado
+        # lá, nunca aqui. Quem atualizava via CLI direta nunca via o cache
+        # refletir a atualização.
+        CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
+        mock_pending_notices.assert_called_once_with(mock_discover.return_value, force=True)
 
     @patch(
         "pvx.cli.installer.install",
@@ -90,9 +109,10 @@ class ModuleUpdateCommandTest(unittest.TestCase):
         self.assertNotIn("Traceback", result.output)
         self.assertIn("não foi possível acessar o registry", result.output)
 
+    @patch("pvx.cli.update_check.pending_notices")
     @patch("pvx.cli._core_logger")
     @patch("pvx.cli.installer.install")
-    def test_logs_success(self, mock_install, mock_logger):
+    def test_logs_success(self, mock_install, mock_logger, mock_pending_notices):
         CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
         mock_logger.return_value.info.assert_called_once()
         self.assertIn("dummy", mock_logger.return_value.info.call_args.args[0])
