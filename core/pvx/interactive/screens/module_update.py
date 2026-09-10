@@ -1,4 +1,4 @@
-from pvx import config
+from pvx import config, update_check
 from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_select
@@ -16,6 +16,12 @@ def update_modules(names):
             widgets.failed(str(e))
         else:
             widgets.success(f"{name} atualizado.")
+
+    # achado ao vivo: o cache de update_check.py (TTL 6h) ficava com a versão
+    # de antes da atualização, mostrando "atualização disponível" pra módulo
+    # que acabou de ser atualizado -- discover_installed_modules() de novo
+    # (não reusa a lista de antes) pra refletir o .pyz já sobrescrito.
+    update_check.pending_notices(discover_installed_modules(), force=True)
 
 
 class ModuleUpdateScreen:
