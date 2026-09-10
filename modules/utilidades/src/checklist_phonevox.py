@@ -60,8 +60,11 @@ def _read_params(path):
     return params
 
 
-def _result(label, level, detail):
-    return {"label": label, "level": level, "detail": detail}
+def _result(section, level, text):
+    # "section" agrupa os itens na tela (ver main.py:_print_checklist) -- um
+    # módulo pode contribuir mais de um item pra mesma seção (zabbix: config +
+    # script de auditoria).
+    return {"section": section, "level": level, "text": text}
 
 
 def _days_until_expiry(domain):
@@ -127,14 +130,14 @@ def check_ssh_hardening():
     state_dir = _ssh_hardening_state_dir()
     records = sorted(state_dir.glob("apply-*.json")) if state_dir.exists() else []
     if not records:
-        return _result("SSH hardening", "warn", "não aplicado")
+        return _result("SSH Hardening", "warn", "não aplicado")
 
     record = _read_json(records[-1])
     if record is None:
-        return _result("SSH hardening", "warn", "não aplicado")
+        return _result("SSH Hardening", "warn", "não aplicado")
     if not record.get("config_valid", True):
-        return _result("SSH hardening", "warn", "aplicado, mas config resultante era inválida")
-    return _result("SSH hardening", "ok", "aplicado")
+        return _result("SSH Hardening", "warn", "aplicado, mas config resultante era inválida")
+    return _result("SSH Hardening", "ok", "aplicado")
 
 
 def check_zabbix():
@@ -151,8 +154,8 @@ def check_zabbix():
 def check_zabbix_audit_script():
     entries = _read_json(_zabbix_state_dir() / "scripts.json") or {}
     if "audit" in entries:
-        return _result("Zabbix -- script de auditoria", "ok", "adicionado")
-    return _result("Zabbix -- script de auditoria", "warn", "não adicionado")
+        return _result("Zabbix", "ok", "script de auditoria adicionado")
+    return _result("Zabbix", "warn", "script de auditoria não adicionado")
 
 
 def check_autobloqueador():
@@ -171,10 +174,12 @@ def check_firewall_boot():
     except OSError:
         enabled = False
     if enabled:
-        return _result("Firewall (start-on-boot)", "ok", "habilitado")
-    return _result("Firewall (start-on-boot)", "warn", "desabilitado")
+        return _result("Firewall", "ok", "start-on-boot habilitado")
+    return _result("Firewall", "warn", "start-on-boot desabilitado")
 
 
+# ordem = ordem de exibição -- seções adjacentes com o mesmo nome (zabbix)
+# são agrupadas sob um único header (ver main.py:_print_checklist).
 CHECKS = (
     check_ssl,
     check_autobackup,

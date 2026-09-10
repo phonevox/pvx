@@ -13,9 +13,21 @@ def _is_interactive():
     return sys.stdin.isatty()
 
 
+def _print_checklist(results):
+    # section() só imprime quando o nome muda -- checks adjacentes da mesma
+    # seção (zabbix: config + script de auditoria) ficam agrupados sob um
+    # único header, em vez de repetir o nome pra cada item.
+    last_section = None
+    for result in results:
+        if result["section"] != last_section:
+            widgets.section(result["section"])
+            last_section = result["section"]
+        widgets.check_result(result["text"], result["level"])
+
+
 class UtilidadesModule(PvxModule):
     name = "utilidades"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="utilidades")
@@ -34,12 +46,7 @@ class UtilidadesModule(PvxModule):
                 raise click.ClickException("checklist phonevox só roda em servidor Issabel.")
 
             widgets.title("pvx > utilidades > checklist phonevox")
-            widgets.section("Checklist")
-            for result in checklist_phonevox.run_all():
-                text = result["label"]
-                if result["detail"]:
-                    text += f": {result['detail']}"
-                widgets.check_result(text, result["level"])
+            _print_checklist(checklist_phonevox.run_all())
 
             if _is_interactive():
                 widgets.pause()

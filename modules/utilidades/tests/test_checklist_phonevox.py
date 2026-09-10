@@ -15,7 +15,7 @@ class SslCheckTest(unittest.TestCase):
     def test_no_live_dir_is_a_warning(self, mock_isdir):
         result = checklist_phonevox.check_ssl()
         self.assertEqual(result["level"], "warn")
-        self.assertIn("nenhum certificado", result["detail"])
+        self.assertIn("nenhum certificado", result["text"])
 
     @patch("checklist_phonevox.os.listdir", return_value=[])
     @patch("checklist_phonevox.os.path.isdir", return_value=True)
@@ -30,8 +30,8 @@ class SslCheckTest(unittest.TestCase):
         with patch("checklist_phonevox.os.path.isdir", side_effect=[True, True]):
             result = checklist_phonevox.check_ssl()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("central.example.com", result["detail"])
-        self.assertIn("60", result["detail"])
+        self.assertIn("central.example.com", result["text"])
+        self.assertIn("60", result["text"])
 
     @patch("checklist_phonevox._days_until_expiry", return_value=-3)
     @patch("checklist_phonevox.os.listdir", return_value=["central.example.com"])
@@ -39,7 +39,7 @@ class SslCheckTest(unittest.TestCase):
         with patch("checklist_phonevox.os.path.isdir", side_effect=[True, True]):
             result = checklist_phonevox.check_ssl()
         self.assertEqual(result["level"], "error")
-        self.assertIn("expirado", result["detail"])
+        self.assertIn("expirado", result["text"])
 
     @patch("checklist_phonevox._days_until_expiry", return_value=None)
     @patch("checklist_phonevox.os.listdir", return_value=["central.example.com"])
@@ -53,8 +53,8 @@ class SslCheckTest(unittest.TestCase):
     def test_reports_the_most_urgent_domain_when_there_are_several(self, mock_listdir, mock_days):
         with patch("checklist_phonevox.os.path.isdir", side_effect=[True, True, True]):
             result = checklist_phonevox.check_ssl()
-        self.assertIn("b.example.com", result["detail"])
-        self.assertIn("5", result["detail"])
+        self.assertIn("b.example.com", result["text"])
+        self.assertIn("5", result["text"])
 
 
 class DaysUntilExpiryTest(unittest.TestCase):
@@ -89,7 +89,7 @@ class AutobackupCheckTest(unittest.TestCase):
         path.write_text(json.dumps({"cron_minute": "25", "cron_hour": "2"}))
         result = checklist_phonevox.check_autobackup()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("25 2 * * *", result["detail"])
+        self.assertIn("25 2 * * *", result["text"])
 
 
 class SshHardeningCheckTest(unittest.TestCase):
@@ -134,7 +134,7 @@ class ZabbixCheckTest(unittest.TestCase):
         ):
             result = checklist_phonevox.check_zabbix()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("vps-x", result["detail"])
+        self.assertIn("vps-x", result["text"])
 
     def test_audit_script_not_added_is_a_warning(self):
         result = checklist_phonevox.check_zabbix_audit_script()
@@ -159,7 +159,7 @@ class AutobloqueadorCheckTest(unittest.TestCase):
         with patch("checklist_phonevox._read_json", return_value={"type": "pabx"}):
             result = checklist_phonevox.check_autobloqueador()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("pabx", result["detail"])
+        self.assertIn("pabx", result["text"])
 
 
 class FirewallBootCheckTest(unittest.TestCase):
@@ -184,10 +184,19 @@ class FirewallBootCheckTest(unittest.TestCase):
 class RunAllTest(unittest.TestCase):
     def test_runs_every_check_in_order(self):
         results = checklist_phonevox.run_all()
-        labels = [r["label"] for r in results]
+        sections = [r["section"] for r in results]
         self.assertEqual(len(results), len(checklist_phonevox.CHECKS))
-        self.assertEqual(labels[0], "SSL")
-        self.assertIn("Firewall (start-on-boot)", labels)
+        self.assertEqual(sections[0], "SSL")
+        self.assertIn("Firewall", sections)
+
+    def test_zabbix_contributes_two_adjacent_items_to_the_same_section(self):
+        # zabbix (config) e zabbix_audit_script são checks separados, mas
+        # devem cair na MESMA seção, um logo depois do outro -- main.py só
+        # imprime section() quando o nome muda (ver _print_checklist).
+        results = checklist_phonevox.run_all()
+        sections = [r["section"] for r in results]
+        zabbix_indexes = [i for i, s in enumerate(sections) if s == "Zabbix"]
+        self.assertEqual(zabbix_indexes, [zabbix_indexes[0], zabbix_indexes[0] + 1])
 
 
 if __name__ == "__main__":
