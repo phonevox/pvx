@@ -42,4 +42,14 @@ def install(name, index_url, version=None):
 
 
 def uninstall(name):
-    shutil.rmtree(config.modules_dir() / name, ignore_errors=True)
+    # achado ao vivo: ignore_errors=True escondia falha real (ex.: arquivo
+    # travado por permissão) -- `pvx module uninstall` reportava "removido"
+    # sem remover nada, e o módulo reaparecia sozinho no próximo
+    # `module list`/menu, sem nenhum aviso do que deu errado.
+    path = config.modules_dir() / name
+    shutil.rmtree(path, ignore_errors=True)
+    if path.exists():
+        raise RuntimeError(
+            f"não consegui remover o módulo '{name}' por completo -- "
+            f"verifique permissões em {path}."
+        )

@@ -98,6 +98,20 @@ class InstallTest(unittest.TestCase):
 
         self.assertFalse(installed.exists())
 
+    def test_uninstall_of_a_module_never_installed_does_not_raise(self):
+        installer.uninstall("nao-existe")
+
+    def test_uninstall_raises_when_the_directory_survives_removal(self):
+        # achado ao vivo: rmtree(ignore_errors=True) escondia falha real (ex.:
+        # arquivo com permissão travada) -- `pvx module uninstall` reportava
+        # "removido" mesmo sem remover nada, e o módulo reaparecia no próximo
+        # `pvx module list`/menu sem explicação nenhuma.
+        installed = Path(self._tmp.name) / "modules" / "dummy"
+        installed.mkdir(parents=True)
+        with patch("pvx.modules.installer.shutil.rmtree"):
+            with self.assertRaises(RuntimeError):
+                installer.uninstall("dummy")
+
 
 if __name__ == "__main__":
     unittest.main()

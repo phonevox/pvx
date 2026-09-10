@@ -18,8 +18,12 @@ class ModuleUninstallScreen:
             return "BACK"
 
         if ask_confirm(f"Remover o módulo '{selected}'?", default=False):
-            installer.uninstall(selected)
-            widgets.message(f"{selected} removido.")
+            try:
+                installer.uninstall(selected)
+            except RuntimeError as e:
+                widgets.failed(str(e))
+            else:
+                widgets.message(f"{selected} removido.")
             widgets.pause()
 
         return "BACK"

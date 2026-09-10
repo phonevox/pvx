@@ -24,6 +24,29 @@ class ModuleUninstallScreenTest(unittest.TestCase):
         mock_pause.assert_called_once_with()
 
     @patch("pvx.interactive.screens.module_uninstall.widgets.pause")
+    @patch("pvx.interactive.screens.module_uninstall.widgets.failed")
+    @patch(
+        "pvx.interactive.screens.module_uninstall.installer.uninstall",
+        side_effect=RuntimeError("não consegui remover o módulo 'dummy' por completo."),
+    )
+    @patch("pvx.interactive.screens.module_uninstall.ask_confirm", return_value=True)
+    @patch("pvx.interactive.screens.module_uninstall.ask_select", return_value="dummy")
+    @patch(
+        "pvx.interactive.screens.module_uninstall.discover_installed_modules",
+        return_value={"dummy": object()},
+    )
+    def test_removal_failure_shows_failed_instead_of_message(
+        self, mock_discover, mock_ask_select, mock_ask_confirm, mock_uninstall, mock_failed, mock_pause
+    ):
+        # achado ao vivo: uninstall() podia falhar silenciosamente (permissão
+        # travada) e a tela dizia "removido" mesmo assim -- agora propaga
+        # RuntimeError, e a tela mostra o erro de verdade em vez de mentir.
+        result = ModuleUninstallScreen().render()
+        self.assertEqual(result, "BACK")
+        mock_failed.assert_called_once_with("não consegui remover o módulo 'dummy' por completo.")
+        mock_pause.assert_called_once_with()
+
+    @patch("pvx.interactive.screens.module_uninstall.widgets.pause")
     @patch("pvx.interactive.screens.module_uninstall.installer.uninstall")
     @patch("pvx.interactive.screens.module_uninstall.ask_confirm", return_value=False)
     @patch("pvx.interactive.screens.module_uninstall.ask_select", return_value="dummy")
