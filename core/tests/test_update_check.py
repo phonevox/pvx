@@ -83,6 +83,29 @@ class PendingNoticesTest(unittest.TestCase):
         self.assertIn("firewall", notices[0])
         self.assertIn("zabbix", notices[0])
         self.assertIn("2", notices[0])
+        self.assertIn("atualizações disponíveis", notices[0])
+        self.assertNotIn("(ões)", notices[0])
+        self.assertNotIn("(is)", notices[0])
+
+    @patch(
+        "pvx.update_check.listing.list_modules",
+        return_value=[
+            {
+                "name": "firewall", "installed_version": "0.2.1", "latest_version": "0.2.11",
+                "status": "atualização disponível",
+            },
+            {"name": "ssl", "installed_version": "0.1.2", "latest_version": "0.1.2", "status": "atualizado"},
+        ],
+    )
+    @patch("pvx.update_check._fetch_core_latest", return_value="0.0.1")
+    def test_single_outdated_module_uses_singular_wording(self, mock_fetch, mock_list):
+        # achado ao vivo: "atualização(ões) disponível(is)" com parênteses de
+        # dicionário ficou feio -- singular/plural de verdade, sem "(ões)".
+        installed = {"firewall": FakeInstalled("0.2.1"), "ssl": FakeInstalled("0.1.2")}
+        notices = update_check.pending_notices(installed)
+        self.assertIn("1 atualização disponível", notices[0])
+        self.assertNotIn("(ões)", notices[0])
+        self.assertNotIn("(is)", notices[0])
 
     @patch("pvx.update_check.listing.list_modules", return_value=[])
     @patch("pvx.update_check._fetch_core_latest", side_effect=OSError("timeout"))

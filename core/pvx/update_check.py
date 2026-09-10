@@ -52,7 +52,8 @@ def _module_notices(installed):
     outdated = [row["name"] for row in rows if row["status"] == "atualização disponível"]
     if not outdated:
         return []
-    return [f"módulos: {len(outdated)} atualização(ões) disponível(is) ({', '.join(outdated)})"]
+    word = "atualização disponível" if len(outdated) == 1 else "atualizações disponíveis"
+    return [f"módulos: {len(outdated)} {word} ({', '.join(outdated)})"]
 
 
 def _run_check(installed):
