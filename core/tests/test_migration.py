@@ -59,6 +59,41 @@ class MigrateLegacyModulesTest(unittest.TestCase):
         manifest = json.loads((dest_module / "manifest.json").read_text())
         self.assertEqual(manifest["version"], "9.9.9")
 
+    def test_purges_the_legacy_source_after_migrating(self):
+        legacy = self._legacy_home("home1")
+        module_dir = _make_module(legacy, "zabbix")
+
+        migration.migrate_legacy_modules(legacy_homes=[legacy])
+
+        self.assertFalse(module_dir.exists())
+
+    def test_purges_the_legacy_source_even_when_already_at_destination(self):
+        # achado ao vivo: um módulo removido de propósito (`pvx module
+        # uninstall`) "ressuscitava" sozinho no próximo `pvx` rodado como
+        # root -- a cópia legada nunca era limpa, então a migração (que só
+        # olha "falta no destino") trazia ela de volta pra sempre. Uma vez
+        # considerada (migrada ou não), a origem legada morre aqui.
+        legacy = self._legacy_home("home1")
+        module_dir = _make_module(legacy, "zabbix", version="0.1.0")
+        dest_module = self.dest_home / "modules" / "zabbix"
+        dest_module.mkdir(parents=True)
+        (dest_module / "manifest.json").write_text(json.dumps({"version": "9.9.9"}))
+
+        migration.migrate_legacy_modules(legacy_homes=[legacy])
+
+        self.assertFalse(module_dir.exists())
+
+    def test_purges_every_legacy_home_copy_not_just_the_winner(self):
+        home_root = self._legacy_home("root")
+        home_rocky = self._legacy_home("rocky")
+        loser = _make_module(home_root, "uoe", version="0.1.0")
+        winner = _make_module(home_rocky, "uoe", version="0.2.5")
+
+        migration.migrate_legacy_modules(legacy_homes=[home_root, home_rocky])
+
+        self.assertFalse(loser.exists())
+        self.assertFalse(winner.exists())
+
     def test_picks_the_highest_version_across_multiple_legacy_homes(self):
         home_root = self._legacy_home("root")
         home_rocky = self._legacy_home("rocky")

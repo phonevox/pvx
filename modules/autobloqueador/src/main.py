@@ -224,12 +224,18 @@ def _run_check(logger, dry_run):
 
 
 def _run_status():
+    # achado ao vivo: "não configurado" saía como widgets.state(ok=False) --
+    # vermelho, mesmo nível visual de erro de verdade. check_result() resolve
+    # isso, igual já corrigido em autobackup/ssl/firewall/ssh-hardening/zabbix.
+    widgets.title("pvx > autobloqueador > status")
+    widgets.section("Status")
+
     config = autobloqueador_ops.load_config()
     if config is None:
-        widgets.state("autobloqueador NÃO configurado -- rode `pvx autobloqueador install` primeiro.", ok=False)
+        widgets.check_result("autobloqueador não configurado -- rode `pvx autobloqueador install` primeiro.", "warn")
         return
 
-    widgets.state(f"autobloqueador configurado (type={config['type']})", ok=True)
+    widgets.check_result(f"autobloqueador configurado (type={config['type']})", "ok")
     click.echo(f"  url_base: {config['url_base']}")
     click.echo(f"  code: {config['code']}")
     click.echo(f"  crypted_key: {config['crypted_key'][:20]}...")
@@ -270,7 +276,7 @@ def _run_remove(logger, delete_config, interactive):
 
 class AutobloqueadorModule(PvxModule):
     name = "autobloqueador"
-    version = "0.1.4"
+    version = "0.1.5"
 
     def cli_group(self):
         @click.group(name="autobloqueador")

@@ -259,7 +259,7 @@ def _run_apply(logger, yes, skip_asterisk_check):
 
 class QintModule(PvxModule):
     name = "qint"
-    version = "0.1.16"
+    version = "0.1.17"
 
     def cli_group(self):
         @click.group(name="qint")
@@ -386,11 +386,16 @@ class QintModule(PvxModule):
 
         @group.command(name="status", help="mostra a config aplicada e a alcançabilidade do destino.")
         def status_cmd():
+            widgets.title("pvx > qint > status")
+            widgets.section("Status")
+
             existing = staged_config.load(_config_path())
             if existing is None:
-                click.echo("nenhuma config staged. use `pvx qint prepare <tipo>` ou `pvx qint setup`.")
+                widgets.check_result(
+                    "nenhuma config staged -- use `pvx qint prepare <tipo>` ou `pvx qint setup`.", "warn",
+                )
             else:
-                click.echo(f"tipo: {existing['type']}")
+                widgets.check_result(f"config staged (tipo={existing['type']})", "ok")
                 for key in sorted(existing):
                     if key == "type":
                         continue

@@ -127,6 +127,16 @@ class ModuleUninstallCommandTest(unittest.TestCase):
         mock_logger.return_value.info.assert_called_once()
         self.assertIn("dummy", mock_logger.return_value.info.call_args.args[0])
 
+    @patch(
+        "pvx.cli.installer.uninstall",
+        side_effect=RuntimeError("não consegui remover o módulo 'dummy' por completo."),
+    )
+    def test_removal_failure_shows_a_clean_error_no_traceback(self, mock_uninstall):
+        result = CliRunner().invoke(build_cli(), ["module", "uninstall", "dummy", "--yes"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("não consegui remover", result.output)
+
 
 class ModuleListCommandTest(unittest.TestCase):
     @patch(

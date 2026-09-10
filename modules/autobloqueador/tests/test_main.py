@@ -249,6 +249,18 @@ class StatusCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
 
+    def test_shows_a_title_header(self):
+        with patch("main.autobloqueador_ops.load_config", return_value=None):
+            result = CliRunner().invoke(cli.cli_group(), ["status"])
+        self.assertIn("pvx > autobloqueador > status", result.output)
+
+    @patch("main.widgets.check_result")
+    def test_not_configured_is_a_warning_not_an_error(self, mock_check_result):
+        with patch("main.autobloqueador_ops.load_config", return_value=None):
+            CliRunner().invoke(cli.cli_group(), ["status"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
     def test_shows_config_and_never_the_full_key(self):
         long_key = "a" * 100
         with patch("main.autobloqueador_ops.load_config", return_value={**BASE_CONFIG, "crypted_key": long_key}), \

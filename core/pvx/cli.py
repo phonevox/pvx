@@ -74,7 +74,11 @@ def build_module_group():
     def module_uninstall(name, yes):
         if not yes:
             click.confirm(f"Remover o módulo '{name}'?", abort=True)
-        installer.uninstall(name)
+        try:
+            installer.uninstall(name)
+        except RuntimeError as e:
+            _core_logger().error(f"falha ao remover módulo '{name}': {e}")
+            raise click.ClickException(str(e))
         _core_logger().info(f"módulo '{name}' removido.")
         click.echo(f"{name} removido.")
 

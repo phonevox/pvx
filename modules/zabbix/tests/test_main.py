@@ -549,6 +549,28 @@ class CheckCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
 
+    def test_shows_a_title_header(self):
+        with patch("main.install_steps.detect_existing_agent", return_value=None), \
+             patch("main.sudoers.detect_legacy_rule", return_value=False):
+            result = CliRunner().invoke(cli.cli_group(), ["check"])
+        self.assertIn("pvx > zabbix > check", result.output)
+
+    @patch("main.widgets.check_result")
+    def test_not_configured_is_a_warning_not_an_error(self, mock_check_result):
+        with patch("main.install_steps.detect_existing_agent", return_value=None), \
+             patch("main.sudoers.detect_legacy_rule", return_value=False):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
+    @patch("main.widgets.check_result")
+    def test_unmanaged_foreign_agent_is_also_a_warning(self, mock_check_result):
+        with patch("main.install_steps.detect_existing_agent", return_value="zabbix-agent"), \
+             patch("main.sudoers.detect_legacy_rule", return_value=False):
+            CliRunner().invoke(cli.cli_group(), ["check"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
     def test_reports_installed_but_unmanaged_when_a_foreign_agent_is_found(self):
         # retroativo: pzabbix (ou instalação manual) deixa o agent real instalado sem o
         # marcador do pvx -- "não configurado" seria enganoso aqui.
@@ -610,6 +632,19 @@ class CheckCommandTest(unittest.TestCase):
     def test_reports_agent_inactive_and_disabled(self):
         result = self._invoke_configured(status={"active": "inactive", "enabled": "disabled"})
         self.assertIn("inativo", result.output.lower())
+
+    def test_inactive_service_is_an_error_not_just_a_warning(self):
+        with patch("main.widgets.check_result") as mock_check_result:
+            self._invoke_configured(status={"active": "inactive", "enabled": "enabled"})
+        levels = [call.args[1] for call in mock_check_result.call_args_list]
+        # ["Zabbix configurado" -> ok, "Serviço: inativo" -> error, "Habilitado" -> ok]
+        self.assertEqual(levels, ["ok", "error", "ok"])
+
+    def test_disabled_on_boot_is_a_warning_not_an_error(self):
+        with patch("main.widgets.check_result") as mock_check_result:
+            self._invoke_configured(status={"active": "active", "enabled": "disabled"})
+        levels = [call.args[1] for call in mock_check_result.call_args_list]
+        self.assertEqual(levels, ["ok", "ok", "warn"])
 
     def test_shows_no_scripts_message_when_empty(self):
         result = self._invoke_configured(entries={})

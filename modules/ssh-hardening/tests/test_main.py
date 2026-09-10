@@ -340,6 +340,26 @@ class CheckCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
 
+    @patch("main.apply_module.find_latest_record", return_value=None)
+    def test_shows_a_title_header(self, mock_find):
+        result = _invoke(["check"])
+        self.assertIn("pvx > ssh-hardening > check", result.output)
+
+    @patch("main.widgets.check_result")
+    @patch("main.apply_module.find_latest_record", return_value=None)
+    def test_not_configured_is_a_warning_not_an_error(self, mock_find, mock_check_result):
+        _invoke(["check"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "warn")
+
+    @patch("main.widgets.check_result")
+    @patch("main.apply_module.find_latest_record")
+    def test_configured_is_a_success(self, mock_find, mock_check_result):
+        mock_find.return_value = {"plan": {}, "config_valid": True}
+        _invoke(["check"])
+        mock_check_result.assert_called_once()
+        self.assertEqual(mock_check_result.call_args.args[1], "ok")
+
     @patch("main.widgets.pause")
     @patch("main.apply_module.find_latest_record", return_value=None)
     def test_pauses_when_interactive(self, mock_find, mock_pause):

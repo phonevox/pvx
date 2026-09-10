@@ -550,6 +550,10 @@ class CheckCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("não configurado", result.output.lower())
 
+    def test_shows_a_title_header(self):
+        result = self._invoke(saved=None)
+        self.assertIn("pvx > autobackup > check", result.output)
+
     def test_not_configured_is_a_warning_not_an_error(self):
         # achado ao vivo: "ainda não configurado" saía vermelho (mesmo nível
         # visual de um erro de verdade) -- nada quebrou, só falta rodar o

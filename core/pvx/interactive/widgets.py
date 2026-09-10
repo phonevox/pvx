@@ -6,6 +6,7 @@ import click
 from rich.console import Console, Group
 from rich.live import Live
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
 from rich.text import Text
 
 from pvx.interactive import theme
@@ -418,3 +419,27 @@ def print_module_list(rows):
     name_width = max((len(r["name"]) for r in rows), default=0) + 2
     for row in rows:
         Console().print(_module_status_line(row, name_width), highlight=False)
+
+
+_LEVEL_LABELS = {
+    "ok": ("SUCESSO", "bold green"),
+    "warn": ("AVISO", "bold yellow"),
+    "error": ("ERRO", "bold red"),
+}
+
+
+def status_cell(level):
+    # célula de status pra table() -- mesmo vocabulário fixo sucesso/aviso/
+    # erro de success/failed/warning, cor semântica fixa (nunca a cor do
+    # tema, que é só pro que É tema: título/seção/item).
+    label, style = _LEVEL_LABELS[level]
+    return _styled(label, style)
+
+
+def table(columns, rows):
+    t = Table(header_style=f"bold {theme.current_accent_color()}")
+    for column in columns:
+        t.add_column(column)
+    for row in rows:
+        t.add_row(*row)
+    Console().print(t)

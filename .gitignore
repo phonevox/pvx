@@ -20,3 +20,6 @@ scripts/_*
 modules/autobloqueador/dist/
 modules/motd/dist/
 modules/ssl/dist/
+modules/utilidades/dist/
+CONTEXT.md
+modules/CONTEXT.md

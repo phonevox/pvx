@@ -1,0 +1,10 @@
+{
+  "name": "utilidades",
+  "version": "0.1.2",
+  "entrypoint": "main:cli",
+  "description": "Utilitários diversos -- checklists de verificação e afins.",
+  "author": "pvx",
+  "min_pvx_version": "0.2.0",
+  "checksum_sha256": "",
+  "dependencies": []
+}

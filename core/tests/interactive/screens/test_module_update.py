@@ -1,10 +1,30 @@
 import unittest
 from unittest.mock import patch
 
-from pvx.interactive.screens.module_update import ModuleUpdateScreen
+from pvx.interactive.screens.module_update import ModuleUpdateScreen, update_modules
+
+
+class UpdateModulesFunctionTest(unittest.TestCase):
+    # achado ao vivo: depois de atualizar um módulo, o "pvx >" continuava
+    # mostrando "atualização disponível" pra ele -- o cache de
+    # update_check.py (TTL 6h) não era invalidado. discover_installed_modules()
+    # de novo (não reusa o dict antigo) porque o loader já sabe reler o .pyz
+    # sobrescrito na hora (ver pvx/modules/loader.py) -- só o cache de
+    # update_check que precisava de um empurrão.
+    @patch("pvx.interactive.screens.module_update.update_check.pending_notices")
+    @patch("pvx.interactive.screens.module_update.discover_installed_modules", return_value={"dummy": object()})
+    @patch("pvx.interactive.screens.module_update.installer.install")
+    @patch("pvx.interactive.screens.module_update.config.registry_index_url")
+    @patch("pvx.interactive.screens.module_update.widgets.success")
+    def test_refreshes_the_update_check_cache_with_a_fresh_discover(
+        self, mock_success, mock_url, mock_install, mock_discover, mock_pending_notices
+    ):
+        update_modules(["dummy"])
+        mock_pending_notices.assert_called_once_with(mock_discover.return_value, force=True)
 
 
 class ModuleUpdateScreenTest(unittest.TestCase):
+    @patch("pvx.interactive.screens.module_update.update_check.pending_notices")
     @patch("pvx.interactive.screens.module_update.widgets.pause")
     @patch("pvx.interactive.screens.module_update.widgets.success")
     @patch("pvx.interactive.screens.module_update.installer.install")
@@ -18,7 +38,8 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object(), "other": object()},
     )
     def test_selecting_single_module_updates_it(
-        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success, mock_pause
+        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success, mock_pause,
+        mock_pending_notices,
     ):
         result = ModuleUpdateScreen().render()
         self.assertEqual(result, "BACK")
@@ -26,6 +47,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         mock_success.assert_called_once_with("dummy atualizado.")
         mock_pause.assert_called_once_with()
 
+    @patch("pvx.interactive.screens.module_update.update_check.pending_notices")
     @patch("pvx.interactive.screens.module_update.widgets.pause")
     @patch("pvx.interactive.screens.module_update.widgets.success")
     @patch("pvx.interactive.screens.module_update.installer.install")
@@ -39,7 +61,8 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object(), "other": object()},
     )
     def test_selecting_todos_updates_every_installed_module(
-        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success, mock_pause
+        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success, mock_pause,
+        mock_pending_notices,
     ):
         result = ModuleUpdateScreen().render()
         self.assertEqual(result, "BACK")
@@ -83,6 +106,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         self.assertEqual(ModuleUpdateScreen().render(), "BACK")
         mock_install.assert_not_called()
 
+    @patch("pvx.interactive.screens.module_update.update_check.pending_notices")
     @patch("pvx.interactive.screens.module_update.installer.install")
     @patch(
         "pvx.interactive.screens.module_update.config.registry_index_url",
@@ -95,11 +119,12 @@ class ModuleUpdateScreenTest(unittest.TestCase):
     )
     @patch("pvx.interactive.screens.module_update.widgets.spinner")
     def test_shows_spinner_while_updating(
-        self, mock_spinner, mock_discover, mock_ask_select, mock_url, mock_install
+        self, mock_spinner, mock_discover, mock_ask_select, mock_url, mock_install, mock_pending_notices
     ):
         ModuleUpdateScreen().render()
         mock_spinner.assert_called_once()
 
+    @patch("pvx.interactive.screens.module_update.update_check.pending_notices")
     @patch("pvx.interactive.screens.module_update.widgets.pause")
     @patch("pvx.interactive.screens.module_update.widgets.failed")
     @patch(
@@ -112,7 +137,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object()},
     )
     def test_network_failure_shows_message_and_returns_back(
-        self, mock_discover, mock_ask_select, mock_install, mock_failed, mock_pause
+        self, mock_discover, mock_ask_select, mock_install, mock_failed, mock_pause, mock_pending_notices
     ):
         # achado ao vivo: a tela voltava direto pro menu anterior sem pausar --
         # sucesso/falha de cada módulo sumiam da tela antes do usuário ler.

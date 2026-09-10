@@ -437,7 +437,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.15"
+    version = "0.1.16"
 
     def cli_group(self):
         @click.group(name="autobackup")
@@ -518,7 +518,12 @@ class AutobackupModule(PvxModule):
             # achado ao vivo: widgets.state() só tem 2 níveis (ok=True/False) --
             # "ainda não configurado" não é um ERRO (nada quebrou, só falta rodar
             # o setup), mas saía vermelho igual uma falha de verdade. Usa
-            # check_result() (sucesso/aviso/erro) pra cada estado real.
+            # check_result() (sucesso/aviso/erro) pra cada estado real -- aqui
+            # são checagens de verdade (configurado corretamente ou não), ao
+            # contrário de "pvx module list" (fato de versão, não check).
+            widgets.title("pvx > autobackup > check")
+            widgets.section("Status")
+
             saved = state.load(_state_path())
             if saved is None:
                 widgets.check_result("autobackup não configurado -- rode `pvx autobackup setup` primeiro.", "warn")
