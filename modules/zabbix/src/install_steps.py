@@ -11,11 +11,15 @@ def repo_rpm_url(zabbix_version, os_major):
 
 
 def install_repo(zabbix_version, os_major):
-    return os_ops.run_cmd(["dnf", "install", "-y", repo_rpm_url(zabbix_version, os_major)])
+    # "yum", nunca "dnf": CentOS/RHEL 7 não tem dnf de jeito nenhum (achado ao
+    # vivo -- falhava direto, silencioso, com FileNotFoundError). RHEL/Rocky
+    # 8+ mantém "yum" como wrapper de compatibilidade pro dnf, então funciona
+    # nos dois sem precisar detectar o SO.
+    return os_ops.run_cmd(["yum", "install", "-y", repo_rpm_url(zabbix_version, os_major)])
 
 
 def install_agent(package):
-    return os_ops.run_cmd(["dnf", "install", "-y", package])
+    return os_ops.run_cmd(["yum", "install", "-y", package])
 
 
 def enable_and_start(service):
@@ -38,7 +42,7 @@ def detect_existing_agent(packages):
 
 
 def remove_agent(package):
-    return os_ops.run_cmd(["dnf", "remove", "-y", package])
+    return os_ops.run_cmd(["yum", "remove", "-y", package])
 
 
 def service_status(service):

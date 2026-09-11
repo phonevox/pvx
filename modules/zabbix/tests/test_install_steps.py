@@ -17,7 +17,7 @@ class InstallRepoTest(unittest.TestCase):
     def test_installs_the_repo_rpm(self, mock_run_cmd):
         self.assertTrue(install_steps.install_repo("5.0", "8"))
         mock_run_cmd.assert_called_once_with([
-            "dnf", "install", "-y",
+            "yum", "install", "-y",
             "https://repo.zabbix.com/zabbix/5.0/rhel/8/x86_64/zabbix-release-latest.el8.noarch.rpm",
         ])
 
@@ -26,7 +26,7 @@ class InstallAgentTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_installs_the_given_package(self, mock_run_cmd):
         self.assertTrue(install_steps.install_agent("zabbix-agent2"))
-        mock_run_cmd.assert_called_once_with(["dnf", "install", "-y", "zabbix-agent2"])
+        mock_run_cmd.assert_called_once_with(["yum", "install", "-y", "zabbix-agent2"])
 
 
 class EnableAndStartTest(unittest.TestCase):
@@ -70,7 +70,7 @@ class RemoveAgentTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_removes_the_given_package(self, mock_run_cmd):
         self.assertTrue(install_steps.remove_agent("zabbix-agent"))
-        mock_run_cmd.assert_called_once_with(["dnf", "remove", "-y", "zabbix-agent"])
+        mock_run_cmd.assert_called_once_with(["yum", "remove", "-y", "zabbix-agent"])
 
 
 class ServiceStatusTest(unittest.TestCase):
