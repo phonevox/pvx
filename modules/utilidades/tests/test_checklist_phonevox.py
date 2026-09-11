@@ -181,6 +181,37 @@ class FirewallBootCheckTest(unittest.TestCase):
         self.assertEqual(result["level"], "warn")
 
 
+class FirewallBaseIpsCheckTest(unittest.TestCase):
+    def _write_ip_accept(self, entries):
+        path = pvx_config.modules_dir() / "firewall" / "state" / "ip_accept.conf"
+        path.parent.mkdir(parents=True)
+        path.write_text("\n".join(entries) + "\n")
+
+    def test_warns_when_the_file_does_not_exist_yet(self):
+        result = checklist_phonevox.check_firewall_base_ips()
+        self.assertEqual(result["level"], "warn")
+
+    def test_ok_when_every_base_ip_is_covered(self):
+        # achado ao vivo: técnico perdeu acesso porque um `ip accept` numa
+        # central sem ip_accept.conf ainda apagou os IPs base da Phonevox.
+        self._write_ip_accept([
+            f"{ip}  # base" for ip in checklist_phonevox._FIREWALL_BASE_IPS
+        ] + ["45.162.8.0/24  # cliente"])
+        result = checklist_phonevox.check_firewall_base_ips()
+        self.assertEqual(result["level"], "ok")
+
+    def test_warns_when_a_base_ip_is_missing(self):
+        self._write_ip_accept(["45.162.8.0/24  # cliente"])
+        result = checklist_phonevox.check_firewall_base_ips()
+        self.assertEqual(result["level"], "warn")
+        self.assertIn("trust-phonevox", result["text"])
+
+    def test_a_covering_supernet_counts_as_present(self):
+        self._write_ip_accept(["0.0.0.0/0  # tudo"])
+        result = checklist_phonevox.check_firewall_base_ips()
+        self.assertEqual(result["level"], "ok")
+
+
 class FirewallAsteriskIpsCheckTest(unittest.TestCase):
     def _write_ip_accept(self, entries):
         path = pvx_config.modules_dir() / "firewall" / "state" / "ip_accept.conf"

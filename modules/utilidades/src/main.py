@@ -23,25 +23,21 @@ def _print_checklist(results):
 
 class UtilidadesModule(PvxModule):
     name = "utilidades"
-    version = "0.1.4"
+    version = "0.1.5"
 
     def cli_group(self):
         @click.group(name="utilidades")
         def group():
             pass
 
-        @group.group(name="checklist", help="checklists prontos de verificação.")
-        def checklist_group():
-            pass
-
-        @checklist_group.command(
-            name="phonevox", help="roda o checklist padrão Phonevox (só em servidor Issabel).",
+        @group.command(
+            name="checks-phonevox", help="roda o checklist padrão Phonevox (só em servidor Issabel).",
         )
-        def phonevox_cmd():
+        def checks_phonevox_cmd():
             if not issabel_detect.is_issabel():
-                raise click.ClickException("checklist phonevox só roda em servidor Issabel.")
+                raise click.ClickException("checks-phonevox só roda em servidor Issabel.")
 
-            widgets.title("pvx > utilidades > checklist phonevox")
+            widgets.title("pvx > utilidades > checks-phonevox")
             _print_checklist(checklist_phonevox.run_all())
 
             if _is_interactive():
