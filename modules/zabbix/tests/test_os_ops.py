@@ -53,6 +53,35 @@ class RunCmdTest(unittest.TestCase):
         logger.error.assert_called_once()
         self.assertIn("instalar pacote", logger.error.call_args.args[0])
 
+    @patch("os_ops.subprocess.run")
+    def test_verify_cmd_treats_an_already_satisfied_target_as_success(self, mock_run):
+        # achado ao vivo: "yum install -y <rpm já instalado>" costuma sair
+        # com código != 0 ("Nothing to do") mesmo o pacote já estando no
+        # estado certo -- confia num comando de verdade (`rpm -q`), não no
+        # texto do erro (muda com locale/versão do yum).
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stderr="Error: Nothing to do\n"),
+            MagicMock(returncode=0),
+        ]
+        logger = MagicMock()
+        result = os_ops.run_cmd(
+            ["yum", "install", "-y", "pacote"], logger=logger, verify_cmd=["rpm", "-q", "pacote"],
+        )
+        self.assertTrue(result)
+        logger.error.assert_not_called()
+        mock_run.assert_any_call(["rpm", "-q", "pacote"], capture_output=True, text=True)
+
+    @patch("os_ops.subprocess.run")
+    def test_verify_cmd_does_not_mask_a_genuine_failure(self, mock_run):
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stderr="Error: repo indisponível\n"),
+            MagicMock(returncode=1),
+        ]
+        result = os_ops.run_cmd(
+            ["yum", "install", "-y", "pacote"], verify_cmd=["rpm", "-q", "pacote"],
+        )
+        self.assertFalse(result)
+
 
 if __name__ == "__main__":
     unittest.main()

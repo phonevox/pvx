@@ -64,32 +64,55 @@ class ModuleInstallCommandTest(unittest.TestCase):
 class ModuleUpdateCommandTest(unittest.TestCase):
     @patch("pvx.cli.update_check.pending_notices")
     @patch("pvx.cli.installer.install")
+    @patch("pvx.cli.listing.outdated_names", side_effect=lambda names, installed, url: list(names))
     @patch(
         "pvx.cli.discover_installed_modules",
         return_value={"dummy": FakeModule(), "other": FakeModule()},
     )
-    def test_update_all_reinstalls_every_installed_module(self, mock_discover, mock_install, mock_pending_notices):
+    def test_update_all_reinstalls_every_installed_module(
+        self, mock_discover, mock_outdated, mock_install, mock_pending_notices
+    ):
         result = CliRunner().invoke(build_cli(), ["module", "update", "--all"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         self.assertEqual(mock_install.call_count, 2)
 
     @patch("pvx.cli.update_check.pending_notices")
     @patch("pvx.cli.installer.install")
+    @patch("pvx.cli.listing.outdated_names", return_value=[])
+    @patch(
+        "pvx.cli.discover_installed_modules",
+        return_value={"dummy": FakeModule(), "other": FakeModule()},
+    )
+    def test_update_all_skips_modules_already_up_to_date(
+        self, mock_discover, mock_outdated, mock_install, mock_pending_notices
+    ):
+        # achado ao vivo: `update --all` reinstalava e anunciava "atualizado"
+        # pra TODO módulo, mesmo pros que já estavam na última versão.
+        result = CliRunner().invoke(build_cli(), ["module", "update", "--all"])
+        self.assertEqual(result.exit_code, 0, msg=result.output)
+        mock_install.assert_not_called()
+        self.assertIn("dummy já está atualizado.", result.output)
+        self.assertIn("other já está atualizado.", result.output)
+
+    @patch("pvx.cli.update_check.pending_notices")
+    @patch("pvx.cli.installer.install")
+    @patch("pvx.cli.listing.outdated_names", side_effect=lambda names, installed, url: list(names))
     @patch("pvx.cli.widgets.spinner")
     @patch("pvx.cli.discover_installed_modules", return_value={"dummy": FakeModule()})
-    def test_update_shows_spinner(self, mock_discover, mock_spinner, mock_install, mock_pending_notices):
+    def test_update_shows_spinner(self, mock_discover, mock_spinner, mock_outdated, mock_install, mock_pending_notices):
         result = CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
         self.assertEqual(result.exit_code, 0, msg=result.output)
         mock_spinner.assert_called_once()
 
     @patch("pvx.cli.update_check.pending_notices")
     @patch("pvx.cli.installer.install")
+    @patch("pvx.cli.listing.outdated_names", side_effect=lambda names, installed, url: list(names))
     @patch(
         "pvx.cli.discover_installed_modules",
         return_value={"dummy": FakeModule()},
     )
     def test_refreshes_the_update_check_cache_with_a_fresh_discover_after_updating(
-        self, mock_discover, mock_install, mock_pending_notices
+        self, mock_discover, mock_outdated, mock_install, mock_pending_notices
     ):
         # achado ao vivo: `pvx module update` (CLI direta) tinha seu PRÓPRIO
         # loop de atualização, separado do usado pelo menu interativo -- o
@@ -99,11 +122,19 @@ class ModuleUpdateCommandTest(unittest.TestCase):
         CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
         mock_pending_notices.assert_called_once_with(mock_discover.return_value, force=True)
 
+    @patch("pvx.cli.listing.outdated_names", side_effect=lambda names, installed, url: list(names))
     @patch(
         "pvx.cli.installer.install",
         side_effect=RuntimeError("não foi possível acessar o registry (nome não resolvido)"),
     )
-    def test_network_failure_shows_clean_message_no_traceback(self, mock_install):
+    def test_network_failure_shows_clean_message_no_traceback(self, mock_install, mock_outdated):
+        result = CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertNotIn("Traceback", result.output)
+        self.assertIn("não foi possível acessar o registry", result.output)
+
+    @patch("pvx.cli.listing.outdated_names", side_effect=RuntimeError("não foi possível acessar o registry (x)"))
+    def test_registry_unreachable_while_checking_outdated_shows_clean_message(self, mock_outdated):
         result = CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertNotIn("Traceback", result.output)
@@ -112,14 +143,16 @@ class ModuleUpdateCommandTest(unittest.TestCase):
     @patch("pvx.cli.update_check.pending_notices")
     @patch("pvx.cli._core_logger")
     @patch("pvx.cli.installer.install")
-    def test_logs_success(self, mock_install, mock_logger, mock_pending_notices):
+    @patch("pvx.cli.listing.outdated_names", side_effect=lambda names, installed, url: list(names))
+    def test_logs_success(self, mock_outdated, mock_install, mock_logger, mock_pending_notices):
         CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
         mock_logger.return_value.info.assert_called_once()
         self.assertIn("dummy", mock_logger.return_value.info.call_args.args[0])
 
     @patch("pvx.cli._core_logger")
     @patch("pvx.cli.installer.install", side_effect=RuntimeError("falhou"))
-    def test_logs_failure(self, mock_install, mock_logger):
+    @patch("pvx.cli.listing.outdated_names", side_effect=lambda names, installed, url: list(names))
+    def test_logs_failure(self, mock_outdated, mock_install, mock_logger):
         CliRunner().invoke(build_cli(), ["module", "update", "dummy"])
         mock_logger.return_value.error.assert_called_once()
 

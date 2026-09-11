@@ -43,18 +43,32 @@ def build_module_group():
     @click.argument("name", required=False)
     @click.option("--all", "update_all", is_flag=True)
     def module_update(name, update_all):
+        installed = discover_installed_modules()
         if update_all:
-            names = list(discover_installed_modules())
+            names = list(installed)
         elif name:
             names = [name]
         else:
             raise click.UsageError("informe um nome de módulo ou use --all")
 
         try:
-            for installed_name in names:
+            # achado ao vivo: `update --all` reinstalava e anunciava
+            # "atualizado" pra TODO módulo, mesmo pros que já estavam na
+            # última versão -- misleading, e um download/rewrite à toa.
+            outdated = listing.outdated_names(names, installed, config.registry_index_url())
+        except RuntimeError as e:
+            raise click.ClickException(str(e))
+
+        for up_to_date_name in names:
+            if up_to_date_name not in outdated:
+                click.echo(f"{up_to_date_name} já está atualizado.")
+
+        try:
+            for installed_name in outdated:
                 with widgets.spinner(f"Atualizando {installed_name}..."):
                     installer.install(installed_name, config.registry_index_url())
                 _core_logger().info(f"módulo '{installed_name}' atualizado.")
+                click.echo(f"{installed_name} atualizado.")
         except (RuntimeError, ValueError) as e:
             _core_logger().error(f"falha ao atualizar módulo: {e}")
             raise click.ClickException(str(e))
@@ -65,7 +79,6 @@ def build_module_group():
         # nunca aqui. Quem atualiza via CLI direta (`pvx module update`)
         # nunca via o cache refletir a atualização.
         update_check.pending_notices(discover_installed_modules(), force=True)
-        click.echo("atualizado.")
 
     @module_group.command(name="list")
     def module_list():

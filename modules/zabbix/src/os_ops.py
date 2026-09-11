@@ -1,7 +1,7 @@
 import subprocess
 
 
-def run_cmd(args, logger=None, action=None):
+def run_cmd(args, logger=None, action=None, verify_cmd=None):
     # subprocess.run() levanta FileNotFoundError se o binário não existe -- diferente de
     # "rodou e falhou" (returncode != 0), já coberto abaixo. Sem capturar isso o processo
     # crasha com traceback cru em vez de reportar falha limpa.
@@ -17,6 +17,15 @@ def run_cmd(args, logger=None, action=None):
         if logger:
             logger.error(f"{label}: {e}")
         return False
-    if result.returncode != 0 and logger:
+    if result.returncode == 0:
+        return True
+    # achado ao vivo: "yum install -y <rpm já instalado>" costuma sair com
+    # código != 0 ("Nothing to do") mesmo o pacote já estando no estado
+    # certo -- em vez de confiar no texto do erro (frágil, muda com
+    # locale/versão do yum), confirma via um comando de verdade (`rpm -q`):
+    # se o alvo já está instalado, o objetivo foi atingido de qualquer jeito.
+    if verify_cmd and subprocess.run(verify_cmd, capture_output=True, text=True).returncode == 0:
+        return True
+    if logger:
         logger.error(f"{label}: {result.stderr.strip()}")
-    return result.returncode == 0
+    return False

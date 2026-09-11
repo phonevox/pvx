@@ -53,3 +53,12 @@ def list_modules(installed, index_url):
         })
 
     return rows
+
+
+def outdated_names(names, installed, index_url):
+    # achado ao vivo: `module update --all` reinstalava e anunciava
+    # "atualizado" pra TODO módulo instalado, mesmo pros que já estavam na
+    # última versão -- misleading pro usuário, e um download/rewrite à toa
+    # por módulo. Um fetch_index só (via list_modules), não um por módulo.
+    rows = {row["name"]: row for row in list_modules(installed, index_url)}
+    return [name for name in names if rows.get(name, {}).get("status") == "atualização disponível"]

@@ -19,6 +19,7 @@ class InstallRepoTest(unittest.TestCase):
         url = "https://repo.zabbix.com/zabbix/5.0/rhel/8/x86_64/zabbix-release-latest.el8.noarch.rpm"
         mock_run_cmd.assert_called_once_with(
             ["yum", "install", "-y", url], logger=None, action=f"instalar repositório ({url})",
+            verify_cmd=["rpm", "-q", "zabbix-release"],
         )
 
     @patch("install_steps.os_ops.run_cmd", return_value=False)
@@ -34,6 +35,7 @@ class InstallAgentTest(unittest.TestCase):
         self.assertTrue(install_steps.install_agent("zabbix-agent2"))
         mock_run_cmd.assert_called_once_with(
             ["yum", "install", "-y", "zabbix-agent2"], logger=None, action="instalar zabbix-agent2",
+            verify_cmd=["rpm", "-q", "zabbix-agent2"],
         )
 
 

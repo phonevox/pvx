@@ -16,11 +16,17 @@ def install_repo(zabbix_version, os_major, logger=None):
     # 8+ mantém "yum" como wrapper de compatibilidade pro dnf, então funciona
     # nos dois sem precisar detectar o SO.
     url = repo_rpm_url(zabbix_version, os_major)
-    return os_ops.run_cmd(["yum", "install", "-y", url], logger=logger, action=f"instalar repositório ({url})")
+    return os_ops.run_cmd(
+        ["yum", "install", "-y", url], logger=logger, action=f"instalar repositório ({url})",
+        verify_cmd=["rpm", "-q", "zabbix-release"],
+    )
 
 
 def install_agent(package, logger=None):
-    return os_ops.run_cmd(["yum", "install", "-y", package], logger=logger, action=f"instalar {package}")
+    return os_ops.run_cmd(
+        ["yum", "install", "-y", package], logger=logger, action=f"instalar {package}",
+        verify_cmd=["rpm", "-q", package],
+    )
 
 
 def enable_and_start(service, logger=None):

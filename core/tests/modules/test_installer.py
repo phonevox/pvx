@@ -73,6 +73,34 @@ class InstallTest(unittest.TestCase):
         installed = Path(self._tmp.name) / "modules" / "dummy"
         self.assertFalse(installed.exists())
 
+    @patch("pvx.modules.installer.update_check.clear_cache")
+    def test_install_clears_the_update_check_cache(self, mock_clear):
+        # achado ao vivo: instalar/atualizar um módulo manualmente na CLI
+        # direta (`pvx module install`) não invalidava esse cache -- só o
+        # loop de `module update --all` fazia isso, num ponto separado.
+        with TemporaryDirectory() as registry_tmp:
+            registry_dir = Path(registry_tmp)
+            manifest, pyz_bytes = self._build_fake_registry(registry_dir)
+            manifest["checksum_sha256"] = hashlib.sha256(pyz_bytes).hexdigest()
+            (registry_dir / "manifest.json").write_text(json.dumps(manifest))
+
+            installer.install("dummy", f"file://{registry_dir}/index.json")
+
+        mock_clear.assert_called_once()
+
+    @patch("pvx.modules.installer.update_check.clear_cache")
+    def test_failed_install_does_not_clear_the_cache(self, mock_clear):
+        with TemporaryDirectory() as registry_tmp:
+            registry_dir = Path(registry_tmp)
+            manifest, _ = self._build_fake_registry(registry_dir)
+            manifest["checksum_sha256"] = "sha256-errado"
+            (registry_dir / "manifest.json").write_text(json.dumps(manifest))
+
+            with self.assertRaises(ValueError):
+                installer.install("dummy", f"file://{registry_dir}/index.json")
+
+        mock_clear.assert_not_called()
+
     def test_registry_unreachable_raises_clean_error(self):
         with patch(
             "pvx.modules.installer.fetch_index",
@@ -111,6 +139,24 @@ class InstallTest(unittest.TestCase):
         with patch("pvx.modules.installer.shutil.rmtree"):
             with self.assertRaises(RuntimeError):
                 installer.uninstall("dummy")
+
+    @patch("pvx.modules.installer.update_check.clear_cache")
+    def test_uninstall_clears_the_update_check_cache(self, mock_clear):
+        # achado ao vivo: remover um módulo manualmente (CLI ou menu) não
+        # invalidava o cache do aviso de update -- o banner continuava
+        # dizendo "atualização disponível" pra um módulo que nem existia
+        # mais, até o TTL de 6h expirar sozinho.
+        installed = Path(self._tmp.name) / "modules" / "dummy"
+        installed.mkdir(parents=True)
+
+        installer.uninstall("dummy")
+
+        mock_clear.assert_called_once()
+
+    @patch("pvx.modules.installer.update_check.clear_cache")
+    def test_uninstall_of_a_never_installed_module_still_clears_the_cache(self, mock_clear):
+        installer.uninstall("nao-existe")
+        mock_clear.assert_called_once()
 
 
 if __name__ == "__main__":
