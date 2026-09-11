@@ -33,6 +33,24 @@ class PendingNoticesTest(unittest.TestCase):
         self.assertTrue(any("core" in n.lower() for n in notices))
 
     @patch("pvx.update_check.listing.list_modules", return_value=[])
+    @patch("pvx.update_check._fetch_core_latest", return_value="9.9.9")
+    def test_reflects_a_self_update_within_the_same_process(self, mock_fetch, mock_list):
+        # achado ao vivo: um self-update no meio de uma sessão longa (menu
+        # interativo nunca reinicia) trocava o core.pyz em disco, mas
+        # "from pvx.version import __version__" tinha copiado o valor ANTIGO
+        # pra dentro deste módulo -- o banner continuava dizendo
+        # "desatualizado" com a versão de ANTES, mesmo já rodando a nova
+        # (self_update.py dá reload() em pvx.version; só ajuda se aqui a
+        # gente ler pvx_version.__version__ ao vivo, nunca uma cópia).
+        with patch("pvx.update_check.pvx_version.__version__", "1.0.0"):
+            notices = update_check.pending_notices({}, force=True)
+        self.assertIn("1.0.0 -> 9.9.9", notices[0])
+
+        with patch("pvx.update_check.pvx_version.__version__", "9.9.9"):
+            notices = update_check.pending_notices({}, force=True)
+        self.assertEqual(notices, [])
+
+    @patch("pvx.update_check.listing.list_modules", return_value=[])
     @patch("pvx.update_check._fetch_core_latest", return_value="0.0.1")
     def test_no_core_notice_when_already_up_to_date_or_ahead(self, mock_fetch, mock_list):
         # achado ao vivo (listing.py): deploy fora do registry deixa a

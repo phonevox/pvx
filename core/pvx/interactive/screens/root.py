@@ -4,13 +4,13 @@ import click
 import questionary
 
 from pvx import build_info, self_update, update_check
+from pvx import version as pvx_version
 from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
 from pvx.interactive.auto_menu import build_choices
 from pvx.interactive.inputs import ask_confirm, ask_select
 from pvx.interactive.screens.module_update import update_modules
 from pvx.logging_.setup import get_module_logger
-from pvx.version import __version__
 
 SCREEN_BY_SYSTEM_CHOICE = {"módulos": "modules", "logs": "logs", "tema": "theme"}
 # "versão"/"atualizar" não empurram tela própria -- são ações de uma linha só,
@@ -32,8 +32,14 @@ def _core_logger():
 
 
 def _show_version():
+    # pvx_version.__version__ lido do módulo, não copiado por valor -- achado
+    # ao vivo: um self-update no meio da sessão trocava o core.pyz em disco,
+    # mas um nome já importado por "from ... import __version__" ficava preso
+    # na versão ANTIGA pro resto do processo (self_update.py dá reload() em
+    # pvx.version; só ajuda se aqui a gente ler o atributo do módulo).
+    current = pvx_version.__version__
     channel = build_info.describe()
-    version_string = f"{__version__} ({channel})" if channel else __version__
+    version_string = f"{current} ({channel})" if channel else current
     widgets.message(f"pvx {version_string}")
     widgets.pause()
 

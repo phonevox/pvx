@@ -75,6 +75,60 @@ class SelfUpdateTest(unittest.TestCase):
         self.assertNotIn(path_str, sys.path_importer_cache)
         self.assertNotIn(path_str, zipimport._zip_directory_cache)
 
+    def test_also_clears_nested_subpackage_cache_entries(self):
+        # achado ao vivo (mais fundo que o anterior): cada SUBPACOTE de
+        # dentro do zip (ex.: "core.pyz/pvx", pra importar pvx.version) ganha
+        # sua PRÓPRIA entrada em sys.path_importer_cache -- limpar só a
+        # chave exata da raiz do zip não bastava, importlib.reload() de um
+        # submódulo continuava usando o zipimporter aninhado, cacheado com
+        # os offsets da versão ANTIGA, e crashava do mesmo jeito.
+        path_str = str(self._lib_path)
+        nested_key = f"{path_str}/pvx"
+        sys.path_importer_cache[nested_key] = object()
+        zipimport._zip_directory_cache[nested_key] = object()
+
+        new_core_bytes = b"fake core.pyz content v2"
+        with TemporaryDirectory() as source_tmp:
+            self._publish_fake_release(
+                Path(source_tmp), new_core_bytes, hashlib.sha256(new_core_bytes).hexdigest()
+            )
+            self_update.self_update()
+
+        self.assertNotIn(nested_key, sys.path_importer_cache)
+        self.assertNotIn(nested_key, zipimport._zip_directory_cache)
+
+    @patch("pvx.self_update.zipimport.zipimporter")
+    def test_skips_the_version_reload_when_not_running_from_a_real_zip(self, mock_zipimporter):
+        # achado ao vivo: "pvx.version" já importado (processo longo, menu
+        # interativo nunca reinicia) ficava com __version__ ANTIGO -- trocar
+        # o arquivo em disco não re-executa um módulo já carregado. O banner
+        # de update e a ação "versão" diziam "desatualizado" segundos depois
+        # de um self-update bem-sucedido. Em dev/teste "pvx" é um pacote de
+        # verdade em disco (não dentro de um .pyz) -- os bytes fake usados
+        # aqui não são um zip de verdade, então nunca deve tentar reabri-los
+        # como um (zipimport.ZipImportError: not a Zip file).
+        new_core_bytes = b"fake core.pyz content v3"
+        with TemporaryDirectory() as source_tmp:
+            self._publish_fake_release(
+                Path(source_tmp), new_core_bytes, hashlib.sha256(new_core_bytes).hexdigest()
+            )
+            self_update.self_update()
+
+        mock_zipimporter.assert_not_called()
+
+    @patch("pvx.self_update.zipimport.zipimporter")
+    @patch("pvx.self_update.zipfile.is_zipfile", return_value=True)
+    def test_reloads_the_version_module_when_running_from_a_real_zip(self, mock_is_zipfile, mock_zipimporter):
+        new_core_bytes = b"fake core.pyz content v3"
+        with TemporaryDirectory() as source_tmp:
+            self._publish_fake_release(
+                Path(source_tmp), new_core_bytes, hashlib.sha256(new_core_bytes).hexdigest()
+            )
+            self_update.self_update()
+
+        mock_zipimporter.assert_called_once_with(self_update.pvx_pkg.__path__[0])
+        mock_zipimporter.return_value.load_module.assert_called_once_with("pvx.version")
+
     def test_checksum_mismatch_raises_and_does_not_replace(self):
         self._lib_path.write_bytes(b"old core.pyz content")
 

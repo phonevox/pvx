@@ -4,8 +4,8 @@ import urllib.error
 import urllib.request
 
 from pvx import config
+from pvx import version as pvx_version
 from pvx.modules import listing
-from pvx.version import __version__
 
 # best-effort, silencioso: nunca deve travar/quebrar o menu por causa de rede
 # ruim ou registry fora do ar -- só um aviso a menos.
@@ -32,13 +32,21 @@ def _core_notice():
     except (urllib.error.URLError, OSError, ValueError):
         return None
 
-    current_v = _parse_version(__version__)
+    # pvx_version.__version__ (não um "from ... import __version__" solto) --
+    # achado ao vivo: um self-update no meio de uma sessão longa (menu
+    # interativo nunca reinicia) trocava o core.pyz em disco, mas um nome já
+    # importado por valor ficava preso na versão ANTIGA pro resto do
+    # processo -- o banner dizia "desatualizado" segundos depois de um
+    # self-update bem-sucedido. self_update.py dá reload() em pvx.version;
+    # só funciona se aqui a gente ler o atributo do módulo, não uma cópia.
+    current = pvx_version.__version__
+    current_v = _parse_version(current)
     latest_v = _parse_version(latest)
     # mesma regra de listing._status(): instalado à frente do registry (ex.:
     # deploy direto na VPS) não é "atualização disponível".
     if current_v is None or latest_v is None or latest_v <= current_v:
         return None
-    return f"core: atualização disponível ({__version__} -> {latest})"
+    return f"core: atualização disponível ({current} -> {latest})"
 
 
 def _module_notices(installed):

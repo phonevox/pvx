@@ -371,6 +371,24 @@ class RootScreenTest(unittest.TestCase):
 
     @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
     @patch("pvx.interactive.screens.root.widgets.pause")
+    @patch("pvx.interactive.screens.root.widgets.message")
+    @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
+    @patch("pvx.interactive.screens.root.ask_select", return_value="versão")
+    def test_versao_reads_the_live_version_not_a_stale_import(
+        self, mock_ask_select, mock_describe, mock_message, mock_pause, mock_discover
+    ):
+        # achado ao vivo: "from pvx.version import __version__" copiava o
+        # valor no momento do import -- um self-update no meio da sessão
+        # (menu interativo nunca reinicia) trocava o core.pyz em disco, mas
+        # essa ação continuava mostrando a versão de ANTES pro resto do
+        # processo (self_update.py dá reload() em pvx.version; só ajuda se
+        # aqui a gente ler pvx_version.__version__ ao vivo).
+        with patch("pvx.interactive.screens.root.pvx_version.__version__", "9.9.9-teste"):
+            RootScreen().render()
+        self.assertIn("9.9.9-teste", mock_message.call_args.args[0])
+
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.widgets.pause")
     @patch("pvx.interactive.screens.root.widgets.success")
     @patch("pvx.interactive.screens.root.self_update.self_update", return_value="0.3.0")
     @patch("pvx.interactive.screens.root.build_info.describe", return_value=None)
