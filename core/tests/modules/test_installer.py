@@ -109,6 +109,53 @@ class InstallTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 installer.install("dummy", "https://example.com/index.json")
 
+    @patch("pvx.modules.installer.pvx_version.__version__", "0.1.0")
+    def test_raises_when_module_requires_a_newer_core_than_installed(self):
+        # achado ao vivo: um módulo atualizado sozinho (registry independente
+        # do core) crashou em produção com AttributeError -- usava uma
+        # função de widgets que só existe numa versão de core mais nova.
+        # min_pvx_version existe no manifest desde sempre, mas nada aqui
+        # nunca checava -- só documentação morta.
+        with TemporaryDirectory() as registry_tmp:
+            registry_dir = Path(registry_tmp)
+            manifest, pyz_bytes = self._build_fake_registry(registry_dir)
+            manifest["checksum_sha256"] = hashlib.sha256(pyz_bytes).hexdigest()
+            manifest["min_pvx_version"] = "9.9.9"
+            (registry_dir / "manifest.json").write_text(json.dumps(manifest))
+
+            with self.assertRaisesRegex(RuntimeError, "9.9.9"):
+                installer.install("dummy", f"file://{registry_dir}/index.json")
+
+        installed = Path(self._tmp.name) / "modules" / "dummy"
+        self.assertFalse(installed.exists())
+
+    @patch("pvx.modules.installer.pvx_version.__version__", "9.9.9")
+    def test_installs_normally_when_core_satisfies_min_pvx_version(self):
+        with TemporaryDirectory() as registry_tmp:
+            registry_dir = Path(registry_tmp)
+            manifest, pyz_bytes = self._build_fake_registry(registry_dir)
+            manifest["checksum_sha256"] = hashlib.sha256(pyz_bytes).hexdigest()
+            manifest["min_pvx_version"] = "0.1.0"
+            (registry_dir / "manifest.json").write_text(json.dumps(manifest))
+
+            installer.install("dummy", f"file://{registry_dir}/index.json")
+
+        installed = Path(self._tmp.name) / "modules" / "dummy"
+        self.assertTrue((installed / "module.pyz").exists())
+
+    def test_installs_when_min_pvx_version_is_missing_or_unparseable(self):
+        with TemporaryDirectory() as registry_tmp:
+            registry_dir = Path(registry_tmp)
+            manifest, pyz_bytes = self._build_fake_registry(registry_dir)
+            manifest["checksum_sha256"] = hashlib.sha256(pyz_bytes).hexdigest()
+            manifest["min_pvx_version"] = "não-é-uma-versão"
+            (registry_dir / "manifest.json").write_text(json.dumps(manifest))
+
+            installer.install("dummy", f"file://{registry_dir}/index.json")
+
+        installed = Path(self._tmp.name) / "modules" / "dummy"
+        self.assertTrue((installed / "module.pyz").exists())
+
     def test_unknown_module_raises_clean_error(self):
         with TemporaryDirectory() as registry_tmp:
             registry_dir = Path(registry_tmp)

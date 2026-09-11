@@ -5,8 +5,16 @@ import urllib.error
 import urllib.request
 
 from pvx import config, update_check
+from pvx import version as pvx_version
 from pvx.registry import schema
 from pvx.registry.client import fetch_index
+
+
+def _parse_version(text):
+    try:
+        return tuple(int(p) for p in str(text).split(".")[:3])
+    except (ValueError, AttributeError):
+        return None
 
 
 def install(name, index_url, version=None):
@@ -33,6 +41,20 @@ def install(name, index_url, version=None):
         raise ValueError(
             f"checksum não bate pra módulo '{name}': "
             f"esperado {expected_checksum}, obtido {actual_checksum}"
+        )
+
+    # achado ao vivo: um módulo atualizado sozinho (registry independente do
+    # core) crashou em produção com AttributeError -- usava widgets.state_line,
+    # que só existe numa versão de core mais nova. min_pvx_version existe no
+    # manifest desde sempre, mas nunca era checado -- só documentação morta.
+    # Unparseável (min_pvx_version ausente/inválido) nunca bloqueia -- mesma
+    # postura permissiva de listing.py/_status() pra versão que não dá pra ler.
+    min_version = _parse_version(manifest.get("min_pvx_version"))
+    current_version = _parse_version(pvx_version.__version__)
+    if min_version and current_version and current_version < min_version:
+        raise RuntimeError(
+            f"módulo '{name}' precisa do pvx >= {manifest['min_pvx_version']} "
+            f"(instalado: {pvx_version.__version__}) -- rode `pvx self-update` primeiro."
         )
 
     install_dir = config.modules_dir() / name
