@@ -22,6 +22,26 @@ find_py_bin() {
     return 1
 }
 
+# CentOS 7 é EOL -- mirrorlist.centos.org não resolve mais. Isso quebra
+# QUALQUER "yum install" (mesmo o primeiríssimo, de python3 logo abaixo),
+# não só o passo de SCL mais adiante: yum sonda todo repo *.repo habilitado
+# antes de rodar a transação, e algumas imagens de VPS já vêm com um repo
+# de SCL pré-instalado apontando pro mirrorlist morto -- achado ao vivo
+# (curl | sudo sh falhou direto no primeiro yum, com "sclo-rh" nem ter sido
+# tocado por este script ainda). Chamado antes de qualquer yum rodar, e de
+# novo depois de instalar centos-release-scl (que cria repos novos).
+fix_dead_centos_mirrors() {
+    for f in /etc/yum.repos.d/*.repo; do
+        [ -f "$f" ] || continue
+        grep -q '^mirrorlist=.*mirrorlist\.centos\.org' "$f" 2>/dev/null || continue
+        sed -i -e 's|^mirrorlist=|#mirrorlist=|' \
+               -e 's|^#\s*baseurl=http://mirror\.centos\.org|baseurl=https://mirrors.aliyun.com|' \
+               "$f"
+    done
+}
+
+command -v yum >/dev/null 2>&1 && fix_dead_centos_mirrors
+
 if ! command -v python3 >/dev/null 2>&1; then
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update && apt-get install -y python3
@@ -51,17 +71,9 @@ fi
 
 if [ -z "$PY_BIN" ] && command -v yum >/dev/null 2>&1; then
     # CentOS/RHEL 7: sem AppStream, os pacotes python3.X acima não existem
-    # -- só dá pra ter 3.8+ via Software Collections (SCL). O repo que o
-    # centos-release-scl instala ainda aponta pro mirrorlist.centos.org,
-    # que não resolve mais (CentOS 7 é EOL) -- troca pro mesmo mirror que
-    # o resto do sistema já usa (aliyun) antes de instalar o pacote.
+    # -- só dá pra ter 3.8+ via Software Collections (SCL).
     yum install -y centos-release-scl || true
-    for f in /etc/yum.repos.d/CentOS-SCLo-scl*.repo; do
-        [ -f "$f" ] || continue
-        sed -i -e 's|^mirrorlist=|#mirrorlist=|' \
-               -e 's|^#\s*baseurl=http://mirror.centos.org|baseurl=https://mirrors.aliyun.com|' \
-               "$f"
-    done
+    fix_dead_centos_mirrors
     yum install -y rh-python38 || true
     for scl_bin in /opt/rh/rh-python38/root/usr/bin/python3.8 /opt/rh/rh-python38/root/usr/bin/python3; do
         if [ -x "$scl_bin" ] && is_python_new_enough "$scl_bin"; then
