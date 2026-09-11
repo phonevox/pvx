@@ -61,6 +61,28 @@ class AddEntryTest(unittest.TestCase):
         leftovers = list(self.path.parent.glob("*.tmp"))
         self.assertEqual(leftovers, [])
 
+    def test_seeds_the_file_with_defaults_before_appending_when_absent(self):
+        # achado ao vivo (produção): técnico adicionou o IP de um cliente
+        # confiável (`pvx firewall ip accept`) numa central onde o arquivo
+        # ip_accept.conf ainda não existia em disco -- sem seed aqui, o
+        # resultado era um arquivo com SÓ o IP novo, apagando (na prática,
+        # nunca escrevendo) os IPs base da Phonevox. `apply` sincronizou
+        # essa lista incompleta e o técnico perdeu acesso.
+        seed = [("127.0.0.1", "LOCALHOST"), ("10.0.0.0/8", "INTERNO")]
+        result = lists.add_entry(str(self.path), "203.0.113.9", comment="CLIENTE", seed=seed)
+        self.assertTrue(result)
+        self.assertEqual(
+            lists.read_list(str(self.path)),
+            [("127.0.0.1", "LOCALHOST"), ("10.0.0.0/8", "INTERNO"), ("203.0.113.9", "CLIENTE")],
+        )
+
+    def test_does_not_reapply_seed_once_file_already_has_content(self):
+        self.path.write_text("8.8.8.8\n")
+        lists.add_entry(str(self.path), "9.9.9.9", seed=[("127.0.0.1", "LOCALHOST")])
+        self.assertEqual(
+            lists.read_list(str(self.path)), [("8.8.8.8", ""), ("9.9.9.9", "")],
+        )
+
 
 class RemoveEntryTest(unittest.TestCase):
     def setUp(self):
@@ -78,6 +100,13 @@ class RemoveEntryTest(unittest.TestCase):
 
     def test_returns_false_when_not_found(self):
         self.assertFalse(lists.remove_entry(str(self.path), "8.8.8.8"))
+
+    def test_seeds_before_removing_when_file_absent(self):
+        empty_path = self.path.parent / "empty.conf"
+        seed = [("127.0.0.1", "LOCALHOST"), ("10.0.0.0/8", "INTERNO")]
+        result = lists.remove_entry(str(empty_path), "10.0.0.0/8", seed=seed)
+        self.assertTrue(result)
+        self.assertEqual(lists.read_list(str(empty_path)), [("127.0.0.1", "LOCALHOST")])
 
 
 if __name__ == "__main__":

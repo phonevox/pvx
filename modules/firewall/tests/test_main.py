@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+import defaults
 from main import cli
 
 BASE_STATUS = {
@@ -148,6 +149,20 @@ class IpCommandsTest(MainTestCase):
         self._invoke(["ip", "accept", "198.51.100.5", "--comment", "escritório"])
         result = self._invoke(["ip", "list"])
         self.assertIn("198.51.100.5", result.output)
+
+    def test_accept_on_a_fresh_state_dir_keeps_the_default_trusted_ips(self):
+        # achado ao vivo (produção): técnico adicionou o IP de um cliente
+        # numa central onde ip_accept.conf ainda não existia em disco --
+        # sem seedar antes de gravar, o resultado era um arquivo com SÓ o
+        # IP novo, apagando os IPs base da Phonevox (localhost, redes
+        # internas, IPs fixos da empresa). `apply` sincronizou essa lista
+        # incompleta e o técnico perdeu acesso à própria sessão SSH.
+        result = self._invoke(["ip", "accept", "198.51.100.5", "--comment", "cliente"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("198.51.100.5", listing.output)
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
 
     # achado ao vivo: técnico mandou "1.1.1.1/32,2.2.2.2/8" numa tacada só -- cada CIDR
     # sozinho é válido, mas o comando só aceitava um valor por vez.

@@ -60,7 +60,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.11"
+    version = "0.2.12"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -86,7 +86,7 @@ class FirewallModule(PvxModule):
                 validators.parse_port_spec(spec)
             except ValueError as e:
                 raise click.ClickException(str(e))
-            lists.add_entry(_list_path("port_accept"), spec, comment)
+            lists.add_entry(_list_path("port_accept"), spec, comment, seed=defaults.DEFAULT_LISTS["port_accept"])
             click.echo(f"porta {spec} liberada.")
             if _is_interactive():
                 widgets.pause()
@@ -106,7 +106,7 @@ class FirewallModule(PvxModule):
                 validators.parse_port_spec(spec)
             except ValueError as e:
                 raise click.ClickException(str(e))
-            lists.add_entry(_list_path("port_deny"), spec, comment)
+            lists.add_entry(_list_path("port_deny"), spec, comment, seed=defaults.DEFAULT_LISTS["port_deny"])
             click.echo(f"porta {spec} bloqueada.")
             if _is_interactive():
                 widgets.pause()
@@ -120,8 +120,10 @@ class FirewallModule(PvxModule):
             )
             if spec is None:
                 return
-            removed = lists.remove_entry(_list_path("port_accept"), spec)
-            removed = lists.remove_entry(_list_path("port_deny"), spec) or removed
+            removed = lists.remove_entry(_list_path("port_accept"), spec, seed=defaults.DEFAULT_LISTS["port_accept"])
+            removed = lists.remove_entry(
+                _list_path("port_deny"), spec, seed=defaults.DEFAULT_LISTS["port_deny"],
+            ) or removed
             if not removed:
                 raise click.ClickException(f"{spec} não está em nenhuma lista de portas.")
             click.echo(f"{spec} removido.")
@@ -157,7 +159,7 @@ class FirewallModule(PvxModule):
             except ValueError as e:
                 raise click.ClickException(str(e))
             for entry in entries:
-                added = lists.add_entry(_list_path("ip_accept"), entry, comment)
+                added = lists.add_entry(_list_path("ip_accept"), entry, comment, seed=defaults.DEFAULT_LISTS["ip_accept"])
                 verb = "adicionado à" if added else "já estava na"
                 click.echo(f"{entry} {verb} lista de confiáveis.")
             if _is_interactive():
@@ -195,7 +197,7 @@ class FirewallModule(PvxModule):
                             "use --force se tiver certeza."
                         )
             for entry in entries:
-                added = lists.add_entry(_list_path("ip_deny"), entry, comment)
+                added = lists.add_entry(_list_path("ip_deny"), entry, comment, seed=defaults.DEFAULT_LISTS["ip_deny"])
                 verb = "adicionado à" if added else "já estava na"
                 click.echo(f"{entry} {verb} lista de bloqueio.")
             if _is_interactive():
@@ -210,8 +212,10 @@ class FirewallModule(PvxModule):
             )
             if cidr is None:
                 return
-            removed = lists.remove_entry(_list_path("ip_accept"), cidr)
-            removed = lists.remove_entry(_list_path("ip_deny"), cidr) or removed
+            removed = lists.remove_entry(_list_path("ip_accept"), cidr, seed=defaults.DEFAULT_LISTS["ip_accept"])
+            removed = lists.remove_entry(
+                _list_path("ip_deny"), cidr, seed=defaults.DEFAULT_LISTS["ip_deny"],
+            ) or removed
             if not removed:
                 raise click.ClickException(f"{cidr} não está em nenhuma lista de IPs.")
             click.echo(f"{cidr} removido.")
