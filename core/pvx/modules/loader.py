@@ -32,6 +32,16 @@ def _load_from_pyz(pyz_path, module_file):
     finally:
         sys.path.remove(path_str)
         for name in set(sys.modules) - before:
+            # achado ao vivo: evictar um nome "pvx.*" (ex.: pvx.modules.base,
+            # importado de dentro do module.py de CADA módulo) junto com o
+            # "module"/helpers temporários era inofensivo enquanto core.pyz
+            # nunca mudava em disco no meio do processo -- mas depois de um
+            # self-update, reimportar um nome "pvx.*" evictado reusa o
+            # zipimporter cacheado pro path do core.pyz com offsets da
+            # versão ANTIGA e crasha ("bad local file header"). "pvx.*"
+            # pertence ao core, nunca a um módulo -- nunca evict daqui.
+            if name == "pvx" or name.startswith("pvx."):
+                continue
             sys.modules.pop(name, None)
 
 
