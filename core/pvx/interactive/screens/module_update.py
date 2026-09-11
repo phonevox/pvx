@@ -18,7 +18,11 @@ def update_modules(names):
 
     for name in names:
         if name not in outdated:
-            widgets.message(f"{name} já está atualizado.")
+            # widgets.message() cerca o texto de linhas em branco -- ótimo
+            # pra uma mensagem solta, péssimo dentro de um loop (parede de
+            # espaço em branco pra listas com vários módulos já em dia).
+            # state() é o mesmo formato de uma linha do success() ao lado.
+            widgets.state(f"{name} já está atualizado.", ok=True)
             continue
         try:
             with widgets.spinner(f"Atualizando {name}..."):

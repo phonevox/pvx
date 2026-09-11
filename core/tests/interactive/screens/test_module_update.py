@@ -27,15 +27,15 @@ class UpdateModulesFunctionTest(unittest.TestCase):
     @patch("pvx.interactive.screens.module_update.discover_installed_modules", return_value={"dummy": object()})
     @patch("pvx.interactive.screens.module_update.installer.install")
     @patch("pvx.interactive.screens.module_update.config.registry_index_url")
-    @patch("pvx.interactive.screens.module_update.widgets.message")
+    @patch("pvx.interactive.screens.module_update.widgets.state")
     def test_skips_a_module_already_up_to_date(
-        self, mock_message, mock_url, mock_install, mock_discover, mock_outdated
+        self, mock_state, mock_url, mock_install, mock_discover, mock_outdated
     ):
         # achado ao vivo: reinstalava e anunciava "atualizado" pra TODO
         # módulo selecionado, mesmo pros que já estavam na última versão.
         update_modules(["dummy"])
         mock_install.assert_not_called()
-        mock_message.assert_called_once_with("dummy já está atualizado.")
+        mock_state.assert_called_once_with("dummy já está atualizado.", ok=True)
 
 
 class ModuleUpdateScreenTest(unittest.TestCase):
