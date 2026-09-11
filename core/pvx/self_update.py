@@ -1,7 +1,9 @@
 import hashlib
 import json
 import shutil
+import sys
 import urllib.request
+import zipimport
 
 from pvx import config, update_check
 
@@ -25,6 +27,17 @@ def self_update():
     tmp_path = lib_path.with_suffix(".tmp")
     tmp_path.write_bytes(data)
     tmp_path.replace(lib_path)
+
+    # achado ao vivo: zipimport cacheia o zipimporter (índice interno do
+    # .zip) por path pra sempre -- igual o problema já resolvido pra
+    # module.pyz de módulos (ver loader.py), só que aqui é o PRÓPRIO
+    # core.pyz. Um processo longo (menu interativo, nunca reinicia) que
+    # importa algum "pvx.*" pela primeira vez só DEPOIS do self-update
+    # reusaria o índice da versão ANTIGA sobre o arquivo NOVO e crasharia
+    # com "bad local file header".
+    path_str = str(lib_path)
+    sys.path_importer_cache.pop(path_str, None)
+    getattr(zipimport, "_zip_directory_cache", {}).pop(path_str, None)
 
     # achado ao vivo: o cache de update_check.py sobrevive à troca do
     # core.pyz (TTL não sabe que a lógica mudou) -- um aviso calculado pela

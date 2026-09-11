@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import sys
 import zipapp
 import unittest
 from pathlib import Path
@@ -203,6 +204,62 @@ cli = Mod()
             build_pyz(tmp_path / "build_v2", "0.2.0-com-bastante-conteudo-a-mais", pyz_path)
             second = discover(tmp_path / "modules")
             self.assertEqual(second["dummy"].version, "0.2.0-com-bastante-conteudo-a-mais")
+
+    def test_shared_pvx_submodules_are_never_evicted_from_sys_modules(self):
+        # achado ao vivo (produção): a limpeza de sys.modules no fim de cada
+        # load (pra evitar colisão entre módulos com arquivo interno de
+        # mesmo nome, ex. "module"/"helper") também removia qualquer nome
+        # "pvx.*" que por acaso tivesse entrado durante aquele load
+        # específico (ex.: pvx.modules.base, se ainda não tivesse sido
+        # importado antes). Inofensivo enquanto core.pyz nunca mudava em
+        # disco no meio do processo -- mas depois de um self-update
+        # (substitui o arquivo), reimportar um nome "pvx.*" evictado reusa o
+        # zipimporter cacheado pro path do core.pyz com offsets da versão
+        # ANTIGA e crasha com "bad local file header" (ex.: "atualizar >
+        # tudo", que roda self-update e depois atualiza módulos na mesma
+        # sessão longa do menu interativo).
+        with TemporaryDirectory() as tmp:
+            build_dir = Path(tmp) / "build"
+            build_dir.mkdir()
+            (build_dir / "module.py").write_text("""
+import sys
+from pvx.modules.base import PvxModule
+
+sys.modules["pvx.fake_shared_submodule"] = sys.modules[__name__]
+
+
+class Mod(PvxModule):
+    name = "leaks-pvx-name"
+    version = "0.1.0"
+
+    def cli_group(self):
+        import click
+
+        @click.group()
+        def group():
+            pass
+
+        return group
+
+
+cli = Mod()
+""")
+            (build_dir / "__main__.py").write_text("from module import cli\n")
+            pyz_path = Path(tmp) / "leaks.pyz"
+            zipapp.create_archive(build_dir, pyz_path)
+
+            module_dir = self.modules_dir / "leaks-pvx-name"
+            module_dir.mkdir()
+            (module_dir / "manifest.json").write_text(json.dumps({
+                "name": "leaks-pvx-name", "version": "0.1.0", "entrypoint": "module:cli",
+            }))
+            shutil.copy(pyz_path, module_dir / "module.pyz")
+
+            try:
+                discover(self.modules_dir)
+                self.assertIn("pvx.fake_shared_submodule", sys.modules)
+            finally:
+                sys.modules.pop("pvx.fake_shared_submodule", None)
 
     def test_discovers_real_built_module_pyz(self):
         dummy_dir = Path(__file__).resolve().parents[3] / "modules" / "dummy"

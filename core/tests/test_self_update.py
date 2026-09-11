@@ -1,7 +1,9 @@
 import hashlib
 import json
 import os
+import sys
 import unittest
+import zipimport
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -52,6 +54,26 @@ class SelfUpdateTest(unittest.TestCase):
 
         self.assertEqual(version, "0.2.0")
         self.assertEqual(self._lib_path.read_bytes(), new_core_bytes)
+
+    def test_clears_the_stale_zipimport_cache_for_the_core_pyz_path(self):
+        # achado ao vivo: zipimport cacheia o zipimporter (índice interno do
+        # .zip) por path pra sempre -- um processo longo (menu interativo)
+        # que importasse algum "pvx.*" pela primeira vez só DEPOIS do
+        # self-update reusaria o índice da versão ANTIGA sobre o arquivo
+        # NOVO e crasharia com "bad local file header".
+        path_str = str(self._lib_path)
+        sys.path_importer_cache[path_str] = object()
+        zipimport._zip_directory_cache[path_str] = object()
+
+        new_core_bytes = b"fake core.pyz content v2"
+        with TemporaryDirectory() as source_tmp:
+            self._publish_fake_release(
+                Path(source_tmp), new_core_bytes, hashlib.sha256(new_core_bytes).hexdigest()
+            )
+            self_update.self_update()
+
+        self.assertNotIn(path_str, sys.path_importer_cache)
+        self.assertNotIn(path_str, zipimport._zip_directory_cache)
 
     def test_checksum_mismatch_raises_and_does_not_replace(self):
         self._lib_path.write_bytes(b"old core.pyz content")
