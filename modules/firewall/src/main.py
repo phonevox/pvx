@@ -61,7 +61,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.13"
+    version = "0.2.14"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -225,8 +225,7 @@ class FirewallModule(PvxModule):
 
         @ip_group.command(
             name="trust-asterisk",
-            help="descobre IPs conectados no Asterisk (sip peers/registry, pjsip endpoints) "
-                 "e adiciona à lista de confiáveis -- segurança pra não trancar a central do cliente.",
+            help="adiciona os IPs conectados no Asterisk à lista de confiáveis.",
         )
         def ip_trust_asterisk_cmd():
             _require_root()
