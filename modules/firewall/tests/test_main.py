@@ -11,6 +11,7 @@ from main import cli
 BASE_STATUS = {
     "engine": "iptables", "engine_active": False, "boot_persistent": False,
     "rule_count": 0, "session_ip": None, "synced": False, "failsafe_ok": False, "lists": None,
+    "configured_rule_count": None, "expected_rule_count": None,
 }
 
 
@@ -269,6 +270,37 @@ class IpTrustPhonevoxCommandTest(MainTestCase):
 
 
 class StatusCommandTest(MainTestCase):
+    # pedido ao vivo: "rodando/sincronizado" ficava escondido no meio de
+    # outras linhas -- resumo grande, uma linha só, no topo, bem visível.
+    def test_shows_ativo_when_engine_active_and_synced(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=True,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("está: ativo", result.output.lower())
+
+    def test_shows_inativo_when_engine_is_not_active(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=False, synced=True,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("está: inativo", result.output.lower())
+
+    def test_shows_inativo_when_not_synced_even_if_engine_is_active(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=False,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("está: inativo", result.output.lower())
+
+    def test_shows_configured_over_expected_rule_counter_when_available(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=True, rule_count=5,
+            configured_rule_count=4, expected_rule_count=6,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("4/6", result.output)
+
     def test_shows_synced_state_without_success_wording(self):
         # status é consulta, não ação -- "sucesso!"/"falha!" não fazem
         # sentido aqui (usava widgets.success/failed antes, corrigido pra

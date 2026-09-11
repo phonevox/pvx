@@ -59,6 +59,15 @@ def insert_failsafe(zone, ip):
     return _rich_rule_present(zone, rule, permanent=True)
 
 
+def expected_rule_count(ip_accept, ip_deny, port_accept, port_deny):
+    # espelha a expansão real de sync() (port_rule_args) -- 1 regra por IP +
+    # 1 pro icmp, mas uma porta sem protocolo explícito vira 2 (tcp + udp).
+    total = len(ip_accept) + len(ip_deny) + 1  # +1: rich-rule de icmp
+    for spec_str, _ in list(port_deny) + list(port_accept):
+        total += len(port_rule_args(parse_port_spec(spec_str)))
+    return total
+
+
 def count_rich_rules(zone):
     # zona pode nem existir ainda (antes do primeiro sync) -- não é erro,
     # só significa zero regras. runtime (não permanent) -- é o que está de

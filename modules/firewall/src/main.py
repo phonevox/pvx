@@ -61,7 +61,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.15"
+    version = "0.2.16"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -279,8 +279,15 @@ class FirewallModule(PvxModule):
             result = status_module.get_status(engine=engine, base_dir=_state_dir())
             engine_state = "ativo" if result["engine_active"] else "inativo"
             boot_state = "habilitado" if result["boot_persistent"] else "desabilitado"
+            # pedido ao vivo: "rodando/sincronizado" ficava escondido no meio de
+            # outras linhas -- um resumo grande, uma linha só, cor forte, é o
+            # primeiro (e talvez único) dado que o técnico realmente precisa ver.
+            up = result["engine_active"] and result["synced"]
 
             widgets.title("pvx > firewall > check")
+            widgets.state(f"O firewall do pvx está: {'ATIVO' if up else 'INATIVO'}", ok=up)
+            click.echo()
+
             widgets.section("Status")
             click.echo(f"  engine: {result['engine']} ({engine_state})")
             if result.get("firewalld_zone"):
@@ -291,6 +298,11 @@ class FirewallModule(PvxModule):
 
             if result["synced"]:
                 detail = f"sincronizado -- {result['rule_count']} regra(s) ativa(s)"
+                if result["expected_rule_count"] is not None:
+                    detail = (
+                        f"sincronizado -- {result['configured_rule_count']}/"
+                        f"{result['expected_rule_count']} regra(s) configurada(s)"
+                    )
                 widgets.state(detail, ok=True)
                 if result["session_ip"] and not result["failsafe_ok"]:
                     widgets.warning("IP da sessão atual sem failsafe confirmado, rode `apply` de novo")

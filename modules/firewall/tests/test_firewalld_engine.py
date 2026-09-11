@@ -118,6 +118,22 @@ class PortRuleArgsTest(unittest.TestCase):
         )
 
 
+class ExpectedRuleCountTest(unittest.TestCase):
+    def test_counts_ips_plus_one_rule_per_port_with_explicit_protocol(self):
+        result = fwd.expected_rule_count(
+            ip_accept=[("1.2.3.4", "")], ip_deny=[("5.6.7.8", "")],
+            port_accept=[("5060/udp", "SIP")], port_deny=[],
+        )
+        # 1 (ip_accept) + 1 (ip_deny) + 1 (icmp) + 1 (porta c/ protocolo)
+        self.assertEqual(result, 4)
+
+    def test_port_without_protocol_expands_to_two_rules(self):
+        result = fwd.expected_rule_count(
+            ip_accept=[], ip_deny=[], port_accept=[], port_deny=[("20-23", "")],
+        )
+        self.assertEqual(result, 3)  # icmp + tcp + udp
+
+
 class CountRichRulesTest(unittest.TestCase):
     @patch("firewalld_engine.subprocess.run")
     def test_counts_non_blank_lines(self, mock_run):

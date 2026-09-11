@@ -264,6 +264,23 @@ def check_firewall_asterisk_ips():
     )
 
 
+def check_firewall_synced():
+    # cross-módulo via CLI (mesmo padrão de autobackup/src/magnus_upload_ops.py,
+    # que já roda "pvx magnus backup export ...") -- nunca importa o código do
+    # firewall direto (módulo isolado), e reusa a lógica de verdade em vez de
+    # duplicar a contagem de regras de dois engines (iptables/firewalld) aqui.
+    try:
+        result = subprocess.run(["pvx", "firewall", "check"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return _result("Firewall", "warn", "não consegui checar se está sincronizado")
+    output = result.stdout.lower()
+    if "não sincronizado" in output:
+        return _result("Firewall", "warn", "não sincronizado -- rode `pvx firewall apply`")
+    if "sincronizado" in output:
+        return _result("Firewall", "ok", "sincronizado")
+    return _result("Firewall", "warn", "não consegui determinar se está sincronizado")
+
+
 def check_firewall_boot():
     try:
         result = subprocess.run(
@@ -287,6 +304,7 @@ CHECKS = (
     check_zabbix_audit_script,
     check_autobloqueador,
     check_firewall_boot,
+    check_firewall_synced,
     check_firewall_base_ips,
     check_firewall_asterisk_ips,
 )
