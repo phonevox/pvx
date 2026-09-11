@@ -61,7 +61,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.14"
+    version = "0.2.15"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -220,6 +220,24 @@ class FirewallModule(PvxModule):
             if not removed:
                 raise click.ClickException(f"{cidr} não está em nenhuma lista de IPs.")
             click.echo(f"{cidr} removido.")
+            if _is_interactive():
+                widgets.pause()
+
+        @ip_group.command(
+            name="trust-phonevox",
+            help="garante os IPs base da Phonevox na lista de confiáveis (upsert, nunca duplica).",
+        )
+        def ip_trust_phonevox_cmd():
+            _require_root()
+            added = []
+            for ip, comment in defaults.DEFAULT_LISTS["ip_accept"]:
+                if lists.add_entry(_list_path("ip_accept"), ip, comment, seed=defaults.DEFAULT_LISTS["ip_accept"]):
+                    added.append(ip)
+
+            if added:
+                click.echo(f"{len(added)} IP(s) adicionado(s) à lista de confiáveis: {', '.join(added)}")
+            else:
+                click.echo("nenhum IP novo -- todos já estavam na lista de confiáveis.")
             if _is_interactive():
                 widgets.pause()
 

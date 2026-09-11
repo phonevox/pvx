@@ -238,6 +238,36 @@ class IpTrustAsteriskCommandTest(MainTestCase):
         self.assertEqual(listing.output.count("198.51.100.9"), 1)
 
 
+class IpTrustPhonevoxCommandTest(MainTestCase):
+    # achado ao vivo: técnico rodou `ip accept <cliente>` numa central sem
+    # ip_accept.conf ainda -- sobrescreveu tudo, só sobrou o IP do cliente.
+    # Esse comando é o "conserto de um passo": upsert dos IPs base, nunca
+    # duplica, nunca mexe no que já tem (cliente/asterisk/etc. continuam lá).
+    def test_adds_every_base_ip(self):
+        result = self._invoke(["ip", "trust-phonevox"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
+
+    def test_keeps_entries_added_before_it_ran(self):
+        self._invoke(["ip", "accept", "45.162.8.0/24", "--comment", "cliente"])
+        result = self._invoke(["ip", "trust-phonevox"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("45.162.8.0/24", listing.output)
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
+
+    def test_is_idempotent_does_not_duplicate(self):
+        self._invoke(["ip", "trust-phonevox"])
+        result = self._invoke(["ip", "trust-phonevox"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum ip novo", result.output.lower())
+        listing = self._invoke(["ip", "list"])
+        self.assertEqual(listing.output.count("127.0.0.1"), 1)
+
+
 class StatusCommandTest(MainTestCase):
     def test_shows_synced_state_without_success_wording(self):
         # status é consulta, não ação -- "sucesso!"/"falha!" não fazem
