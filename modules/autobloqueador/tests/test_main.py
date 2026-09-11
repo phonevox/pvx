@@ -59,11 +59,20 @@ class InstallCommandTest(unittest.TestCase):
         )
 
     def test_headless_requires_crypted_key_file(self):
-        result, mocks = self._invoke([
-            "install", "--url-base", "x.com", "--type", "pabx", "--code", "c1",
-        ])
+        with patch("main.autobloqueador_ops.register", side_effect=ops.AutobloqueadorError("falha de rede: boom")):
+            result, mocks = self._invoke([
+                "install", "--url-base", "x.com", "--type", "pabx", "--code", "c1",
+            ])
         self.assertNotEqual(result.exit_code, 0)
         mocks["save_config"].assert_not_called()
+
+    def test_headless_automatic_registration_needs_no_crypted_key_file(self):
+        with patch("main.autobloqueador_ops.register", return_value="chave-automatica"):
+            result, mocks = self._invoke([
+                "install", "--url-base", "x.com", "--type", "pabx", "--code", "c1",
+            ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["save_config"].assert_called_once_with("https://x.com", "pabx", "c1", "chave-automatica")
 
     def test_explicit_empty_url_base_is_a_clean_error_not_a_crash(self):
         result, mocks = self._invoke([
@@ -117,7 +126,10 @@ class InstallCommandTest(unittest.TestCase):
         mocks["install_timer"].assert_called_once()
 
     def test_interactive_prompts_for_missing_fields_and_the_pasted_key(self):
-        with patch("main.ask_text", return_value="c1"), \
+        # register() simula falha -- só assim cai pro fluxo manual de colar
+        # a key, que é o que este teste quer exercitar.
+        with patch("main.autobloqueador_ops.register", side_effect=ops.AutobloqueadorError("falha de rede: boom")), \
+             patch("main.ask_text", return_value="c1"), \
              patch("main.ask_select", return_value="PABX (Asterisk)"), \
              patch("main.ask_password", return_value="chave-colada"):
             result, mocks = self._invoke(["install"], is_tty=True)
@@ -125,9 +137,24 @@ class InstallCommandTest(unittest.TestCase):
         mocks["save_config"].assert_called_once_with(
             "https://auto-blocker.falevox.com.br", "pabx", "c1", "chave-colada",
         )
+        self.assertIn("falha de rede: boom", result.output)
+
+    def test_automatic_registration_skips_the_manual_paste_prompt(self):
+        with patch("main.autobloqueador_ops.register", return_value="chave-automatica") as mock_register, \
+             patch("main.ask_text", return_value="c1"), \
+             patch("main.ask_select", return_value="PABX (Asterisk)"), \
+             patch("main.ask_password") as mock_ask_password:
+            result, mocks = self._invoke(["install"], is_tty=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_ask_password.assert_not_called()
+        mocks["save_config"].assert_called_once_with(
+            "https://auto-blocker.falevox.com.br", "pabx", "c1", "chave-automatica",
+        )
+        mock_register.assert_called_once_with("https://auto-blocker.falevox.com.br", "pabx", "c1")
 
     def test_code_prompt_for_pabx_asks_about_contract_id(self):
-        with patch("main.ask_text", return_value="c1") as mock_text, \
+        with patch("main.autobloqueador_ops.register", side_effect=ops.AutobloqueadorError("falha de rede: boom")), \
+             patch("main.ask_text", return_value="c1") as mock_text, \
              patch("main.ask_select", return_value="PABX (Asterisk)"), \
              patch("main.ask_password", return_value="chave"):
             self._invoke(["install"], is_tty=True)
@@ -135,7 +162,8 @@ class InstallCommandTest(unittest.TestCase):
         self.assertIn("ID do contrato a ser monitorado", prompt)
 
     def test_code_prompt_for_opa_asks_about_opasuite_key(self):
-        with patch("main.ask_text", return_value="c1") as mock_text, \
+        with patch("main.autobloqueador_ops.register", side_effect=ops.AutobloqueadorError("falha de rede: boom")), \
+             patch("main.ask_text", return_value="c1") as mock_text, \
              patch("main.ask_select", return_value="OPA (PM2)"), \
              patch("main.ask_password", return_value="chave"):
             self._invoke(["install"], is_tty=True)
@@ -143,7 +171,8 @@ class InstallCommandTest(unittest.TestCase):
         self.assertIn("Chave do Opa!Suite a ser monitorado", prompt)
 
     def test_escaping_the_key_paste_prompt_aborts_cleanly(self):
-        with patch("main.ask_text", return_value="c1"), \
+        with patch("main.autobloqueador_ops.register", side_effect=ops.AutobloqueadorError("falha de rede: boom")), \
+             patch("main.ask_text", return_value="c1"), \
              patch("main.ask_select", return_value="PABX (Asterisk)"), \
              patch("main.ask_password", return_value=None):
             result, mocks = self._invoke(["install"], is_tty=True)

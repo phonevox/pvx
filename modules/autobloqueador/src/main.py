@@ -76,7 +76,20 @@ def _resolve_code(code, type_, interactive):
     return code
 
 
+def _obtain_crypted_key(url_base, type_, code, interactive):
+    try:
+        crypted_key = autobloqueador_ops.register(url_base, type_, code)
+    except autobloqueador_ops.AutobloqueadorError as e:
+        widgets.warning(f"registro automático falhou ({e}) -- caindo pro fluxo manual.")
+    else:
+        widgets.success("registro automático concluído.")
+        return crypted_key
+    return _prompt_for_crypted_key(url_base, type_, code, interactive)
+
+
 def _prompt_for_crypted_key(url_base, type_, code, interactive):
+    # só chega aqui se o registro automático (_obtain_crypted_key) falhou --
+    # fallback manual, comando pra colar numa máquina de rede permitida.
     linux, windows = autobloqueador_ops.register_curl_commands(url_base, type_, code)
     click.echo()
     click.echo(_NETWORK_WARNING)
@@ -136,7 +149,7 @@ def _run_install(logger, url_base, type_, code, crypted_key_file, pvx_bin, inter
 
         crypted_key = _read_password_file(crypted_key_file)
         if crypted_key is None:
-            crypted_key = _prompt_for_crypted_key(url_base, type_, code, interactive)
+            crypted_key = _obtain_crypted_key(url_base, type_, code, interactive)
             if crypted_key is None:
                 return
 
@@ -181,7 +194,7 @@ def _run_reconfig(logger, type_, code, crypted_key_file, interactive):
 
     crypted_key = _read_password_file(crypted_key_file)
     if crypted_key is None:
-        crypted_key = _prompt_for_crypted_key(existing["url_base"], type_, code, interactive)
+        crypted_key = _obtain_crypted_key(existing["url_base"], type_, code, interactive)
         if crypted_key is None:
             return
 
@@ -276,7 +289,7 @@ def _run_remove(logger, delete_config, interactive):
 
 class AutobloqueadorModule(PvxModule):
     name = "autobloqueador"
-    version = "0.1.5"
+    version = "0.1.8"
 
     def cli_group(self):
         @click.group(name="autobloqueador")
