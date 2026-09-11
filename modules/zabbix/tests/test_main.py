@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from click.testing import CliRunner
 
@@ -62,12 +62,12 @@ class InstallHappyPathTest(MainTestCase):
     def test_installs_agent2_by_default(self):
         result, mocks = self._invoke(BASE_INSTALL_ARGS)
         self.assertEqual(result.exit_code, 0, result.output)
-        mocks["agent"].assert_called_once_with("zabbix-agent2")
+        mocks["agent"].assert_called_once_with("zabbix-agent2", logger=ANY)
 
     def test_selects_classic_agent_via_flag(self):
         result, mocks = self._invoke(BASE_INSTALL_ARGS + ["--agent-version", "agent"])
         self.assertEqual(result.exit_code, 0, result.output)
-        mocks["agent"].assert_called_once_with("zabbix-agent")
+        mocks["agent"].assert_called_once_with("zabbix-agent", logger=ANY)
 
     def test_server_active_defaults_to_server_when_not_given(self):
         result, mocks = self._invoke(BASE_INSTALL_ARGS)
@@ -236,7 +236,7 @@ class LegacyInstallDetectionTest(MainTestCase):
             BASE_INSTALL_ARGS + ["--agent-version", "agent2"], is_tty=False, existing_agent="zabbix-agent",
         )
         self.assertEqual(result.exit_code, 0, result.output)
-        mocks["remove_agent"].assert_called_once_with("zabbix-agent")
+        mocks["remove_agent"].assert_called_once_with("zabbix-agent", logger=ANY)
 
     def test_does_not_remove_the_package_when_reinstalling_the_same_variant(self):
         result, mocks = self._invoke(
@@ -362,8 +362,8 @@ class RemoveCommandTest(MainTestCase):
              patch("main.sudoers.remove") as mock_sudoers_remove:
             result, mocks = self._invoke(["remove", "--yes"])
         self.assertEqual(result.exit_code, 0, result.output)
-        mock_stop.assert_called_once_with("zabbix-agent2")
-        mocks["remove_agent"].assert_called_once_with("zabbix-agent2")
+        mock_stop.assert_called_once_with("zabbix-agent2", logger=ANY)
+        mocks["remove_agent"].assert_called_once_with("zabbix-agent2", logger=ANY)
         mock_remove_deployed.assert_called_once_with(defaults.PVX_SCRIPTS_DIR, "audit")
         mock_sudoers_remove.assert_called_once_with(defaults.SUDOERS_FILE)
         self.assertFalse((self._state_dir / "agent_variant.txt").exists())

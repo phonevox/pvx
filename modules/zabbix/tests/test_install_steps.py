@@ -16,25 +16,37 @@ class InstallRepoTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_installs_the_repo_rpm(self, mock_run_cmd):
         self.assertTrue(install_steps.install_repo("5.0", "8"))
-        mock_run_cmd.assert_called_once_with([
-            "yum", "install", "-y",
-            "https://repo.zabbix.com/zabbix/5.0/rhel/8/x86_64/zabbix-release-latest.el8.noarch.rpm",
-        ])
+        url = "https://repo.zabbix.com/zabbix/5.0/rhel/8/x86_64/zabbix-release-latest.el8.noarch.rpm"
+        mock_run_cmd.assert_called_once_with(
+            ["yum", "install", "-y", url], logger=None, action=f"instalar repositório ({url})",
+        )
+
+    @patch("install_steps.os_ops.run_cmd", return_value=False)
+    def test_forwards_the_logger_so_a_real_failure_reason_reaches_pvx_logs(self, mock_run_cmd):
+        logger = MagicMock()
+        install_steps.install_repo("5.0", "8", logger=logger)
+        self.assertEqual(mock_run_cmd.call_args.kwargs["logger"], logger)
 
 
 class InstallAgentTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_installs_the_given_package(self, mock_run_cmd):
         self.assertTrue(install_steps.install_agent("zabbix-agent2"))
-        mock_run_cmd.assert_called_once_with(["yum", "install", "-y", "zabbix-agent2"])
+        mock_run_cmd.assert_called_once_with(
+            ["yum", "install", "-y", "zabbix-agent2"], logger=None, action="instalar zabbix-agent2",
+        )
 
 
 class EnableAndStartTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_enables_then_restarts_the_service(self, mock_run_cmd):
         self.assertTrue(install_steps.enable_and_start("zabbix-agent2"))
-        mock_run_cmd.assert_any_call(["systemctl", "enable", "zabbix-agent2"])
-        mock_run_cmd.assert_any_call(["systemctl", "restart", "zabbix-agent2"])
+        mock_run_cmd.assert_any_call(
+            ["systemctl", "enable", "zabbix-agent2"], logger=None, action="habilitar zabbix-agent2",
+        )
+        mock_run_cmd.assert_any_call(
+            ["systemctl", "restart", "zabbix-agent2"], logger=None, action="reiniciar zabbix-agent2",
+        )
 
     @patch("install_steps.os_ops.run_cmd")
     def test_returns_false_when_restart_fails_even_if_enable_worked(self, mock_run_cmd):
@@ -46,8 +58,12 @@ class DisableAndStopTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_stops_then_disables_the_service(self, mock_run_cmd):
         install_steps.disable_and_stop("zabbix-agent2")
-        mock_run_cmd.assert_any_call(["systemctl", "stop", "zabbix-agent2"])
-        mock_run_cmd.assert_any_call(["systemctl", "disable", "zabbix-agent2"])
+        mock_run_cmd.assert_any_call(
+            ["systemctl", "stop", "zabbix-agent2"], logger=None, action="parar zabbix-agent2",
+        )
+        mock_run_cmd.assert_any_call(
+            ["systemctl", "disable", "zabbix-agent2"], logger=None, action="desabilitar zabbix-agent2",
+        )
 
 
 class DetectExistingAgentTest(unittest.TestCase):
@@ -70,7 +86,9 @@ class RemoveAgentTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_removes_the_given_package(self, mock_run_cmd):
         self.assertTrue(install_steps.remove_agent("zabbix-agent"))
-        mock_run_cmd.assert_called_once_with(["yum", "remove", "-y", "zabbix-agent"])
+        mock_run_cmd.assert_called_once_with(
+            ["yum", "remove", "-y", "zabbix-agent"], logger=None, action="remover zabbix-agent",
+        )
 
 
 class ServiceStatusTest(unittest.TestCase):
