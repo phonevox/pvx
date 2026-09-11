@@ -188,10 +188,15 @@ def install_control_panel(pyz_path):
 
 
 def _sync_fop2_secret():
+    # achado ao vivo: o resultado desse script era descartado -- o usuário AMI
+    # "fop2" às vezes não era criado numa instalação real, e só aparecia horas
+    # depois nos logs do Asterisk ("tried to authenticate with nonexistent
+    # user 'fop2'"), sem relação óbvia com o netinstall. True aqui = "nada
+    # pra sincronizar" (script nem instalado), não "deu certo".
     script = "/usr/local/fop2/create_fop2_manager_user.pl"
     if not (os.path.exists(script) and os.access(script, os.X_OK)):
-        return
-    os_ops.run_cmd([script])
+        return True
+    return os_ops.run_cmd([script])
 
 
 def set_passwords(sql_password, web_password):
@@ -202,5 +207,7 @@ def set_passwords(sql_password, web_password):
         # aviso nenhum (achado investigando o chan_sip não carregar numa instalação real).
         raise RuntimeError("issabel-admin-passwords --cli init falhou -- senhas/sip.conf não foram configurados.")
     # --cli init nunca roda o equivalente a action_changeFop2() (só o dialog legado
-    # roda) -- sem isto o fop2.cfg fica com a senha AMI de fábrica.
-    _sync_fop2_secret()
+    # roda) -- sem isto o fop2.cfg fica com a senha AMI de fábrica. Não fatal (o
+    # resto do PBX funciona sem o FOP2 sincronizado), mas devolve o resultado pro
+    # chamador poder avisar em vez de esconder.
+    return _sync_fop2_secret()

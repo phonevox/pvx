@@ -301,7 +301,7 @@ class InstallControlPanelTest(unittest.TestCase):
 
 
 class SetPasswordsTest(unittest.TestCase):
-    @patch("install_steps._sync_fop2_secret")
+    @patch("install_steps._sync_fop2_secret", return_value=True)
     @patch("install_steps.os_ops.run_cmd", return_value=True)
     def test_runs_admin_passwords_cli_then_syncs_fop2(self, mock_run_cmd, mock_fop2):
         install_steps.set_passwords("sqlpw", "webpw")
@@ -310,6 +310,11 @@ class SetPasswordsTest(unittest.TestCase):
         self.assertIn("sqlpw", admin_calls[0].args[0])
         self.assertIn("webpw", admin_calls[0].args[0])
         mock_fop2.assert_called_once()
+
+    @patch("install_steps._sync_fop2_secret", return_value=False)
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    def test_returns_the_fop2_sync_result_instead_of_hiding_it(self, mock_run_cmd, mock_fop2):
+        self.assertFalse(install_steps.set_passwords("sqlpw", "webpw"))
 
     @patch("install_steps._sync_fop2_secret")
     @patch("install_steps.os_ops.run_cmd", return_value=False)
@@ -383,14 +388,26 @@ class SyncFop2SecretTest(unittest.TestCase):
     @patch("install_steps.os.access", return_value=True)
     @patch("install_steps.os.path.exists", return_value=True)
     def test_runs_script_when_present(self, mock_exists, mock_access, mock_run_cmd):
-        install_steps._sync_fop2_secret()
+        result = install_steps._sync_fop2_secret()
         mock_run_cmd.assert_called_once_with(["/usr/local/fop2/create_fop2_manager_user.pl"])
+        self.assertTrue(result)
 
     @patch("install_steps.os_ops.run_cmd")
     @patch("install_steps.os.path.exists", return_value=False)
     def test_no_op_when_script_absent(self, mock_exists, mock_run_cmd):
-        install_steps._sync_fop2_secret()
+        result = install_steps._sync_fop2_secret()
         mock_run_cmd.assert_not_called()
+        self.assertTrue(result)  # não instalado não é falha -- nada a sincronizar.
+
+    @patch("install_steps.os_ops.run_cmd", return_value=False)
+    @patch("install_steps.os.access", return_value=True)
+    @patch("install_steps.os.path.exists", return_value=True)
+    def test_propagates_failure_instead_of_hiding_it(self, mock_exists, mock_access, mock_run_cmd):
+        # achado ao vivo: o resultado desse script era descartado -- o usuário AMI
+        # "fop2" nunca era criado numa instalação real, e só se via nos logs do
+        # Asterisk horas depois ("tried to authenticate with nonexistent user
+        # 'fop2'"), sem relação óbvia com o netinstall.
+        self.assertFalse(install_steps._sync_fop2_secret())
 
 
 if __name__ == "__main__":
