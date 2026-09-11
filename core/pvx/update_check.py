@@ -32,14 +32,10 @@ def _core_notice():
     except (urllib.error.URLError, OSError, ValueError):
         return None
 
-    # pvx_version.__version__ (não um "from ... import __version__" solto) --
-    # achado ao vivo: um self-update no meio de uma sessão longa (menu
-    # interativo nunca reinicia) trocava o core.pyz em disco, mas um nome já
-    # importado por valor ficava preso na versão ANTIGA pro resto do
-    # processo -- o banner dizia "desatualizado" segundos depois de um
-    # self-update bem-sucedido. self_update.py dá reload() em pvx.version;
-    # só funciona se aqui a gente ler o atributo do módulo, não uma cópia.
-    current = pvx_version.__version__
+    # installed_version() lê o .pyz em disco, não __version__ em memória --
+    # esse último fica preso na versão antiga num self-update no meio de
+    # uma sessão longa (menu interativo), fazendo o banner mentir "desatualizado".
+    current = pvx_version.installed_version()
     current_v = _parse_version(current)
     latest_v = _parse_version(latest)
     # mesma regra de listing._status(): instalado à frente do registry (ex.:

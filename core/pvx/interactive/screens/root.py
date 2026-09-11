@@ -32,12 +32,9 @@ def _core_logger():
 
 
 def _show_version():
-    # pvx_version.__version__ lido do módulo, não copiado por valor -- achado
-    # ao vivo: um self-update no meio da sessão trocava o core.pyz em disco,
-    # mas um nome já importado por "from ... import __version__" ficava preso
-    # na versão ANTIGA pro resto do processo (self_update.py dá reload() em
-    # pvx.version; só ajuda se aqui a gente ler o atributo do módulo).
-    current = pvx_version.__version__
+    # installed_version() lê o .pyz em disco -- __version__ em memória fica
+    # preso na versão antiga depois de um self-update na mesma sessão.
+    current = pvx_version.installed_version()
     channel = build_info.describe()
     version_string = f"{current} ({channel})" if channel else current
     widgets.message(f"pvx {version_string}")
