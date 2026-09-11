@@ -214,13 +214,13 @@ class FirewallBaseIpsCheckTest(unittest.TestCase):
 
 class FirewallSyncedCheckTest(unittest.TestCase):
     def test_ok_when_synced(self):
-        fake_result = MagicMock(stdout="sincronizado -- 4/6 regra(s) configurada(s)")
+        fake_result = MagicMock(stdout="  status: ativo -- 4/6 regra(s) configurada(s)")
         with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
             result = checklist_phonevox.check_firewall_synced()
         self.assertEqual(result["level"], "ok")
 
     def test_warns_when_not_synced(self):
-        fake_result = MagicMock(stdout="não sincronizado -- rode `pvx firewall apply`")
+        fake_result = MagicMock(stdout="  status: inativo")
         with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
             result = checklist_phonevox.check_firewall_synced()
         self.assertEqual(result["level"], "warn")

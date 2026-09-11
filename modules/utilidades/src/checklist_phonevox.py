@@ -272,13 +272,13 @@ def check_firewall_synced():
     try:
         result = subprocess.run(["pvx", "firewall", "check"], capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.SubprocessError):
-        return _result("Firewall", "warn", "não consegui checar se está sincronizado")
+        return _result("Firewall", "warn", "não consegui checar se está ativo/sincronizado")
     output = result.stdout.lower()
-    if "não sincronizado" in output:
-        return _result("Firewall", "warn", "não sincronizado -- rode `pvx firewall apply`")
-    if "sincronizado" in output:
-        return _result("Firewall", "ok", "sincronizado")
-    return _result("Firewall", "warn", "não consegui determinar se está sincronizado")
+    if "status: ativo" in output:
+        return _result("Firewall", "ok", "ativo e sincronizado")
+    if "status: inativo" in output:
+        return _result("Firewall", "warn", "inativo/não sincronizado -- rode `pvx firewall apply`")
+    return _result("Firewall", "warn", "não consegui determinar o status")
 
 
 def check_firewall_boot():

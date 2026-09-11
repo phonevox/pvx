@@ -277,21 +277,32 @@ class StatusCommandTest(MainTestCase):
             BASE_STATUS, engine_active=True, synced=True,
         )):
             result = self._invoke(["check"])
-        self.assertIn("está: ativo", result.output.lower())
+        self.assertIn("status: ativo", result.output.lower())
 
     def test_shows_inativo_when_engine_is_not_active(self):
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, engine_active=False, synced=True,
         )):
             result = self._invoke(["check"])
-        self.assertIn("está: inativo", result.output.lower())
+        self.assertIn("status: inativo", result.output.lower())
 
     def test_shows_inativo_when_not_synced_even_if_engine_is_active(self):
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, engine_active=True, synced=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("está: inativo", result.output.lower())
+        self.assertIn("status: inativo", result.output.lower())
+
+    def test_status_line_comes_right_after_the_status_section_header(self):
+        # pedido ao vivo: a linha de status/contador ficava avulsa, longe da
+        # seção "Status" -- agora é a primeira linha de dentro dela.
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=True,
+        )):
+            result = self._invoke(["check"])
+        lines = [line for line in result.output.splitlines() if line.strip()]
+        section_index = next(i for i, line in enumerate(lines) if "status" in line.lower())
+        self.assertIn("status:", lines[section_index + 1].lower())
 
     def test_shows_configured_over_expected_rule_counter_when_available(self):
         with patch("main.status_module.get_status", return_value=dict(
@@ -306,12 +317,11 @@ class StatusCommandTest(MainTestCase):
         # sentido aqui (usava widgets.success/failed antes, corrigido pra
         # widgets.state: só cor, sem rótulo de ação).
         with patch("main.status_module.get_status", return_value=dict(
-            BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=True,
+            BASE_STATUS, engine_active=True, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=True,
         )):
             result = self._invoke(["check"])
         self.assertIn("iptables", result.output)
-        self.assertIn("sincronizado", result.output.lower())
-        self.assertNotIn("não sincronizado", result.output.lower())
+        self.assertIn("status: ativo", result.output.lower())
         self.assertNotIn("sucesso", result.output.lower())
 
     def test_shows_not_synced_state_without_failure_wording(self):
@@ -319,7 +329,7 @@ class StatusCommandTest(MainTestCase):
             BASE_STATUS, rule_count=0, session_ip="203.0.113.9", synced=False, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("não sincronizado", result.output.lower())
+        self.assertIn("status: inativo", result.output.lower())
         self.assertNotIn("falha", result.output.lower())
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
@@ -329,10 +339,10 @@ class StatusCommandTest(MainTestCase):
         # não repete a palavra "aviso" quando um detail é passado -- o símbolo
         # já é quem sinaliza isso, não mais uma palavra solta.
         with patch("main.status_module.get_status", return_value=dict(
-            BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
+            BASE_STATUS, engine_active=True, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("sincronizado", result.output.lower())
+        self.assertIn("status: ativo", result.output.lower())
         self.assertIn("failsafe", result.output.lower())
 
 
