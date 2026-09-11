@@ -74,6 +74,96 @@ class RegisterCurlCommandsTest(unittest.TestCase):
         self.assertIn('-d "{\\"type\\": \\"pabx\\", \\"code\\": \\"c1\\"}"', windows)
 
 
+class RegisterTest(unittest.TestCase):
+    def _mock_response(self, mock_urlopen, body):
+        import json
+        mock_urlopen.return_value.__enter__.return_value.read.return_value = json.dumps(body).encode()
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_returns_the_crypted_key_on_success(self, mock_urlopen):
+        self._mock_response(mock_urlopen, {"success": True, "crypted_key": "abc123"})
+        self.assertEqual(ops.register("https://x.com", "pabx", "c1"), "abc123")
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_sends_a_post_with_the_json_payload(self, mock_urlopen):
+        import json
+        self._mock_response(mock_urlopen, {"success": True, "crypted_key": "abc123"})
+        ops.register("https://x.com", "pabx", "c1")
+        request = mock_urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://x.com/register")
+        self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(json.loads(request.data), {"type": "pabx", "code": "c1"})
+
+    @patch("autobloqueador_ops.urllib.request.urlopen", side_effect=urllib.error.URLError("no route"))
+    def test_raises_with_the_reason_on_network_failure(self, mock_urlopen):
+        # achado ao vivo: falha automática silenciosa (só cai pro manual sem
+        # dizer por quê) é impossível de diagnosticar numa central real --
+        # o motivo precisa aparecer pro técnico.
+        with self.assertRaises(ops.AutobloqueadorError) as ctx:
+            ops.register("https://x.com", "pabx", "c1")
+        self.assertIn("no route", str(ctx.exception))
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_raises_when_success_is_false(self, mock_urlopen):
+        self._mock_response(mock_urlopen, {"success": False})
+        with self.assertRaises(ops.AutobloqueadorError):
+            ops.register("https://x.com", "pabx", "c1")
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_raises_on_invalid_json(self, mock_urlopen):
+        mock_urlopen.return_value.__enter__.return_value.read.return_value = b"not json"
+        with self.assertRaises(ops.AutobloqueadorError):
+            ops.register("https://x.com", "pabx", "c1")
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_raises_when_response_has_no_crypted_key(self, mock_urlopen):
+        self._mock_response(mock_urlopen, {"success": True})
+        with self.assertRaises(ops.AutobloqueadorError):
+            ops.register("https://x.com", "pabx", "c1")
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_follows_a_308_redirect_and_resends_the_post(self, mock_urlopen):
+        # achado ao vivo: o endpoint real responde 308 (domínio interno) --
+        # o HTTPRedirectHandler padrão do urllib recusa de propósito
+        # reenviar um POST em 307/308 (só GET/HEAD), diferente do "curl -L"
+        # manual, que sempre resubmete. register() segue na mão.
+        import json as json_module
+        success = Mock()
+        success.__enter__ = Mock(return_value=success)
+        success.__exit__ = Mock(return_value=False)
+        success.read.return_value = json_module.dumps({"success": True, "crypted_key": "abc123"}).encode()
+        redirect = urllib.error.HTTPError(
+            "https://x.com/register", 308, "Permanent Redirect",
+            {"Location": "https://interno.example.com/register"}, None,
+        )
+        mock_urlopen.side_effect = [redirect, success]
+
+        result = ops.register("https://x.com", "pabx", "c1")
+
+        self.assertEqual(result, "abc123")
+        second_request = mock_urlopen.call_args.args[0]
+        self.assertEqual(second_request.full_url, "https://interno.example.com/register")
+        self.assertEqual(second_request.get_method(), "POST")
+        self.assertEqual(json_module.loads(second_request.data), {"type": "pabx", "code": "c1"})
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_raises_when_redirected_without_a_location_header(self, mock_urlopen):
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            "https://x.com/register", 308, "Permanent Redirect", {}, None,
+        )
+        with self.assertRaises(ops.AutobloqueadorError):
+            ops.register("https://x.com", "pabx", "c1")
+
+    @patch("autobloqueador_ops.urllib.request.urlopen")
+    def test_gives_up_after_too_many_redirects(self, mock_urlopen):
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            "https://x.com/register", 308, "Permanent Redirect", {"Location": "https://x.com/register"}, None,
+        )
+        with self.assertRaises(ops.AutobloqueadorError):
+            ops.register("https://x.com", "pabx", "c1")
+        self.assertEqual(mock_urlopen.call_count, ops._MAX_REGISTER_REDIRECTS)
+
+
 class FindPm2Test(unittest.TestCase):
     @patch("autobloqueador_ops.shutil.which", return_value="/opt/bin/pm2")
     def test_prefers_which(self, mock_which):

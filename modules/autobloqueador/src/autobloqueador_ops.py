@@ -101,14 +101,59 @@ def validate_code(value):
 
 
 def register_curl_commands(base_url, type_, code):
-    # comando gerado pra ser colado e executado numa máquina de rede
-    # permitida (VPN/interna) -- nunca disparado daqui (ver main.py).
+    # comando gerado pra o técnico colar manualmente quando register() (a
+    # tentativa automática) falha -- fallback, não o caminho normal.
     url = f"{base_url}/register"
     payload = json.dumps({"type": type_, "code": code})
     linux = f"""curl -L -X POST "{url}" -H "Content-Type: application/json" -d '{payload}'"""
     windows_payload = payload.replace('"', '\\"')
     windows = f'curl -L -X POST "{url}" -H "Content-Type: application/json" -d "{windows_payload}"'
     return linux, windows
+
+
+_MAX_REGISTER_REDIRECTS = 5
+
+
+def register(base_url, type_, code, timeout=10):
+    # tenta registrar sozinho, direto do módulo -- só cai pro fluxo manual
+    # (register_curl_commands, colado pelo técnico) se isso falhar de
+    # qualquer jeito. Levanta AutobloqueadorError (em vez de devolver None
+    # em silêncio) porque um "não automatizou" sem motivo é impossível de
+    # diagnosticar numa central real -- achado ao vivo.
+    #
+    # segue 307/308 na mão: o HTTPRedirectHandler padrão do urllib recusa
+    # de propósito reenviar um POST nesses códigos (só GET/HEAD -- RFC
+    # correto, mas diferente do "curl -L", que sempre resubmete o POST). O
+    # endpoint real redireciona com 308 (domínio interno), então sem isso
+    # register() sempre falhava onde o curl manual funcionava normal.
+    url = f"{base_url}/register"
+    payload = json.dumps({"type": type_, "code": code}).encode()
+    for _ in range(_MAX_REGISTER_REDIRECTS):
+        request = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                data = json.loads(response.read())
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (307, 308) and e.headers.get("Location"):
+                url = e.headers["Location"]
+                continue
+            raise AutobloqueadorError(f"falha de rede: {e}")
+        except (urllib.error.URLError, OSError) as e:
+            raise AutobloqueadorError(f"falha de rede: {e}")
+        except ValueError:
+            raise AutobloqueadorError("resposta não é um JSON válido.")
+    else:
+        raise AutobloqueadorError("redirecionamentos demais no /register.")
+
+    if not data.get("success"):
+        raise AutobloqueadorError(f"servidor recusou o registro: {data}")
+    crypted_key = data.get("crypted_key")
+    if not crypted_key:
+        raise AutobloqueadorError("resposta sem crypted_key.")
+    return crypted_key
 
 
 # --- checagem de status ---
