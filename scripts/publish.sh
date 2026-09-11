@@ -6,6 +6,12 @@ cd "$(dirname "$0")/.."
 MODULES_DIR="modules"
 STAGE_DIR="dist/registry"
 INDEX_URL="https://registry.phonevox.com.br/pvx/index.json"
+# achado ao vivo: quem roda publish.sh (via _auto-publish-registry.sh, cron
+# do Adrian) e quem lê o repo (Claude, em sessões futuras) não são o mesmo
+# processo -- sem isso, "publiquei tal versão" só existia na cabeça do
+# Adrian. Um arquivo local (nunca commitado, é só rastro de execução, não
+# histórico de projeto) resolve sem precisar perguntar "já publicou?".
+PUBLISH_LOG="scripts/.publish_log"
 
 # cores só em terminal de verdade e sem NO_COLOR -- printf (não $'...', que não
 # é POSIX) pra gerar o byte de escape, funciona em qualquer sh, não só bash.
@@ -55,6 +61,15 @@ EOF
 
 module_version() {
     python3 -c "import json; print(json.load(open('$MODULES_DIR/$1/manifest.json'))['version'])"
+}
+
+log_publish() {
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    line="$ts"
+    for m in $1; do
+        line="$line $m:$(module_version "$m")"
+    done
+    echo "$line" >> "$PUBLISH_LOG"
 }
 
 registry_version() {
@@ -267,6 +282,7 @@ cmd_publish() {
         sftp_put "$PUBLIC_PATH"
     fi
     printf '%s✓ publicado.%s\n' "$C_GREEN$C_BOLD" "$C_RESET"
+    log_publish "$modules"
 }
 
 # --- dispatch ---

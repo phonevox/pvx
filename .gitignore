@@ -17,6 +17,7 @@ modules/magnus/dist/
 /dist/
 .claude/settings.local.json
 scripts/_*
+scripts/.publish_log
 modules/autobloqueador/dist/
 modules/motd/dist/
 modules/ssl/dist/
