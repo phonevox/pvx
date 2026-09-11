@@ -31,10 +31,10 @@ def _pkg_install_or_raise(packages, on_line=None):
         raise RuntimeError(f"falha ao instalar pacote(s): {', '.join(failed)}")
 
 
-def add_repos(pyz_path):
-    _pkg_install_or_raise(["epel-release"])
+def add_repos(pyz_path, on_line=None):
+    _pkg_install_or_raise(["epel-release"], on_line=on_line)
     os_ops.run_cmd(["dnf", "makecache"])
-    _pkg_install_or_raise(["htop", "tmux"])
+    _pkg_install_or_raise(["htop", "tmux"], on_line=on_line)
     _disable_ipv6()
     # arquivos .repo vêm de DENTRO do próprio .pyz (ver assets.py) -- no host instalado só
     # module.pyz+manifest.json existem no diretório do módulo, nunca uma pasta config/ solta.
@@ -59,7 +59,7 @@ def _user_exists(name, passwd_path="/etc/passwd"):
     return any(line.startswith(f"{name}:") for line in content.splitlines())
 
 
-def prepare_system():
+def prepare_system(on_line=None):
     os_ops.run_cmd(["setenforce", "0"])
     _set_selinux_config_disabled()
     os_ops.run_cmd(["groupadd", "-f", "-r", "asterisk"])
@@ -68,13 +68,13 @@ def prepare_system():
             "useradd", "-r", "-g", "asterisk", "-c", "Asterisk PBX",
             "-s", "/bin/bash", "-d", "/var/lib/asterisk", "asterisk",
         ])
-    _pkg_install_or_raise(["issabel-config_helpers"])
+    _pkg_install_or_raise(["issabel-config_helpers"], on_line=on_line)
 
 
-def enable_php_remi(major):
+def enable_php_remi(major, on_line=None):
     # sem repo Remi + módulo php:remi-7.4, php-imap/php-mcrypt/php-tidy (e quem depende
     # deles, ex. php-PHPMailer/php-tcpdf) não existem no módulo php padrão do AppStream.
-    _pkg_install_or_raise([f"https://rpms.remirepo.net/enterprise/remi-release-{major}.rpm"])
+    _pkg_install_or_raise([f"https://rpms.remirepo.net/enterprise/remi-release-{major}.rpm"], on_line=on_line)
     os_ops.run_cmd(["dnf", "module", "reset", "php", "-y"])
     os_ops.run_cmd(["dnf", "module", "enable", "php:remi-7.4", "-y"])
     os_ops.run_cmd(["dnf", "config-manager", "--set-enabled", "remi"])

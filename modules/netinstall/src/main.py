@@ -74,6 +74,22 @@ def _run_step(logger, message, done_message, fn, *args):
     widgets.success(done_message)
 
 
+def _run_step_with_log(logger, message, done_message, fn, *args, tail=5, **kwargs):
+    # como _run_step, mas com as últimas linhas de saída do dnf visíveis ao vivo
+    # (docker-build-style) -- pedido ao vivo pras etapas que instalam pacote e
+    # antes ficavam mudas por vários minutos (repositórios, preparo do sistema,
+    # Remi/PHP), igual já valia só pra "Instalando pacotes".
+    logger.info(f"iniciando: {message}")
+    with widgets.step_with_log(message, tail=tail) as s:
+        try:
+            fn(*args, on_line=s.feed, **kwargs)
+        except Exception as e:
+            logger.error(f"falhou: {message} -- {e}")
+            raise
+    logger.info(f"concluído: {done_message}")
+    widgets.success(done_message)
+
+
 COFFEE_ART = r"""
                        .
                         `:.
@@ -147,28 +163,28 @@ def _run_issabel5(logger, flags, interactive):
     if web_pw is None:
         return
 
-    click.echo("Resumo:")
-    click.echo(f"  Asterisk: {astver}")
-    click.echo(f"  Pacotes extras: {', '.join(addpkgs_keys) or 'nenhum'}")
-    click.echo(f"  Tweaks: {', '.join(tweak_keys) or 'nenhum'}")
+    widgets.section("Resumo")
+    widgets.item(f"Asterisk: {astver}")
+    widgets.item(f"Pacotes extras: {', '.join(addpkgs_keys) or 'nenhum'}")
+    widgets.item(f"Tweaks: {', '.join(tweak_keys) or 'nenhum'}")
     if not flags["yes"] and not ask_confirm("Prosseguir com a instalação?", default=False):
-        click.echo("Operação cancelada.")
+        widgets.message("Operação cancelada.")
         return
 
     pyz_path = _pyz_path()
     major = preflight.version_major()
 
-    _run_step(
+    _run_step_with_log(
         logger,
         "Adicionando repositórios (epel, tmux/htop, Issabel 5)...", "Repositórios adicionados.",
         install_steps.add_repos, pyz_path,
     )
-    _run_step(
+    _run_step_with_log(
         logger,
         "Preparando o sistema (SELinux, usuário asterisk)...", "Sistema preparado.",
         install_steps.prepare_system,
     )
-    _run_step(
+    _run_step_with_log(
         logger,
         f"Habilitando repo Remi + módulo PHP (RHEL/Rocky {major})...", "Repo Remi + PHP habilitados.",
         install_steps.enable_php_remi, major,
@@ -176,17 +192,11 @@ def _run_issabel5(logger, flags, interactive):
     widgets.message("esta é a etapa mais demorada -- aproveita, relaxa e pega um café.")
     click.echo(COFFEE_ART)
     click.echo()
-    logger.info("iniciando: instalação de pacotes (base + Asterisk + Issabel)")
-    with widgets.step_with_log("Instalando pacotes (base + Asterisk + Issabel)...") as s:
-        try:
-            install_steps.install_packages(
-                astver, extra_packages, on_line=s.feed, skip_clean=flags["skip_clean"],
-            )
-        except Exception as e:
-            logger.error(f"falhou: instalação de pacotes -- {e}")
-            raise
-    logger.info("concluído: pacotes instalados")
-    widgets.success("Pacotes instalados.")
+    _run_step_with_log(
+        logger,
+        "Instalando pacotes (base + Asterisk + Issabel)...", "Pacotes instalados.",
+        install_steps.install_packages, astver, extra_packages, skip_clean=flags["skip_clean"],
+    )
     _run_step(
         logger,
         "Pós-instalação (mariadb, httpd, firewalld, asterisk)...", "Pós-instalação concluída.",
@@ -228,7 +238,7 @@ def _run_issabel5(logger, flags, interactive):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.22"
+    version = "0.1.24"
 
     def cli_group(self):
         @click.group(name="netinstall")

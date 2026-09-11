@@ -56,7 +56,7 @@ def _sync_scripts(entries, agent_variant):
 
 class ZabbixModule(PvxModule):
     name = "zabbix"
-    version = "0.2.2"
+    version = "0.2.5"
 
     def cli_group(self):
         @click.group(name="zabbix")
@@ -192,10 +192,17 @@ class ZabbixModule(PvxModule):
                 return
 
             with widgets.spinner("Adicionando repositório do Zabbix..."):
-                repo_ok = install_steps.install_repo(defaults.ZABBIX_VERSION, os_major)
+                # motivo real (stderr do yum) vai pro logger daqui -- a mensagem
+                # pro usuário fica limpa e genérica, mas `pvx logs zabbix`
+                # mostra o que de fato aconteceu (achado ao vivo: sem isso, um
+                # "falha ao adicionar" repetido nunca dava pra diagnosticar
+                # remotamente, só pedindo output cru pro usuário colar aqui).
+                repo_ok = install_steps.install_repo(defaults.ZABBIX_VERSION, os_major, logger=logger)
             if not repo_ok:
                 logger.error("falha ao adicionar o repositório do Zabbix.")
-                raise click.ClickException("falha ao adicionar o repositório do Zabbix.")
+                raise click.ClickException(
+                    "falha ao adicionar o repositório do Zabbix -- detalhes em `pvx logs zabbix`."
+                )
             widgets.success("Repositório adicionado.")
 
             package = defaults.AGENT_PACKAGES[agent_version]
@@ -203,14 +210,14 @@ class ZabbixModule(PvxModule):
                 # variante diferente da já instalada (ex.: trocando pzabbix/agent
                 # clássico por agent2) -- os dois disputariam a mesma porta 10050.
                 with widgets.spinner(f"Removendo {existing_package} antigo..."):
-                    install_steps.remove_agent(existing_package)
+                    install_steps.remove_agent(existing_package, logger=logger)
                 widgets.success(f"{existing_package} antigo removido.")
 
             with widgets.spinner(f"Instalando {package}..."):
-                agent_ok = install_steps.install_agent(package)
+                agent_ok = install_steps.install_agent(package, logger=logger)
             if not agent_ok:
                 logger.error(f"falha ao instalar {package}.")
-                raise click.ClickException(f"falha ao instalar {package}.")
+                raise click.ClickException(f"falha ao instalar {package} -- detalhes em `pvx logs zabbix`.")
             widgets.success(f"{package} instalado.")
 
             config_path = defaults.AGENT_CONFIG_PATHS[agent_version]
@@ -232,7 +239,7 @@ class ZabbixModule(PvxModule):
 
             service = defaults.AGENT_SERVICES[agent_version]
             with widgets.spinner("Reiniciando o serviço..."):
-                start_ok = install_steps.enable_and_start(service)
+                start_ok = install_steps.enable_and_start(service, logger=logger)
             if not start_ok:
                 logger.error(f"falha ao (re)iniciar {service}.")
                 raise click.ClickException(
@@ -274,10 +281,10 @@ class ZabbixModule(PvxModule):
                 return
 
             with widgets.spinner(f"Parando {service}..."):
-                install_steps.disable_and_stop(service)
+                install_steps.disable_and_stop(service, logger=logger)
 
             with widgets.spinner(f"Removendo {package}..."):
-                install_steps.remove_agent(package)
+                install_steps.remove_agent(package, logger=logger)
 
             state_path = str(_state_dir() / defaults.SCRIPTS_STATE_FILENAME)
             for key in scripts.list_all(state_path):

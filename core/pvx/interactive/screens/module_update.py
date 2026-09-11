@@ -2,13 +2,24 @@ from pvx import config, update_check
 from pvx.cli import discover_installed_modules
 from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_select
-from pvx.modules import installer
+from pvx.modules import installer, listing
 
 
 def update_modules(names):
     # extraído pra reuso -- pvx.interactive.screens.root usa isso direto pro
     # atalho "pvx > atualizar > tudo" (core + todos os módulos numa ação só).
+    try:
+        # achado ao vivo: reinstalava e anunciava "atualizado" pra TODO
+        # módulo selecionado, mesmo pros que já estavam na última versão.
+        outdated = listing.outdated_names(names, discover_installed_modules(), config.registry_index_url())
+    except RuntimeError as e:
+        widgets.failed(str(e))
+        return
+
     for name in names:
+        if name not in outdated:
+            widgets.message(f"{name} já está atualizado.")
+            continue
         try:
             with widgets.spinner(f"Atualizando {name}..."):
                 installer.install(name, config.registry_index_url())

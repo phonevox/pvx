@@ -75,8 +75,11 @@ class RootScreen:
         # RootScreen, então isso não atrapalha automação nenhuma. Cache
         # próprio (ver update_check.py) evita bater no registry a cada
         # redesenho do menu raiz.
-        for notice in update_check.pending_notices(modules):
+        notices = update_check.pending_notices(modules)
+        for notice in notices:
             widgets.warning(notice)
+        if notices:
+            click.echo()
 
         def indented(value, description=None):
             return questionary.Choice(title=f"  {value}", value=value, description=description)

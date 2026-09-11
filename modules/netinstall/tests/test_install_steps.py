@@ -93,6 +93,18 @@ class AddReposTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "epel-release"):
             install_steps.add_repos("/path/to/module.pyz")
 
+    @patch("install_steps.assets.extract_prefix", return_value=[])
+    @patch("install_steps._disable_ipv6")
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", return_value=[])
+    def test_forwards_on_line_to_both_package_lists(self, mock_pkg, mock_run_cmd, mock_ipv6, mock_extract):
+        # pedido ao vivo: essa etapa ficava muda por minutos -- mesmo log ao vivo
+        # (docker-build-style) que install_packages() já tinha, ver widgets.step_with_log().
+        on_line = lambda line: None
+        install_steps.add_repos("/path/to/module.pyz", on_line=on_line)
+        self.assertEqual(mock_pkg.call_args_list[0].kwargs, {"on_line": on_line})
+        self.assertEqual(mock_pkg.call_args_list[1].kwargs, {"on_line": on_line})
+
 
 class PrepareSystemTest(unittest.TestCase):
     @patch("install_steps.os_ops.pkg_install", return_value=[])
@@ -122,6 +134,15 @@ class PrepareSystemTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "issabel-config_helpers"):
             install_steps.prepare_system()
 
+    @patch("install_steps.os_ops.pkg_install", return_value=[])
+    @patch("install_steps._user_exists", return_value=True)
+    @patch("install_steps._set_selinux_config_disabled")
+    @patch("install_steps.os_ops.run_cmd")
+    def test_forwards_on_line(self, mock_run_cmd, mock_selinux, mock_exists, mock_pkg):
+        on_line = lambda line: None
+        install_steps.prepare_system(on_line=on_line)
+        self.assertEqual(mock_pkg.call_args.kwargs, {"on_line": on_line})
+
 
 class EnablePhpRemiTest(unittest.TestCase):
     @patch("install_steps.os_ops.run_cmd")
@@ -137,6 +158,13 @@ class EnablePhpRemiTest(unittest.TestCase):
     def test_raises_naming_the_package_when_it_fails(self, mock_pkg, mock_run_cmd):
         with self.assertRaisesRegex(RuntimeError, "remi-release-9"):
             install_steps.enable_php_remi(9)
+
+    @patch("install_steps.os_ops.run_cmd")
+    @patch("install_steps.os_ops.pkg_install", return_value=[])
+    def test_forwards_on_line(self, mock_pkg, mock_run_cmd):
+        on_line = lambda line: None
+        install_steps.enable_php_remi(9, on_line=on_line)
+        self.assertEqual(mock_pkg.call_args.kwargs, {"on_line": on_line})
 
 
 class InstallPackagesTest(unittest.TestCase):

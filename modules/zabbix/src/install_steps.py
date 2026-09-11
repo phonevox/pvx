@@ -10,22 +10,33 @@ def repo_rpm_url(zabbix_version, os_major):
     )
 
 
-def install_repo(zabbix_version, os_major):
-    return os_ops.run_cmd(["dnf", "install", "-y", repo_rpm_url(zabbix_version, os_major)])
+def install_repo(zabbix_version, os_major, logger=None):
+    # "yum", nunca "dnf": CentOS/RHEL 7 não tem dnf de jeito nenhum (achado ao
+    # vivo -- falhava direto, silencioso, com FileNotFoundError). RHEL/Rocky
+    # 8+ mantém "yum" como wrapper de compatibilidade pro dnf, então funciona
+    # nos dois sem precisar detectar o SO.
+    url = repo_rpm_url(zabbix_version, os_major)
+    return os_ops.run_cmd(
+        ["yum", "install", "-y", url], logger=logger, action=f"instalar repositório ({url})",
+        verify_cmd=["rpm", "-q", "zabbix-release"],
+    )
 
 
-def install_agent(package):
-    return os_ops.run_cmd(["dnf", "install", "-y", package])
+def install_agent(package, logger=None):
+    return os_ops.run_cmd(
+        ["yum", "install", "-y", package], logger=logger, action=f"instalar {package}",
+        verify_cmd=["rpm", "-q", package],
+    )
 
 
-def enable_and_start(service):
-    os_ops.run_cmd(["systemctl", "enable", service])
-    return os_ops.run_cmd(["systemctl", "restart", service])
+def enable_and_start(service, logger=None):
+    os_ops.run_cmd(["systemctl", "enable", service], logger=logger, action=f"habilitar {service}")
+    return os_ops.run_cmd(["systemctl", "restart", service], logger=logger, action=f"reiniciar {service}")
 
 
-def disable_and_stop(service):
-    os_ops.run_cmd(["systemctl", "stop", service])
-    os_ops.run_cmd(["systemctl", "disable", service])
+def disable_and_stop(service, logger=None):
+    os_ops.run_cmd(["systemctl", "stop", service], logger=logger, action=f"parar {service}")
+    os_ops.run_cmd(["systemctl", "disable", service], logger=logger, action=f"desabilitar {service}")
 
 
 def detect_existing_agent(packages):
@@ -37,8 +48,8 @@ def detect_existing_agent(packages):
     return None
 
 
-def remove_agent(package):
-    return os_ops.run_cmd(["dnf", "remove", "-y", package])
+def remove_agent(package, logger=None):
+    return os_ops.run_cmd(["yum", "remove", "-y", package], logger=logger, action=f"remover {package}")
 
 
 def service_status(service):

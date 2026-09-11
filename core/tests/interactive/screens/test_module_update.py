@@ -12,15 +12,30 @@ class UpdateModulesFunctionTest(unittest.TestCase):
     # sobrescrito na hora (ver pvx/modules/loader.py) -- só o cache de
     # update_check que precisava de um empurrão.
     @patch("pvx.interactive.screens.module_update.update_check.pending_notices")
+    @patch("pvx.interactive.screens.module_update.listing.outdated_names", side_effect=lambda names, i, u: list(names))
     @patch("pvx.interactive.screens.module_update.discover_installed_modules", return_value={"dummy": object()})
     @patch("pvx.interactive.screens.module_update.installer.install")
     @patch("pvx.interactive.screens.module_update.config.registry_index_url")
     @patch("pvx.interactive.screens.module_update.widgets.success")
     def test_refreshes_the_update_check_cache_with_a_fresh_discover(
-        self, mock_success, mock_url, mock_install, mock_discover, mock_pending_notices
+        self, mock_success, mock_url, mock_install, mock_discover, mock_outdated, mock_pending_notices
     ):
         update_modules(["dummy"])
         mock_pending_notices.assert_called_once_with(mock_discover.return_value, force=True)
+
+    @patch("pvx.interactive.screens.module_update.listing.outdated_names", return_value=[])
+    @patch("pvx.interactive.screens.module_update.discover_installed_modules", return_value={"dummy": object()})
+    @patch("pvx.interactive.screens.module_update.installer.install")
+    @patch("pvx.interactive.screens.module_update.config.registry_index_url")
+    @patch("pvx.interactive.screens.module_update.widgets.message")
+    def test_skips_a_module_already_up_to_date(
+        self, mock_message, mock_url, mock_install, mock_discover, mock_outdated
+    ):
+        # achado ao vivo: reinstalava e anunciava "atualizado" pra TODO
+        # módulo selecionado, mesmo pros que já estavam na última versão.
+        update_modules(["dummy"])
+        mock_install.assert_not_called()
+        mock_message.assert_called_once_with("dummy já está atualizado.")
 
 
 class ModuleUpdateScreenTest(unittest.TestCase):
@@ -28,6 +43,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.module_update.widgets.pause")
     @patch("pvx.interactive.screens.module_update.widgets.success")
     @patch("pvx.interactive.screens.module_update.installer.install")
+    @patch("pvx.interactive.screens.module_update.listing.outdated_names", side_effect=lambda names, i, u: list(names))
     @patch(
         "pvx.interactive.screens.module_update.config.registry_index_url",
         return_value="https://example.com/index.json",
@@ -38,7 +54,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object(), "other": object()},
     )
     def test_selecting_single_module_updates_it(
-        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success, mock_pause,
+        self, mock_discover, mock_ask_select, mock_url, mock_outdated, mock_install, mock_success, mock_pause,
         mock_pending_notices,
     ):
         result = ModuleUpdateScreen().render()
@@ -51,6 +67,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
     @patch("pvx.interactive.screens.module_update.widgets.pause")
     @patch("pvx.interactive.screens.module_update.widgets.success")
     @patch("pvx.interactive.screens.module_update.installer.install")
+    @patch("pvx.interactive.screens.module_update.listing.outdated_names", side_effect=lambda names, i, u: list(names))
     @patch(
         "pvx.interactive.screens.module_update.config.registry_index_url",
         return_value="https://example.com/index.json",
@@ -61,7 +78,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         return_value={"dummy": object(), "other": object()},
     )
     def test_selecting_todos_updates_every_installed_module(
-        self, mock_discover, mock_ask_select, mock_url, mock_install, mock_success, mock_pause,
+        self, mock_discover, mock_ask_select, mock_url, mock_outdated, mock_install, mock_success, mock_pause,
         mock_pending_notices,
     ):
         result = ModuleUpdateScreen().render()
@@ -108,6 +125,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
 
     @patch("pvx.interactive.screens.module_update.update_check.pending_notices")
     @patch("pvx.interactive.screens.module_update.installer.install")
+    @patch("pvx.interactive.screens.module_update.listing.outdated_names", side_effect=lambda names, i, u: list(names))
     @patch(
         "pvx.interactive.screens.module_update.config.registry_index_url",
         return_value="https://example.com/index.json",
@@ -119,7 +137,7 @@ class ModuleUpdateScreenTest(unittest.TestCase):
     )
     @patch("pvx.interactive.screens.module_update.widgets.spinner")
     def test_shows_spinner_while_updating(
-        self, mock_spinner, mock_discover, mock_ask_select, mock_url, mock_install, mock_pending_notices
+        self, mock_spinner, mock_discover, mock_ask_select, mock_url, mock_outdated, mock_install, mock_pending_notices
     ):
         ModuleUpdateScreen().render()
         mock_spinner.assert_called_once()
@@ -131,13 +149,14 @@ class ModuleUpdateScreenTest(unittest.TestCase):
         "pvx.interactive.screens.module_update.installer.install",
         side_effect=RuntimeError("não foi possível acessar o registry"),
     )
+    @patch("pvx.interactive.screens.module_update.listing.outdated_names", side_effect=lambda names, i, u: list(names))
     @patch("pvx.interactive.screens.module_update.ask_select", return_value="dummy")
     @patch(
         "pvx.interactive.screens.module_update.discover_installed_modules",
         return_value={"dummy": object()},
     )
     def test_network_failure_shows_message_and_returns_back(
-        self, mock_discover, mock_ask_select, mock_install, mock_failed, mock_pause, mock_pending_notices
+        self, mock_discover, mock_ask_select, mock_outdated, mock_install, mock_failed, mock_pause, mock_pending_notices
     ):
         # achado ao vivo: a tela voltava direto pro menu anterior sem pausar --
         # sucesso/falha de cada módulo sumiam da tela antes do usuário ler.

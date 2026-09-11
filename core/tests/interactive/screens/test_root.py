@@ -483,6 +483,29 @@ class RootScreenUpdateNoticeTest(unittest.TestCase):
         RootScreen().render()
         mock_warning.assert_not_called()
 
+    @patch("pvx.interactive.screens.root.click.echo")
+    @patch(
+        "pvx.interactive.screens.root.update_check.pending_notices",
+        return_value=["core: atualização disponível (0.2.25 -> 0.2.26)"],
+    )
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
+    def test_blank_line_separates_notices_from_the_prompt(
+        self, mock_ask_select, mock_discover, mock_notices, mock_echo
+    ):
+        RootScreen().render()
+        mock_echo.assert_any_call()
+
+    @patch("pvx.interactive.screens.root.click.echo")
+    @patch("pvx.interactive.screens.root.update_check.pending_notices", return_value=[])
+    @patch("pvx.interactive.screens.root.discover_installed_modules", return_value={})
+    @patch("pvx.interactive.screens.root.ask_select", return_value="sair")
+    def test_no_blank_line_when_there_is_nothing_to_separate(
+        self, mock_ask_select, mock_discover, mock_notices, mock_echo
+    ):
+        RootScreen().render()
+        mock_echo.assert_not_called()
+
     @patch("pvx.interactive.screens.root.widgets.warning")
     @patch(
         "pvx.interactive.screens.root.update_check.pending_notices",

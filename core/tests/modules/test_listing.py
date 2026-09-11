@@ -73,5 +73,41 @@ class ListModulesTest(unittest.TestCase):
             listing.list_modules({}, "https://example.com/index.json")
 
 
+class OutdatedNamesTest(unittest.TestCase):
+    @patch(
+        "pvx.modules.listing.fetch_index",
+        return_value={
+            "modules": [
+                {"name": "dummy", "latest": "1.1.0"},
+                {"name": "ssh-hardening", "latest": "1.0.0"},
+            ]
+        },
+    )
+    def test_filters_to_only_modules_with_an_update_available(self, mock_fetch):
+        # achado ao vivo: `module update --all` reinstalava e anunciava
+        # "atualizado" pra TODO módulo, mesmo o que já estava na última
+        # versão -- misleading, e reprocessa/rebaixa toda vez à toa.
+        installed = {"dummy": FakeInstalled("1.0.0"), "ssh-hardening": FakeInstalled("1.0.0")}
+        result = listing.outdated_names(["dummy", "ssh-hardening"], installed, "https://example.com/index.json")
+        self.assertEqual(result, ["dummy"])
+
+    @patch(
+        "pvx.modules.listing.fetch_index",
+        return_value={"modules": [{"name": "dummy", "latest": "1.0.0"}]},
+    )
+    def test_empty_when_everything_is_already_up_to_date(self, mock_fetch):
+        installed = {"dummy": FakeInstalled("1.0.0")}
+        result = listing.outdated_names(["dummy"], installed, "https://example.com/index.json")
+        self.assertEqual(result, [])
+
+    @patch(
+        "pvx.modules.listing.fetch_index",
+        side_effect=urllib.error.URLError("nome não resolvido"),
+    )
+    def test_registry_unreachable_raises_clean_error(self, mock_fetch):
+        with self.assertRaises(RuntimeError):
+            listing.outdated_names(["dummy"], {"dummy": FakeInstalled("1.0.0")}, "https://example.com/index.json")
+
+
 if __name__ == "__main__":
     unittest.main()

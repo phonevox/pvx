@@ -4,7 +4,7 @@ import shutil
 import urllib.error
 import urllib.request
 
-from pvx import config
+from pvx import config, update_check
 from pvx.registry import schema
 from pvx.registry.client import fetch_index
 
@@ -40,6 +40,13 @@ def install(name, index_url, version=None):
     (install_dir / "module.pyz").write_bytes(pyz_bytes)
     (install_dir / "manifest.json").write_text(json.dumps(manifest))
 
+    # achado ao vivo: instalar/atualizar um módulo manualmente não invalidava
+    # o cache do aviso de update -- o banner continuava servindo o status
+    # antigo até o TTL de 6h expirar sozinho, mesmo já com o módulo novo no
+    # disco. install()/uninstall() são o funil que TODO caller (CLI direta,
+    # menu interativo) já passa, então o fix mora aqui uma vez só.
+    update_check.clear_cache()
+
 
 def uninstall(name):
     # achado ao vivo: ignore_errors=True escondia falha real (ex.: arquivo
@@ -53,3 +60,4 @@ def uninstall(name):
             f"não consegui remover o módulo '{name}' por completo -- "
             f"verifique permissões em {path}."
         )
+    update_check.clear_cache()
