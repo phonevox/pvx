@@ -209,6 +209,16 @@ class HappyPathTest(MainTestCase):
         self.assertEqual(len(web_pw), 24)
         self.assertNotEqual(sql_pw, web_pw)
 
+    def test_warns_but_does_not_abort_when_fop2_sync_fails(self):
+        # achado ao vivo: sincronização do FOP2 (usuário AMI) falhava em
+        # silêncio -- só aparecia horas depois nos logs do Asterisk ("tried
+        # to authenticate with nonexistent user 'fop2'"). Não é fatal (o
+        # resto do PBX funciona sem o FOP2), mas precisa aparecer aqui.
+        result, mocks = self._invoke(BASE_ARGS, step_side_effects={"set_passwords": lambda *a, **k: False})
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("fop2", result.output.lower())
+        mocks["reboot"].assert_called_once_with(["reboot"])  # instalação segue até o fim
+
 
 class StepAnnouncementTest(MainTestCase):
     # cada etapa deve anunciar sucesso ao terminar -- ver widgets.step()/_run_step().

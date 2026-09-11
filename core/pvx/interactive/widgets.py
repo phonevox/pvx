@@ -310,6 +310,16 @@ def state(text, ok):
     Console().print(line, highlight=False)
 
 
+def state_line(prefix, word, ok, suffix=""):
+    # como state(), mas só a PALAVRA final carrega a cor -- o resto da linha
+    # (rótulo, sufixo) fica no tom padrão do terminal. Pra quando a linha tem
+    # mais informação (ex.: contador) além do próprio veredito verde/vermelho.
+    line = Text(prefix)
+    line.append(word, style="bold green" if ok else "bold red")
+    line.append(suffix)
+    Console().print(line, highlight=False)
+
+
 _CHECK_RESULT_STYLE = {
     # mesmo vocabulário de categoria de success/failed/warning (sucesso/erro/aviso)
     # -- não existe um 4º estado "ok" separado de "sucesso".

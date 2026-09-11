@@ -35,6 +35,36 @@ def count_input_rules():
     return len([line for line in listing.stdout.splitlines()[2:] if line.strip()])
 
 
+def _chain_rule_count(chain):
+    if not chain_exists(chain):
+        return 0
+    listing = _run(["-nL", chain], check=False)
+    if listing.returncode != 0:
+        return 0
+    return len([line for line in listing.stdout.splitlines()[2:] if line.strip()])
+
+
+def count_configured_rules():
+    # count_input_rules() só olha a INPUT (failsafe/established/icmp/3 jumps
+    # -- sempre ~5 linhas fixas), não diz nada sobre quantas entradas de
+    # ip_accept/ip_deny/port_* de fato viraram regra -- essas ficam nas
+    # chains próprias (ptrusted/pdenyip/pdrop), nunca na INPUT diretamente.
+    return (
+        _chain_rule_count(defaults.IPTABLES_TRUSTED_CHAIN)
+        + _chain_rule_count(defaults.IPTABLES_DENY_CHAIN)
+        + _chain_rule_count(defaults.IPTABLES_PORT_CHAIN)
+    )
+
+
+def expected_rule_count(ip_accept, ip_deny, port_accept, port_deny):
+    # espelha a expansão real de sync() (_rule_arg_groups) -- 1 regra por
+    # IP, mas uma porta sem protocolo explícito vira 2 (tcp + udp).
+    total = len(ip_accept) + len(ip_deny) + 1  # +1: catch-all DROP final do chain de portas
+    for spec_str, _ in list(port_deny) + list(port_accept):
+        total += len(_rule_arg_groups(parse_port_spec(spec_str)))
+    return total
+
+
 def clear_input_except_failsafe(failsafe_ip):
     listing = _run(["-L", "INPUT", "--line-numbers", "-n"])
     rule_lines = [line for line in listing.stdout.splitlines()[2:] if line.strip()]

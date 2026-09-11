@@ -27,6 +27,14 @@ _IPV4_RE = re.compile(
 )
 _PLACEHOLDER_IPS = {"0.0.0.0", "255.255.255.255"}
 _ASTERISK_IP_SOURCES = ("sip show peers", "pjsip show endpoints", "sip show registry")
+# mesma lista de firewall/src/defaults.py:DEFAULT_LISTS["ip_accept"] -- módulo
+# isolado, sem import cruzado (ver nota no topo do arquivo). Manter em sincronia
+# manualmente se a lista base mudar lá.
+_FIREWALL_BASE_IPS = (
+    "127.0.0.1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+    "189.124.85.75", "186.233.124.252", "189.124.85.152/29", "186.233.120.72/29",
+    "179.199.136.199", "149.78.185.36", "31.97.160.127", "45.140.193.125", "186.233.122.92",
+)
 
 
 # funções, não constantes: pvx_config.modules_dir() lê PVX_HOME em runtime --
@@ -214,6 +222,29 @@ def _asterisk_connected_ips():
     return ips
 
 
+def check_firewall_base_ips():
+    # achado ao vivo: `pvx firewall ip accept` numa central sem ip_accept.conf
+    # ainda sobrescrevia a lista inteira com só a entrada nova, apagando os
+    # IPs base da Phonevox -- técnico perdeu acesso à própria sessão SSH.
+    trusted = _trusted_networks()
+    missing = []
+    for entry in _FIREWALL_BASE_IPS:
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            continue
+        if not any(network.version == t.version and network.subnet_of(t) for t in trusted):
+            missing.append(entry)
+
+    if not missing:
+        return _result("Firewall", "ok", "IPs base da Phonevox presentes na whitelist")
+    return _result(
+        "Firewall", "warn",
+        f"{len(missing)} IP(s) base da Phonevox fora da whitelist ({', '.join(missing)}) -- "
+        "rode `pvx firewall ip trust-phonevox`",
+    )
+
+
 def check_firewall_asterisk_ips():
     connected = _asterisk_connected_ips()
     if not connected:
@@ -231,6 +262,23 @@ def check_firewall_asterisk_ips():
         f"{len(untrusted)} IP(s) conectado(s) no Asterisk fora da whitelist "
         f"({', '.join(untrusted)}) -- rode `pvx firewall ip trust-asterisk`",
     )
+
+
+def check_firewall_synced():
+    # cross-módulo via CLI (mesmo padrão de autobackup/src/magnus_upload_ops.py,
+    # que já roda "pvx magnus backup export ...") -- nunca importa o código do
+    # firewall direto (módulo isolado), e reusa a lógica de verdade em vez de
+    # duplicar a contagem de regras de dois engines (iptables/firewalld) aqui.
+    try:
+        result = subprocess.run(["pvx", "firewall", "check"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return _result("Firewall", "warn", "não consegui checar se está ativo/sincronizado")
+    output = result.stdout.lower()
+    if "status: ativo" in output:
+        return _result("Firewall", "ok", "ativo e sincronizado")
+    if "status: inativo" in output:
+        return _result("Firewall", "warn", "inativo/não sincronizado -- rode `pvx firewall apply`")
+    return _result("Firewall", "warn", "não consegui determinar o status")
 
 
 def check_firewall_boot():
@@ -256,6 +304,8 @@ CHECKS = (
     check_zabbix_audit_script,
     check_autobloqueador,
     check_firewall_boot,
+    check_firewall_synced,
+    check_firewall_base_ips,
     check_firewall_asterisk_ips,
 )
 

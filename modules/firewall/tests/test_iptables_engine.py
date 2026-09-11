@@ -121,6 +121,43 @@ class CountInputRulesTest(unittest.TestCase):
         self.assertEqual(ipt.count_input_rules(), 2)
 
 
+class CountConfiguredRulesTest(unittest.TestCase):
+    # count_input_rules() só olha a INPUT (failsafe/established/icmp/3 jumps
+    # -- sempre ~5 linhas) -- não diz nada sobre quantas entradas
+    # configuradas (ip_accept/ip_deny/port_*) de fato viraram regra. As
+    # entradas de verdade ficam nas chains próprias (ptrusted/pdenyip/pdrop).
+    @patch("iptables_engine.chain_exists", return_value=True)
+    @patch("iptables_engine.subprocess.run")
+    def test_sums_rules_across_the_three_dedicated_chains(self, mock_run, mock_exists):
+        header = "Chain x (policy -)\nnum  target     prot opt source               destination\n"
+        mock_run.side_effect = [
+            _run_result(stdout=header + "1    ACCEPT     all  --  1.2.3.4  0.0.0.0/0\n"),
+            _run_result(stdout=header + "1    DROP     all  --  5.6.7.8  0.0.0.0/0\n2    DROP     all  --  9.9.9.9  0.0.0.0/0\n"),
+            _run_result(stdout=header),
+        ]
+        self.assertEqual(ipt.count_configured_rules(), 3)
+
+    @patch("iptables_engine.chain_exists", return_value=False)
+    def test_zero_when_chains_do_not_exist_yet(self, mock_exists):
+        self.assertEqual(ipt.count_configured_rules(), 0)
+
+
+class ExpectedRuleCountTest(unittest.TestCase):
+    def test_counts_ips_plus_one_rule_per_port_with_explicit_protocol(self):
+        result = ipt.expected_rule_count(
+            ip_accept=[("1.2.3.4", "")], ip_deny=[("5.6.7.8", "")],
+            port_accept=[("5060/udp", "SIP")], port_deny=[],
+        )
+        # 1 (ip_accept) + 1 (ip_deny) + 1 (porta c/ protocolo) + 1 (catch-all final)
+        self.assertEqual(result, 4)
+
+    def test_port_without_protocol_expands_to_two_rules(self):
+        result = ipt.expected_rule_count(
+            ip_accept=[], ip_deny=[], port_accept=[], port_deny=[("20-23", "")],
+        )
+        self.assertEqual(result, 3)  # tcp + udp + catch-all
+
+
 class SyncTest(unittest.TestCase):
     @patch("iptables_engine.clear_input_except_failsafe")
     @patch("iptables_engine.insert_failsafe", return_value=True)

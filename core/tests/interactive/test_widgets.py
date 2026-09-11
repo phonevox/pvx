@@ -21,6 +21,7 @@ from pvx.interactive.widgets import (
     select_answer,
     spinner,
     state,
+    state_line,
     status_cell,
     step,
     step_with_log,
@@ -381,6 +382,27 @@ class StateTest(unittest.TestCase):
     def test_prints_text_in_red_when_not_ok(self, mock_console_cls):
         state("não sincronizado", ok=False)
         printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.spans[0].style, "bold red")
+
+
+class StateLineTest(unittest.TestCase):
+    # como state(), mas só a PALAVRA final carrega a cor -- prefixo/sufixo
+    # (rótulo, contador) ficam no tom padrão do terminal.
+    @patch("pvx.interactive.widgets.Console")
+    def test_only_the_word_is_colored(self, mock_console_cls):
+        state_line("  status: ", "ATIVO", ok=True, suffix=" -- 4/6 regra(s)")
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "  status: ATIVO -- 4/6 regra(s)")
+        colored_spans = [s for s in printed.spans if s.style == "bold green"]
+        self.assertEqual(len(colored_spans), 1)
+        span = colored_spans[0]
+        self.assertEqual(printed.plain[span.start:span.end], "ATIVO")
+
+    @patch("pvx.interactive.widgets.Console")
+    def test_red_when_not_ok(self, mock_console_cls):
+        state_line("  status: ", "INATIVO", ok=False)
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertEqual(printed.plain, "  status: INATIVO")
         self.assertEqual(printed.spans[0].style, "bold red")
 
 

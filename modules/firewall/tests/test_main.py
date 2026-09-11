@@ -11,6 +11,7 @@ from main import cli
 BASE_STATUS = {
     "engine": "iptables", "engine_active": False, "boot_persistent": False,
     "rule_count": 0, "session_ip": None, "synced": False, "failsafe_ok": False, "lists": None,
+    "configured_rule_count": None, "expected_rule_count": None,
 }
 
 
@@ -238,18 +239,89 @@ class IpTrustAsteriskCommandTest(MainTestCase):
         self.assertEqual(listing.output.count("198.51.100.9"), 1)
 
 
+class IpTrustPhonevoxCommandTest(MainTestCase):
+    # achado ao vivo: técnico rodou `ip accept <cliente>` numa central sem
+    # ip_accept.conf ainda -- sobrescreveu tudo, só sobrou o IP do cliente.
+    # Esse comando é o "conserto de um passo": upsert dos IPs base, nunca
+    # duplica, nunca mexe no que já tem (cliente/asterisk/etc. continuam lá).
+    def test_adds_every_base_ip(self):
+        result = self._invoke(["ip", "trust-phonevox"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
+
+    def test_keeps_entries_added_before_it_ran(self):
+        self._invoke(["ip", "accept", "45.162.8.0/24", "--comment", "cliente"])
+        result = self._invoke(["ip", "trust-phonevox"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("45.162.8.0/24", listing.output)
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
+
+    def test_is_idempotent_does_not_duplicate(self):
+        self._invoke(["ip", "trust-phonevox"])
+        result = self._invoke(["ip", "trust-phonevox"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum ip novo", result.output.lower())
+        listing = self._invoke(["ip", "list"])
+        self.assertEqual(listing.output.count("127.0.0.1"), 1)
+
+
 class StatusCommandTest(MainTestCase):
+    # pedido ao vivo: "rodando/sincronizado" ficava escondido no meio de
+    # outras linhas -- resumo grande, uma linha só, no topo, bem visível.
+    def test_shows_ativo_when_engine_active_and_synced(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=True,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("status: ativo", result.output.lower())
+
+    def test_shows_inativo_when_engine_is_not_active(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=False, synced=True,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("status: inativo", result.output.lower())
+
+    def test_shows_inativo_when_not_synced_even_if_engine_is_active(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=False,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("status: inativo", result.output.lower())
+
+    def test_status_line_comes_right_after_the_status_section_header(self):
+        # pedido ao vivo: a linha de status/contador ficava avulsa, longe da
+        # seção "Status" -- agora é a primeira linha de dentro dela.
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=True,
+        )):
+            result = self._invoke(["check"])
+        lines = [line for line in result.output.splitlines() if line.strip()]
+        section_index = next(i for i, line in enumerate(lines) if "status" in line.lower())
+        self.assertIn("status:", lines[section_index + 1].lower())
+
+    def test_shows_configured_over_expected_rule_counter_when_available(self):
+        with patch("main.status_module.get_status", return_value=dict(
+            BASE_STATUS, engine_active=True, synced=True, rule_count=5,
+            configured_rule_count=4, expected_rule_count=6,
+        )):
+            result = self._invoke(["check"])
+        self.assertIn("4/6", result.output)
+
     def test_shows_synced_state_without_success_wording(self):
         # status é consulta, não ação -- "sucesso!"/"falha!" não fazem
         # sentido aqui (usava widgets.success/failed antes, corrigido pra
         # widgets.state: só cor, sem rótulo de ação).
         with patch("main.status_module.get_status", return_value=dict(
-            BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=True,
+            BASE_STATUS, engine_active=True, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=True,
         )):
             result = self._invoke(["check"])
         self.assertIn("iptables", result.output)
-        self.assertIn("sincronizado", result.output.lower())
-        self.assertNotIn("não sincronizado", result.output.lower())
+        self.assertIn("status: ativo", result.output.lower())
         self.assertNotIn("sucesso", result.output.lower())
 
     def test_shows_not_synced_state_without_failure_wording(self):
@@ -257,7 +329,7 @@ class StatusCommandTest(MainTestCase):
             BASE_STATUS, rule_count=0, session_ip="203.0.113.9", synced=False, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("não sincronizado", result.output.lower())
+        self.assertIn("status: inativo", result.output.lower())
         self.assertNotIn("falha", result.output.lower())
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
@@ -267,10 +339,10 @@ class StatusCommandTest(MainTestCase):
         # não repete a palavra "aviso" quando um detail é passado -- o símbolo
         # já é quem sinaliza isso, não mais uma palavra solta.
         with patch("main.status_module.get_status", return_value=dict(
-            BASE_STATUS, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
+            BASE_STATUS, engine_active=True, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("sincronizado", result.output.lower())
+        self.assertIn("status: ativo", result.output.lower())
         self.assertIn("failsafe", result.output.lower())
 
 

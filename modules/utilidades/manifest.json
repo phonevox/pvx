@@ -1,6 +1,6 @@
 {
   "name": "utilidades",
-  "version": "0.1.4",
+  "version": "0.1.7",
   "entrypoint": "main:cli",
   "description": "Utilitários diversos -- checklists de verificação e afins.",
   "author": "pvx",

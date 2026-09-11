@@ -61,7 +61,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.13"
+    version = "0.2.17"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -224,9 +224,26 @@ class FirewallModule(PvxModule):
                 widgets.pause()
 
         @ip_group.command(
+            name="trust-phonevox",
+            help="garante os IPs base da Phonevox na lista de confiáveis (upsert, nunca duplica).",
+        )
+        def ip_trust_phonevox_cmd():
+            _require_root()
+            added = []
+            for ip, comment in defaults.DEFAULT_LISTS["ip_accept"]:
+                if lists.add_entry(_list_path("ip_accept"), ip, comment, seed=defaults.DEFAULT_LISTS["ip_accept"]):
+                    added.append(ip)
+
+            if added:
+                click.echo(f"{len(added)} IP(s) adicionado(s) à lista de confiáveis: {', '.join(added)}")
+            else:
+                click.echo("nenhum IP novo -- todos já estavam na lista de confiáveis.")
+            if _is_interactive():
+                widgets.pause()
+
+        @ip_group.command(
             name="trust-asterisk",
-            help="descobre IPs conectados no Asterisk (sip peers/registry, pjsip endpoints) "
-                 "e adiciona à lista de confiáveis -- segurança pra não trancar a central do cliente.",
+            help="adiciona os IPs conectados no Asterisk à lista de confiáveis.",
         )
         def ip_trust_asterisk_cmd():
             _require_root()
@@ -262,24 +279,27 @@ class FirewallModule(PvxModule):
             result = status_module.get_status(engine=engine, base_dir=_state_dir())
             engine_state = "ativo" if result["engine_active"] else "inativo"
             boot_state = "habilitado" if result["boot_persistent"] else "desabilitado"
+            # pedido ao vivo: "rodando/sincronizado" ficava escondido no meio de
+            # outras linhas -- agora é a PRIMEIRA linha do Status, com o
+            # contador de regras na mesma linha (não mais avulso embaixo).
+            up = result["engine_active"] and result["synced"]
+            counter = ""
+            if result["expected_rule_count"] is not None:
+                counter = f" -- {result['configured_rule_count']}/{result['expected_rule_count']} regra(s) configurada(s)"
 
             widgets.title("pvx > firewall > check")
             widgets.section("Status")
+            widgets.state_line("  status: ", "ATIVO" if up else "INATIVO", up, counter)
             click.echo(f"  engine: {result['engine']} ({engine_state})")
             if result.get("firewalld_zone"):
                 click.echo(f"  zona firewalld: {result['firewalld_zone']}")
             click.echo(f"  reaplica no boot: {boot_state}")
             click.echo(f"  IP da sessão: {result['session_ip'] or 'não detectado'}")
+
+            if result["synced"] and result["session_ip"] and not result["failsafe_ok"]:
+                widgets.warning("IP da sessão atual sem failsafe confirmado, rode `apply` de novo")
+
             click.echo()
-
-            if result["synced"]:
-                detail = f"sincronizado -- {result['rule_count']} regra(s) ativa(s)"
-                widgets.state(detail, ok=True)
-                if result["session_ip"] and not result["failsafe_ok"]:
-                    widgets.warning("IP da sessão atual sem failsafe confirmado, rode `apply` de novo")
-            else:
-                widgets.state("não sincronizado -- rode `pvx firewall apply` pra aplicar as regras", ok=False)
-
             if result["lists"]:
                 _echo_list("IPs confiáveis", result["lists"]["ip_accept"])
                 _echo_list("IPs bloqueados", result["lists"]["ip_deny"])

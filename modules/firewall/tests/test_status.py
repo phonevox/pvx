@@ -16,10 +16,11 @@ class GetStatusTest(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_iptables_synced_and_protected(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_iptables_synced_and_protected(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
         result = status.get_status(engine=None)
         self.assertEqual(result["engine"], "iptables")
         self.assertEqual(result["session_ip"], "203.0.113.9")
@@ -28,20 +29,22 @@ class GetStatusTest(unittest.TestCase):
         self.assertTrue(result["failsafe_ok"])
 
     @patch("status.iptables_engine.failsafe_present", return_value=False)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=0)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_iptables_not_yet_synced(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_iptables_not_yet_synced(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
         result = status.get_status(engine=None)
         self.assertFalse(result["synced"])
         self.assertFalse(result["failsafe_ok"])
 
     @patch("status.iptables_engine.failsafe_present", return_value=False)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=5)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
     def test_synced_but_current_session_ip_not_covered_by_failsafe(
-        self, mock_resolve, mock_ip, mock_count, mock_failsafe
+        self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe
     ):
         # sincronizado (tem regras), mas o failsafe não cobre o IP ATUAL da
         # sessão (ex.: IP mudou desde o último sync) -- os dois sinais são
@@ -50,10 +53,11 @@ class GetStatusTest(unittest.TestCase):
         self.assertTrue(result["synced"])
         self.assertFalse(result["failsafe_ok"])
 
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=0)
     @patch("status.session_ip.detect_session_ip", return_value=None)
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_undetectable_session_ip(self, mock_resolve, mock_ip, mock_count):
+    def test_undetectable_session_ip(self, mock_resolve, mock_ip, mock_count, mock_configured):
         result = status.get_status(engine=None)
         self.assertIsNone(result["session_ip"])
         self.assertFalse(result["synced"])
@@ -92,21 +96,23 @@ class GetStatusTest(unittest.TestCase):
 
     @patch("status.sync.resolve_firewalld_zone", return_value=("pvxfw", True))
     @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
     def test_firewalld_zone_is_none_for_the_iptables_engine(
-        self, mock_resolve, mock_ip, mock_count, mock_failsafe, mock_zone
+        self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe, mock_zone
     ):
         result = status.get_status(engine=None)
         self.assertIsNone(result["firewalld_zone"])
         mock_zone.assert_not_called()
 
     @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_iptables_engine_active_mirrors_synced(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_iptables_engine_active_mirrors_synced(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
         # iptables não tem daemon próprio -- "ativo" é exatamente "tem regra
         # carregada no kernel", o mesmo sinal que "synced".
         result = status.get_status(engine=None)
@@ -128,27 +134,30 @@ class GetStatusTest(unittest.TestCase):
         mock_active.assert_called_once_with("firewalld")
 
     @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_boot_persistent_reflects_the_systemd_unit(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_boot_persistent_reflects_the_systemd_unit(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
         with patch("status.systemd_unit.is_enabled", return_value=False):
             result = status.get_status(engine=None)
         self.assertFalse(result["boot_persistent"])
 
     @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_lists_are_none_without_a_base_dir(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_lists_are_none_without_a_base_dir(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
         result = status.get_status(engine=None)
         self.assertIsNone(result["lists"])
 
     @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_lists_are_read_from_the_base_dir_when_given(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_lists_are_read_from_the_base_dir_when_given(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / "ip_accept.conf").write_text("203.0.113.1  # confiavel\n")
             result = status.get_status(engine=None, base_dir=tmp)
@@ -158,10 +167,11 @@ class GetStatusTest(unittest.TestCase):
         self.assertIn("port_deny", result["lists"])
 
     @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
     @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
     @patch("status.sync.resolve_engine", return_value="iptables")
-    def test_never_writes_config_files_just_from_a_check(self, mock_resolve, mock_ip, mock_count, mock_failsafe):
+    def test_never_writes_config_files_just_from_a_check(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
         # achado na revisão: check não exige root (test_status_does_not_
         # require_root), mas lists.read_list com seed= grava as listas
         # padrão em disco quando o arquivo ainda não existe -- um usuário
@@ -171,6 +181,41 @@ class GetStatusTest(unittest.TestCase):
             result = status.get_status(engine=None, base_dir=tmp)
             self.assertEqual(list(Path(tmp).iterdir()), [])
         self.assertEqual(result["lists"]["ip_accept"], [])
+
+    @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=4)
+    @patch("status.iptables_engine.count_input_rules", return_value=7)
+    @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
+    @patch("status.sync.resolve_engine", return_value="iptables")
+    def test_configured_and_expected_rule_counts_for_iptables(
+        self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "ip_accept.conf").write_text("203.0.113.1\n203.0.113.2\n")
+            result = status.get_status(engine=None, base_dir=tmp)
+        self.assertEqual(result["configured_rule_count"], 4)
+        # 2 ips + 1 (catch-all do chain de portas) -- nenhuma porta configurada
+        self.assertEqual(result["expected_rule_count"], 3)
+
+    def test_rule_counts_are_none_without_a_base_dir(self):
+        with patch("status.sync.resolve_engine", return_value="iptables"), \
+             patch("status.iptables_engine.count_input_rules", return_value=0), \
+             patch("status.iptables_engine.count_configured_rules", return_value=0), \
+             patch("status.iptables_engine.failsafe_present", return_value=False), \
+             patch("status.session_ip.detect_session_ip", return_value=None):
+            result = status.get_status(engine=None)
+        self.assertIsNone(result["expected_rule_count"])
+
+    @patch("status.sync.resolve_firewalld_zone", return_value=("pvxfw", True))
+    @patch("status.firewalld_engine.failsafe_present", return_value=True)
+    @patch("status.firewalld_engine.count_rich_rules", return_value=3)
+    @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
+    @patch("status.sync.resolve_engine", return_value="firewalld")
+    def test_configured_rule_count_reuses_rule_count_for_firewalld(
+        self, mock_resolve, mock_ip, mock_count, mock_failsafe, mock_zone
+    ):
+        result = status.get_status(engine=None)
+        self.assertEqual(result["configured_rule_count"], 3)
 
 
 if __name__ == "__main__":

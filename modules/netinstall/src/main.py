@@ -66,12 +66,13 @@ def _run_step(logger, message, done_message, fn, *args):
     logger.info(f"iniciando: {message}")
     with widgets.step(message):
         try:
-            fn(*args)
+            result = fn(*args)
         except Exception as e:
             logger.error(f"falhou: {message} -- {e}")
             raise
     logger.info(f"concluído: {done_message}")
     widgets.success(done_message)
+    return result
 
 
 def _run_step_with_log(logger, message, done_message, fn, *args, tail=5, **kwargs):
@@ -220,11 +221,21 @@ def _run_issabel5(logger, flags, interactive):
         install_steps.set_timezone, tz,
     )
 
-    _run_step(
+    fop2_ok = _run_step(
         logger,
         "Definindo senhas de acesso (MySQL root / admin Web)...", "Senhas de acesso definidas.",
         install_steps.set_passwords, sql_pw, web_pw,
     )
+    if not fop2_ok:
+        # achado ao vivo: sincronização do FOP2 (usuário AMI) falhava em
+        # silêncio -- só aparecia horas depois nos logs do Asterisk ("tried
+        # to authenticate with nonexistent user 'fop2'"). Não é fatal (o
+        # resto do PBX funciona sem o FOP2), mas precisa aparecer aqui.
+        logger.error("sincronização do FOP2 (usuário AMI) falhou.")
+        widgets.warning(
+            "FOP2: sincronização do usuário AMI falhou -- painel do operador pode não "
+            "autenticar. Rode `/usr/local/fop2/create_fop2_manager_user.pl` manualmente."
+        )
     cred_path = credentials.save_credentials(str(_state_dir()), "issabel5", sql_pw, web_pw)
     widgets.success(f"credenciais salvas em {cred_path} (0600)")
 
@@ -238,7 +249,7 @@ def _run_issabel5(logger, flags, interactive):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.24"
+    version = "0.1.25"
 
     def cli_group(self):
         @click.group(name="netinstall")
