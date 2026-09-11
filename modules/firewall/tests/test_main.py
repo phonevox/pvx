@@ -209,6 +209,35 @@ class IpCommandsTest(MainTestCase):
         self.assertIn("203.0.113.0/24", listing.output)
 
 
+class IpTrustAsteriskCommandTest(MainTestCase):
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={})
+    def test_no_ips_found_shows_a_clean_message(self, mock_discover):
+        result = self._invoke(["ip", "trust-asterisk"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum ip encontrado", result.output.lower())
+
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={"198.51.100.9": "sip show peers"})
+    def test_adds_discovered_ips_and_keeps_the_default_trusted_ips(self, mock_discover):
+        # mesmo bug de "apagar os IPs base" que o `ip accept` teve -- essa
+        # rota também escreve em ip_accept.conf, então também precisa seedar.
+        result = self._invoke(["ip", "trust-asterisk"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("198.51.100.9", result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("198.51.100.9", listing.output)
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
+
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={"198.51.100.9": "sip show peers"})
+    def test_is_idempotent_does_not_duplicate(self, mock_discover):
+        self._invoke(["ip", "trust-asterisk"])
+        result = self._invoke(["ip", "trust-asterisk"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum ip novo", result.output.lower())
+        listing = self._invoke(["ip", "list"])
+        self.assertEqual(listing.output.count("198.51.100.9"), 1)
+
+
 class StatusCommandTest(MainTestCase):
     def test_shows_synced_state_without_success_wording(self):
         # status é consulta, não ação -- "sucesso!"/"falha!" não fazem
@@ -352,6 +381,14 @@ class PauseAfterMutationTest(MainTestCase):
         self._invoke(["ip", "accept", "203.0.113.9"])
         with patch("main._is_interactive", return_value=True):
             result = self._invoke(["ip", "remove", "203.0.113.9"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={"198.51.100.9": "sip show peers"})
+    def test_ip_trust_asterisk_pauses_when_interactive(self, mock_discover, mock_pause):
+        with patch("main._is_interactive", return_value=True):
+            result = self._invoke(["ip", "trust-asterisk"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 

@@ -23,7 +23,7 @@ def _print_checklist(results):
 
 class UtilidadesModule(PvxModule):
     name = "utilidades"
-    version = "0.1.3"
+    version = "0.1.4"
 
     def cli_group(self):
         @click.group(name="utilidades")

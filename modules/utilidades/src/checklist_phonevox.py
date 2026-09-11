@@ -1,5 +1,7 @@
+import ipaddress
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +19,14 @@ _ZABBIX_AGENT_CONFIG_PATHS = {
 }
 _AUTOBLOQUEADOR_STATE = Path("/etc/phonevox/automacoes/state.json")
 _FIREWALL_SYSTEMD_UNIT = "pvx-firewall.service"
+_FIREWALL_IP_ACCEPT_FILENAME = "ip_accept.conf"
+# mesma regex/fontes de firewall/src/asterisk_ips.py -- módulo isolado, sem
+# import cruzado (ver nota no topo do arquivo), duplicação mínima de novo.
+_IPV4_RE = re.compile(
+    r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b"
+)
+_PLACEHOLDER_IPS = {"0.0.0.0", "255.255.255.255"}
+_ASTERISK_IP_SOURCES = ("sip show peers", "pjsip show endpoints", "sip show registry")
 
 
 # funções, não constantes: pvx_config.modules_dir() lê PVX_HOME em runtime --
@@ -33,6 +43,10 @@ def _ssh_hardening_state_dir():
 
 def _zabbix_state_dir():
     return pvx_config.modules_dir() / "zabbix" / "state"
+
+
+def _firewall_ip_accept_path():
+    return pvx_config.modules_dir() / "firewall" / "state" / _FIREWALL_IP_ACCEPT_FILENAME
 
 
 def _read_json(path):
@@ -165,6 +179,60 @@ def check_autobloqueador():
     return _result("Autobloqueador", "ok", f"type={data.get('type', '?')}")
 
 
+def _trusted_networks():
+    try:
+        lines = _firewall_ip_accept_path().read_text().splitlines()
+    except OSError:
+        return []
+    networks = []
+    for line in lines:
+        entry = line.partition("#")[0].strip()
+        if not entry:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            continue
+    return networks
+
+
+def _asterisk_cli(command, timeout=5):
+    try:
+        result = subprocess.run(["asterisk", "-rx", command], capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def _asterisk_connected_ips():
+    ips = set()
+    for command in _ASTERISK_IP_SOURCES:
+        output = _asterisk_cli(command)
+        if not output:
+            continue
+        ips.update(ip for ip in _IPV4_RE.findall(output) if ip not in _PLACEHOLDER_IPS)
+    return ips
+
+
+def check_firewall_asterisk_ips():
+    connected = _asterisk_connected_ips()
+    if not connected:
+        return _result("Firewall", "ok", "nenhum IP conectado no Asterisk pra conferir")
+
+    trusted = _trusted_networks()
+    untrusted = sorted(
+        ip for ip in connected
+        if not any(ipaddress.ip_address(ip) in network for network in trusted)
+    )
+    if not untrusted:
+        return _result("Firewall", "ok", "IPs conectados no Asterisk estão todos na whitelist")
+    return _result(
+        "Firewall", "warn",
+        f"{len(untrusted)} IP(s) conectado(s) no Asterisk fora da whitelist "
+        f"({', '.join(untrusted)}) -- rode `pvx firewall ip trust-asterisk`",
+    )
+
+
 def check_firewall_boot():
     try:
         result = subprocess.run(
@@ -188,6 +256,7 @@ CHECKS = (
     check_zabbix_audit_script,
     check_autobloqueador,
     check_firewall_boot,
+    check_firewall_asterisk_ips,
 )
 
 

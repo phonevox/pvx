@@ -9,6 +9,7 @@ from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_confirm, ask_text
 from pvx.modules.base import PvxModule
 
+import asterisk_ips
 import defaults
 import lists
 import session_ip
@@ -60,7 +61,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.12"
+    version = "0.2.13"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -219,6 +220,32 @@ class FirewallModule(PvxModule):
             if not removed:
                 raise click.ClickException(f"{cidr} não está em nenhuma lista de IPs.")
             click.echo(f"{cidr} removido.")
+            if _is_interactive():
+                widgets.pause()
+
+        @ip_group.command(
+            name="trust-asterisk",
+            help="descobre IPs conectados no Asterisk (sip peers/registry, pjsip endpoints) "
+                 "e adiciona à lista de confiáveis -- segurança pra não trancar a central do cliente.",
+        )
+        def ip_trust_asterisk_cmd():
+            _require_root()
+            found = asterisk_ips.discover_asterisk_ips()
+            if not found:
+                click.echo("nenhum IP encontrado no Asterisk.")
+                if _is_interactive():
+                    widgets.pause()
+                return
+
+            added = []
+            for ip, source in sorted(found.items()):
+                if lists.add_entry(_list_path("ip_accept"), ip, source, seed=defaults.DEFAULT_LISTS["ip_accept"]):
+                    added.append(ip)
+
+            if added:
+                click.echo(f"{len(added)} IP(s) adicionado(s) à lista de confiáveis: {', '.join(added)}")
+            else:
+                click.echo("nenhum IP novo -- todos já estavam na lista de confiáveis.")
             if _is_interactive():
                 widgets.pause()
 
