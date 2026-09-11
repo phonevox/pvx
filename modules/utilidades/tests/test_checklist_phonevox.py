@@ -181,6 +181,45 @@ class FirewallBootCheckTest(unittest.TestCase):
         self.assertEqual(result["level"], "warn")
 
 
+class FirewallAsteriskIpsCheckTest(unittest.TestCase):
+    def _write_ip_accept(self, entries):
+        path = pvx_config.modules_dir() / "firewall" / "state" / "ip_accept.conf"
+        path.parent.mkdir(parents=True)
+        path.write_text("\n".join(entries) + "\n")
+
+    def test_ok_when_asterisk_has_no_connected_ips(self):
+        with patch("checklist_phonevox._asterisk_cli", return_value=None):
+            result = checklist_phonevox.check_firewall_asterisk_ips()
+        self.assertEqual(result["level"], "ok")
+
+    def test_ok_when_every_connected_ip_is_trusted(self):
+        self._write_ip_accept(["198.51.100.0/24  # cliente"])
+        with patch(
+            "checklist_phonevox._asterisk_cli",
+            side_effect=lambda cmd, **kw: "198.51.100.9\n" if cmd == "sip show peers" else None,
+        ):
+            result = checklist_phonevox.check_firewall_asterisk_ips()
+        self.assertEqual(result["level"], "ok")
+
+    def test_warns_about_connected_ips_outside_the_whitelist(self):
+        # o caso real que motivou esse check: um IP registrado no Asterisk
+        # que nunca foi liberado no firewall -- acesso pode cair a qualquer
+        # momento que o firewall for reaplicado.
+        self._write_ip_accept(["10.0.0.0/8"])
+        with patch(
+            "checklist_phonevox._asterisk_cli",
+            side_effect=lambda cmd, **kw: "198.51.100.9\n" if cmd == "sip show peers" else None,
+        ):
+            result = checklist_phonevox.check_firewall_asterisk_ips()
+        self.assertEqual(result["level"], "warn")
+        self.assertIn("198.51.100.9", result["text"])
+
+    def test_ok_when_ip_accept_file_does_not_exist_yet_and_nothing_connected(self):
+        with patch("checklist_phonevox._asterisk_cli", return_value=None):
+            result = checklist_phonevox.check_firewall_asterisk_ips()
+        self.assertEqual(result["level"], "ok")
+
+
 class RunAllTest(unittest.TestCase):
     def test_runs_every_check_in_order(self):
         results = checklist_phonevox.run_all()

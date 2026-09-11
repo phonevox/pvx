@@ -9,6 +9,7 @@ from pvx.interactive import widgets
 from pvx.interactive.inputs import ask_confirm, ask_text
 from pvx.modules.base import PvxModule
 
+import asterisk_ips
 import defaults
 import lists
 import session_ip
@@ -60,7 +61,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.11"
+    version = "0.2.13"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -86,7 +87,7 @@ class FirewallModule(PvxModule):
                 validators.parse_port_spec(spec)
             except ValueError as e:
                 raise click.ClickException(str(e))
-            lists.add_entry(_list_path("port_accept"), spec, comment)
+            lists.add_entry(_list_path("port_accept"), spec, comment, seed=defaults.DEFAULT_LISTS["port_accept"])
             click.echo(f"porta {spec} liberada.")
             if _is_interactive():
                 widgets.pause()
@@ -106,7 +107,7 @@ class FirewallModule(PvxModule):
                 validators.parse_port_spec(spec)
             except ValueError as e:
                 raise click.ClickException(str(e))
-            lists.add_entry(_list_path("port_deny"), spec, comment)
+            lists.add_entry(_list_path("port_deny"), spec, comment, seed=defaults.DEFAULT_LISTS["port_deny"])
             click.echo(f"porta {spec} bloqueada.")
             if _is_interactive():
                 widgets.pause()
@@ -120,8 +121,10 @@ class FirewallModule(PvxModule):
             )
             if spec is None:
                 return
-            removed = lists.remove_entry(_list_path("port_accept"), spec)
-            removed = lists.remove_entry(_list_path("port_deny"), spec) or removed
+            removed = lists.remove_entry(_list_path("port_accept"), spec, seed=defaults.DEFAULT_LISTS["port_accept"])
+            removed = lists.remove_entry(
+                _list_path("port_deny"), spec, seed=defaults.DEFAULT_LISTS["port_deny"],
+            ) or removed
             if not removed:
                 raise click.ClickException(f"{spec} não está em nenhuma lista de portas.")
             click.echo(f"{spec} removido.")
@@ -157,7 +160,7 @@ class FirewallModule(PvxModule):
             except ValueError as e:
                 raise click.ClickException(str(e))
             for entry in entries:
-                added = lists.add_entry(_list_path("ip_accept"), entry, comment)
+                added = lists.add_entry(_list_path("ip_accept"), entry, comment, seed=defaults.DEFAULT_LISTS["ip_accept"])
                 verb = "adicionado à" if added else "já estava na"
                 click.echo(f"{entry} {verb} lista de confiáveis.")
             if _is_interactive():
@@ -195,7 +198,7 @@ class FirewallModule(PvxModule):
                             "use --force se tiver certeza."
                         )
             for entry in entries:
-                added = lists.add_entry(_list_path("ip_deny"), entry, comment)
+                added = lists.add_entry(_list_path("ip_deny"), entry, comment, seed=defaults.DEFAULT_LISTS["ip_deny"])
                 verb = "adicionado à" if added else "já estava na"
                 click.echo(f"{entry} {verb} lista de bloqueio.")
             if _is_interactive():
@@ -210,11 +213,39 @@ class FirewallModule(PvxModule):
             )
             if cidr is None:
                 return
-            removed = lists.remove_entry(_list_path("ip_accept"), cidr)
-            removed = lists.remove_entry(_list_path("ip_deny"), cidr) or removed
+            removed = lists.remove_entry(_list_path("ip_accept"), cidr, seed=defaults.DEFAULT_LISTS["ip_accept"])
+            removed = lists.remove_entry(
+                _list_path("ip_deny"), cidr, seed=defaults.DEFAULT_LISTS["ip_deny"],
+            ) or removed
             if not removed:
                 raise click.ClickException(f"{cidr} não está em nenhuma lista de IPs.")
             click.echo(f"{cidr} removido.")
+            if _is_interactive():
+                widgets.pause()
+
+        @ip_group.command(
+            name="trust-asterisk",
+            help="descobre IPs conectados no Asterisk (sip peers/registry, pjsip endpoints) "
+                 "e adiciona à lista de confiáveis -- segurança pra não trancar a central do cliente.",
+        )
+        def ip_trust_asterisk_cmd():
+            _require_root()
+            found = asterisk_ips.discover_asterisk_ips()
+            if not found:
+                click.echo("nenhum IP encontrado no Asterisk.")
+                if _is_interactive():
+                    widgets.pause()
+                return
+
+            added = []
+            for ip, source in sorted(found.items()):
+                if lists.add_entry(_list_path("ip_accept"), ip, source, seed=defaults.DEFAULT_LISTS["ip_accept"]):
+                    added.append(ip)
+
+            if added:
+                click.echo(f"{len(added)} IP(s) adicionado(s) à lista de confiáveis: {', '.join(added)}")
+            else:
+                click.echo("nenhum IP novo -- todos já estavam na lista de confiáveis.")
             if _is_interactive():
                 widgets.pause()
 

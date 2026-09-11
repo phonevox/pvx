@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from click.testing import CliRunner
 
+import defaults
 from main import cli
 
 BASE_STATUS = {
@@ -149,6 +150,20 @@ class IpCommandsTest(MainTestCase):
         result = self._invoke(["ip", "list"])
         self.assertIn("198.51.100.5", result.output)
 
+    def test_accept_on_a_fresh_state_dir_keeps_the_default_trusted_ips(self):
+        # achado ao vivo (produção): técnico adicionou o IP de um cliente
+        # numa central onde ip_accept.conf ainda não existia em disco --
+        # sem seedar antes de gravar, o resultado era um arquivo com SÓ o
+        # IP novo, apagando os IPs base da Phonevox (localhost, redes
+        # internas, IPs fixos da empresa). `apply` sincronizou essa lista
+        # incompleta e o técnico perdeu acesso à própria sessão SSH.
+        result = self._invoke(["ip", "accept", "198.51.100.5", "--comment", "cliente"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("198.51.100.5", listing.output)
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
+
     # achado ao vivo: técnico mandou "1.1.1.1/32,2.2.2.2/8" numa tacada só -- cada CIDR
     # sozinho é válido, mas o comando só aceitava um valor por vez.
     def test_accept_splits_multiple_cidrs_by_comma(self):
@@ -192,6 +207,35 @@ class IpCommandsTest(MainTestCase):
         listing = self._invoke(["ip", "list"])
         self.assertIn("192.0.2.0/24", listing.output)
         self.assertIn("203.0.113.0/24", listing.output)
+
+
+class IpTrustAsteriskCommandTest(MainTestCase):
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={})
+    def test_no_ips_found_shows_a_clean_message(self, mock_discover):
+        result = self._invoke(["ip", "trust-asterisk"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum ip encontrado", result.output.lower())
+
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={"198.51.100.9": "sip show peers"})
+    def test_adds_discovered_ips_and_keeps_the_default_trusted_ips(self, mock_discover):
+        # mesmo bug de "apagar os IPs base" que o `ip accept` teve -- essa
+        # rota também escreve em ip_accept.conf, então também precisa seedar.
+        result = self._invoke(["ip", "trust-asterisk"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("198.51.100.9", result.output)
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("198.51.100.9", listing.output)
+        for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
+            self.assertIn(ip, listing.output)
+
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={"198.51.100.9": "sip show peers"})
+    def test_is_idempotent_does_not_duplicate(self, mock_discover):
+        self._invoke(["ip", "trust-asterisk"])
+        result = self._invoke(["ip", "trust-asterisk"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum ip novo", result.output.lower())
+        listing = self._invoke(["ip", "list"])
+        self.assertEqual(listing.output.count("198.51.100.9"), 1)
 
 
 class StatusCommandTest(MainTestCase):
@@ -337,6 +381,14 @@ class PauseAfterMutationTest(MainTestCase):
         self._invoke(["ip", "accept", "203.0.113.9"])
         with patch("main._is_interactive", return_value=True):
             result = self._invoke(["ip", "remove", "203.0.113.9"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_pause.assert_called_once_with()
+
+    @patch("main.widgets.pause")
+    @patch("main.asterisk_ips.discover_asterisk_ips", return_value={"198.51.100.9": "sip show peers"})
+    def test_ip_trust_asterisk_pauses_when_interactive(self, mock_discover, mock_pause):
+        with patch("main._is_interactive", return_value=True):
+            result = self._invoke(["ip", "trust-asterisk"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_pause.assert_called_once_with()
 

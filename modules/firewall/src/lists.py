@@ -29,8 +29,13 @@ def _write_all(path, entries):
     os.replace(tmp_path, path)
 
 
-def add_entry(path, entry, comment=None):
-    entries = read_list(path)
+def add_entry(path, entry, comment=None, seed=None):
+    # achado ao vivo (produção): sem seed aqui, adicionar um IP/porta numa
+    # central onde o arquivo ainda não existia em disco criava um arquivo
+    # com SÓ a entrada nova -- apagava (na prática, nunca escrevia) os IPs
+    # base da Phonevox. `apply` sincronizava essa lista incompleta e um
+    # técnico perdeu acesso à própria sessão SSH.
+    entries = read_list(path, seed=seed)
     if any(existing == entry for existing, _ in entries):
         return False
     entries.append((entry, comment or ""))
@@ -38,8 +43,8 @@ def add_entry(path, entry, comment=None):
     return True
 
 
-def remove_entry(path, entry):
-    entries = read_list(path)
+def remove_entry(path, entry, seed=None):
+    entries = read_list(path, seed=seed)
     remaining = [(e, c) for e, c in entries if e != entry]
     if len(remaining) == len(entries):
         return False
