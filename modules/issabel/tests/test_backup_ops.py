@@ -1,4 +1,5 @@
 import datetime
+import io
 import tarfile
 import tempfile
 import unittest
@@ -113,6 +114,30 @@ class ExportBackupTest(unittest.TestCase):
                 ops.export_backup("x.tar", ["as_db"])
         self.assertIn("deu ruim", str(ctx.exception))
 
+    def test_writes_a_hidden_pvx_manifest_when_generated_by_is_given(self):
+        # achado ao vivo: dá pra saber se um backup existente veio do pvx ou
+        # de outra ferramenta (native/manual) só de olhar pra dentro dele.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with tarfile.open(Path(tmp_dir, "x.tar"), "w"):
+                pass  # tar vazio, mas válido -- issabel-helper é mockado abaixo
+            with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result()):
+                path, _ = ops.export_backup(f"{tmp_dir}/x.tar", ["as_db"], generated_by="pvx issabel v0.1.4")
+            with tarfile.open(path) as tar:
+                manifest = tar.extractfile(ops.MANIFEST_MEMBER).read().decode()
+        self.assertIn("gerado_por=pvx issabel v0.1.4", manifest)
+        self.assertIn("gerado_em=", manifest)
+
+    def test_skips_the_manifest_when_generated_by_is_not_given(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with tarfile.open(Path(tmp_dir, "x.tar"), "w"):
+                pass
+            with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result()):
+                path, _ = ops.export_backup(f"{tmp_dir}/x.tar", ["as_db"])
+            with tarfile.open(path) as tar:
+                self.assertNotIn(ops.MANIFEST_MEMBER, tar.getnames())
+
     def test_nonzero_exit_code_is_not_fatal_when_the_file_was_produced_anyway(self):
         # achado ao vivo: issabel-helper (igual a interface web nativa)
         # retorna código != 0 sempre que QUALQUER componente individual
@@ -215,6 +240,22 @@ class InspectBackupTest(unittest.TestCase):
 
         self.assertEqual(sorted(info["components"]), ["as_db", "mysql_db"])
         self.assertEqual(info["versions"]["issabel"], "5.0.0")
+        self.assertEqual(info["manifest"], {})
+
+    def test_reads_the_pvx_manifest_when_present(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = str(Path(tmp_dir, "x.tar"))
+            self._build_fake_backup(path, ["as_db"])
+            manifest = b"gerado_por=pvx issabel v0.1.4\ngerado_em=2026-09-14T17:00:00\n"
+            with tarfile.open(path, "a") as tar:
+                info = tarfile.TarInfo(ops.MANIFEST_MEMBER)
+                info.size = len(manifest)
+                tar.addfile(info, io.BytesIO(manifest))
+
+            info = ops.inspect_backup(path)
+
+        self.assertEqual(info["manifest"]["gerado_por"], "pvx issabel v0.1.4")
+        self.assertEqual(info["manifest"]["gerado_em"], "2026-09-14T17:00:00")
 
     def test_raises_a_clean_error_for_a_file_that_is_not_a_valid_backup(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

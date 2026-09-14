@@ -1,4 +1,5 @@
 import datetime
+import io
 import os
 import shutil
 import subprocess
@@ -6,6 +7,10 @@ import tarfile
 import xml.etree.ElementTree as ET
 
 HELPER = "issabel-helper"
+# assinatura opcional embutida no próprio backup -- membro extra que o
+# issabel-helper/backupengine nativo ignora de boa (não faz parte do
+# a_options.xml), então não quebra `--restore` nativo nem retrocompat.
+MANIFEST_MEMBER = "backup/PVX_MANIFEST.txt"
 
 # lista oficial de componentes do backupengine do Issabel (a mesma tela de
 # Backup/Restore da interface web) -- mesmo arquivo/estrutura em Issabel 4 e
@@ -94,7 +99,16 @@ def _split_path(filename_or_path):
     return directory, filename
 
 
-def export_backup(filename_or_path, components):
+def _add_manifest(path, generated_by):
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    content = f"gerado_por={generated_by}\ngerado_em={now}\n".encode()
+    with tarfile.open(path, "a") as tar:
+        info = tarfile.TarInfo(MANIFEST_MEMBER)
+        info.size = len(content)
+        tar.addfile(info, io.BytesIO(content))
+
+
+def export_backup(filename_or_path, components, generated_by=None):
     if not shutil.which(HELPER):
         raise IssabelBackupError("não parece ser uma central Issabel (issabel-helper ausente)")
     if not components:
@@ -113,6 +127,8 @@ def export_backup(filename_or_path, components):
         detail = _warning_text(result)
         msg = "issabel-helper rodou mas o arquivo de backup não foi gerado."
         raise IssabelBackupError(f"{msg} {detail}" if detail else msg)
+    if generated_by:
+        _add_manifest(path, generated_by)
     return path, _warning_text(result)
 
 
@@ -139,6 +155,9 @@ def inspect_backup(path):
         with tarfile.open(path) as tar:
             options_raw = tar.extractfile("backup/a_options.xml").read()
             versions_raw = tar.extractfile("backup/versions.xml").read()
+            manifest_raw = None
+            if MANIFEST_MEMBER in tar.getnames():
+                manifest_raw = tar.extractfile(MANIFEST_MEMBER).read()
     except (OSError, KeyError, tarfile.TarError, AttributeError) as e:
         raise IssabelBackupError(f"não foi possível ler o backup: {e}")
 
@@ -148,7 +167,13 @@ def inspect_backup(path):
     versions = {
         program.get("id"): program.get("ver") for program in ET.fromstring(versions_raw)
     }
-    return {"components": components, "versions": versions}
+    manifest = {}
+    if manifest_raw:
+        for line in manifest_raw.decode().splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                manifest[key] = value
+    return {"components": components, "versions": versions, "manifest": manifest}
 
 
 def installed_issabel_version():

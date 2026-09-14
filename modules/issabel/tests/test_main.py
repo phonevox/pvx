@@ -12,6 +12,7 @@ FAKE_COMPONENTS = {
     "mysql_db": "MySQL: banco de dados geral",
     "as_monitor": "Asterisk: gravações (monitor)",
 }
+CLEAN_SCAN = {"findings": [], "blobs_scanned": ["var.www.html.admin.tgz"]}
 
 
 class VersionMismatchWarningTest(unittest.TestCase):
@@ -29,11 +30,17 @@ class VersionMismatchWarningTest(unittest.TestCase):
 
 
 class ExportCmdTest(unittest.TestCase):
-    def _invoke(self, args, interactive=False, checkbox_result=None, text_result="issabel-backup-x.tar"):
+    def _invoke(self, args, interactive=False, checkbox_result=None, text_result="issabel-backup-x.tar",
+                check_backup=False, checkbox_side_effect=None):
+        checkbox_patch = (
+            patch("main.ask_checkbox", side_effect=checkbox_side_effect) if checkbox_side_effect
+            else patch("main.ask_checkbox", return_value=checkbox_result)
+        )
         with patch("main._is_interactive", return_value=interactive), \
              patch("main.backup_ops.available_components", return_value=FAKE_COMPONENTS), \
              patch("main.ask_text", return_value=text_result), \
-             patch("main.ask_checkbox", return_value=checkbox_result) as mock_checkbox, \
+             checkbox_patch as mock_checkbox, \
+             patch("main.ask_confirm", return_value=check_backup), \
              patch("main.backup_ops.export_backup", return_value=("/tmp/x.tar", None)) as mock_export:
             result = CliRunner().invoke(cli.cli_group(), ["backups", "export"] + args)
         return result, mock_checkbox, mock_export
@@ -43,7 +50,7 @@ class ExportCmdTest(unittest.TestCase):
             [], interactive=True, checkbox_result=["as_db", "mysql_db"],
         )
         self.assertEqual(result.exit_code, 0, result.output)
-        mock_export.assert_called_once_with("issabel-backup-x.tar", ["as_db", "mysql_db"])
+        self.assertEqual(mock_export.call_args.args, ("issabel-backup-x.tar", ["as_db", "mysql_db"]))
 
     def test_interactive_checklist_shows_bare_key_with_description_in_the_hover_field(self):
         # pedido explícito: descrição vai no `description` (hover), não
@@ -75,7 +82,7 @@ class ExportCmdTest(unittest.TestCase):
     def test_non_interactive_honors_explicit_components_flag(self):
         result, _, mock_export = self._invoke(["--components", "as_db"], interactive=False)
         self.assertEqual(result.exit_code, 0, result.output)
-        mock_export.assert_called_once_with(mock_export.call_args.args[0], ["as_db"])
+        self.assertEqual(mock_export.call_args.args[1], ["as_db"])
 
     def test_rejects_unknown_component(self):
         result, _, mock_export = self._invoke(["--components", "nao_existe"], interactive=False)
@@ -101,19 +108,86 @@ class ExportCmdTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("avisos", result.output)
 
+    def test_default_answer_skips_checking_the_backup(self):
+        with patch("main.security_scan.scan_backup") as mock_scan:
+            result, _, _ = self._invoke([], interactive=True, checkbox_result=["as_db"], check_backup=False)
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_scan.assert_not_called()
+
+    def test_checking_a_clean_backup_shows_the_audit_and_offers_no_pruning(self):
+        with patch("main.security_scan.scan_backup", return_value=CLEAN_SCAN):
+            result, mock_checkbox, _ = self._invoke([], interactive=True, checkbox_result=["as_db"], check_backup=True)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum sinal de webshell", result.output)
+        mock_checkbox.assert_called_once()  # só a escolha de componentes -- nenhum prompt de pruning
+
+    def test_checking_offers_pruning_of_suspicious_files_checked_by_default(self):
+        suspicious = {
+            "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "admin/shell.php", "ofuscacao")],
+            "blobs_scanned": ["var.www.html.admin.tgz"],
+        }
+        with patch("main.security_scan.scan_backup", return_value=suspicious), \
+             patch("main.security_scan.prune_backup", return_value=1) as mock_prune:
+            result, mock_checkbox, _ = self._invoke(
+                [], interactive=True, check_backup=True,
+                checkbox_side_effect=[["as_db"], ["var.www.html.admin.tgz::admin/shell.php"]],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        prune_choices = mock_checkbox.call_args_list[1].args[1]
+        self.assertEqual(len(prune_choices), 1)
+        self.assertTrue(prune_choices[0].checked)
+        mock_prune.assert_called_once()
+        self.assertEqual(mock_prune.call_args.args[0], "/tmp/x.tar")
+        self.assertIn("1 arquivo(s)", result.output)
+
+    def test_dialplan_findings_are_never_offered_for_pruning(self):
+        suspicious = {
+            "findings": [main.security_scan.Finding(
+                "suspeito", "etc.asterisk.tgz", "extensions.conf (linha 3)", "System(nc -e ...)",
+            )],
+            "blobs_scanned": ["etc.asterisk.tgz"],
+        }
+        with patch("main.security_scan.scan_backup", return_value=suspicious), \
+             patch("main.security_scan.prune_backup") as mock_prune:
+            # só 1 resposta na lista -- se o código pedir um checklist de
+            # pruning pra um achado de dialplan, side_effect estoura.
+            result, mock_checkbox, _ = self._invoke(
+                [], interactive=True, check_backup=True, checkbox_side_effect=[["as_db"]],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_prune.assert_not_called()
+
+    def test_unselecting_everything_skips_pruning(self):
+        suspicious = {
+            "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "admin/shell.php", "ofuscacao")],
+            "blobs_scanned": ["var.www.html.admin.tgz"],
+        }
+        with patch("main.security_scan.scan_backup", return_value=suspicious), \
+             patch("main.security_scan.prune_backup") as mock_prune:
+            result, _, _ = self._invoke(
+                [], interactive=True, check_backup=True, checkbox_side_effect=[["as_db"], []],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_prune.assert_not_called()
+
 
 class ImportCmdTest(unittest.TestCase):
     INSPECTED = {"components": ["as_db", "mysql_db"], "versions": {"issabel": "5.0.0"}}
 
     def _invoke(self, args, interactive=False, confirm=True, checkbox_result=None, text_result="/tmp/x.tar",
-                installed_version="5.0.0", import_warning=None):
+                installed_version="5.0.0", import_warning=None, ask_confirm_side_effect=None, scan_result=None):
+        confirm_patch = (
+            patch("main.ask_confirm", side_effect=ask_confirm_side_effect) if ask_confirm_side_effect
+            else patch("main.ask_confirm", return_value=confirm)
+        )
         with patch("main._is_interactive", return_value=interactive), \
              patch("main.ask_text", return_value=text_result), \
-             patch("main.ask_confirm", return_value=confirm), \
+             confirm_patch, \
              patch("main.ask_checkbox", return_value=checkbox_result) as mock_checkbox, \
              patch("main.backup_ops.inspect_backup", return_value=self.INSPECTED), \
              patch("main.backup_ops.installed_issabel_version", return_value=installed_version), \
              patch("main.backup_ops.available_components", return_value=FAKE_COMPONENTS), \
+             patch("main.security_scan.scan_backup", return_value=scan_result or CLEAN_SCAN), \
              patch("main.backup_ops.import_backup", return_value=import_warning) as mock_import:
             result = CliRunner().invoke(cli.cli_group(), ["backups", "import"] + args)
         return result, mock_checkbox, mock_import
@@ -171,15 +245,58 @@ class ImportCmdTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("avisos", result.output)
 
+    def test_trusting_the_backup_by_default_skips_the_security_scan(self):
+        with patch("main.security_scan.scan_backup") as mock_scan:
+            result, _, mock_import = self._invoke(
+                [], interactive=True, confirm=True, checkbox_result=[main._TUDO],
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_scan.assert_not_called()
+        mock_import.assert_called_once()
 
-CLEAN_SCAN = {"findings": [], "blobs_scanned": ["var.www.html.admin.tgz"]}
+    def test_distrust_runs_the_scan_and_proceeds_when_clean(self):
+        result, _, mock_import = self._invoke(
+            [], interactive=True, checkbox_result=[main._TUDO], scan_result=CLEAN_SCAN,
+            ask_confirm_side_effect=[False, True],  # não confio -> ... -> restaurar por cima? sim
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum sinal de webshell", result.output)
+        mock_import.assert_called_once()
+
+    def test_distrust_with_suspicious_findings_asks_to_proceed_and_stops_if_declined(self):
+        suspicious = {
+            "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "shell.php", "ofuscacao")],
+            "blobs_scanned": ["var.www.html.admin.tgz"],
+        }
+        result, _, mock_import = self._invoke(
+            [], interactive=True, scan_result=suspicious,
+            ask_confirm_side_effect=[False, False],  # não confio -> acha suspeito -> restaurar mesmo assim? nao
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_import.assert_not_called()
+
+    def test_confirming_despite_suspicious_findings_skips_the_generic_restore_confirm(self):
+        suspicious = {
+            "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "shell.php", "ofuscacao")],
+            "blobs_scanned": ["var.www.html.admin.tgz"],
+        }
+        # só 2 respostas na lista -- se o código pedir confirmação genérica
+        # de novo depois da de segurança, side_effect estoura StopIteration.
+        result, _, mock_import = self._invoke(
+            [], interactive=True, checkbox_result=[main._TUDO], scan_result=suspicious,
+            ask_confirm_side_effect=[False, True],  # não confio -> restaurar mesmo assim? sim
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_import.assert_called_once()
 
 
 class InspectCmdTest(unittest.TestCase):
-    def _invoke(self, args, scan_result=None):
+    def _invoke(self, args, scan_result=None, manifest=None):
         with patch(
             "main.backup_ops.inspect_backup",
-            return_value={"components": ["as_db"], "versions": {"issabel": "5.0.0"}},
+            return_value={
+                "components": ["as_db"], "versions": {"issabel": "5.0.0"}, "manifest": manifest or {},
+            },
         ), patch("main.security_scan.scan_backup", return_value=scan_result or CLEAN_SCAN):
             return CliRunner().invoke(cli.cli_group(), ["backups", "inspect"] + args)
 
@@ -188,6 +305,18 @@ class InspectCmdTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("5.0.0", result.output)
         self.assertIn("as_db", result.output)
+
+    def test_prints_the_pvx_signature_when_present(self):
+        result = self._invoke(
+            ["/tmp/x.tar"], manifest={"gerado_por": "pvx issabel v0.1.4", "gerado_em": "2026-09-14T17:00:00"},
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("pvx issabel v0.1.4", result.output)
+
+    def test_omits_the_signature_line_when_absent(self):
+        result = self._invoke(["/tmp/x.tar"], manifest={})
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertNotIn("Gerado por", result.output)
 
     def test_prints_a_clean_audit_verdict_when_nothing_suspicious(self):
         result = self._invoke(["/tmp/x.tar"], scan_result=CLEAN_SCAN)
@@ -213,7 +342,7 @@ class InspectCmdTest(unittest.TestCase):
     def test_scan_failure_becomes_a_clean_cli_error(self):
         with patch(
             "main.backup_ops.inspect_backup",
-            return_value={"components": [], "versions": {}},
+            return_value={"components": [], "versions": {}, "manifest": {}},
         ), patch("main.security_scan.scan_backup", side_effect=main.security_scan.SecurityScanError("corrompido")):
             result = CliRunner().invoke(cli.cli_group(), ["backups", "inspect", "/tmp/x.tar"])
         self.assertNotEqual(result.exit_code, 0)
@@ -227,7 +356,7 @@ class InspectCmdTest(unittest.TestCase):
              patch("main.ask_text", return_value="/tmp/x.tar") as mock_text, \
              patch(
                  "main.backup_ops.inspect_backup",
-                 return_value={"components": ["as_db"], "versions": {"issabel": "5.0.0"}},
+                 return_value={"components": ["as_db"], "versions": {"issabel": "5.0.0"}, "manifest": {}},
              ) as mock_inspect, \
              patch("main.security_scan.scan_backup", return_value=CLEAN_SCAN), \
              patch("main.widgets.pause"):
@@ -240,35 +369,6 @@ class InspectCmdTest(unittest.TestCase):
         with patch("main._is_interactive", return_value=False):
             result = CliRunner().invoke(cli.cli_group(), ["backups", "inspect"])
         self.assertNotEqual(result.exit_code, 0)
-
-
-class TrustCmdTest(unittest.TestCase):
-    def test_updates_the_baseline_and_reports_counts(self):
-        with patch("main.security_scan.trust_backup", return_value=(3, 5)) as mock_trust, \
-             patch("main.security_scan.default_baseline_path", return_value="/etc/pvx/modules/issabel/state/baseline.txt"):
-            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust", "/tmp/x.tar"])
-        self.assertEqual(result.exit_code, 0, result.output)
-        mock_trust.assert_called_once_with("/tmp/x.tar", "/etc/pvx/modules/issabel/state/baseline.txt")
-
-    def test_interactive_prompts_for_the_file_when_omitted(self):
-        with patch("main._is_interactive", return_value=True), \
-             patch("main.ask_text", return_value="/tmp/x.tar"), \
-             patch("main.security_scan.trust_backup", return_value=(0, 2)) as mock_trust, \
-             patch("main.widgets.pause"):
-            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust"])
-        self.assertEqual(result.exit_code, 0, result.output)
-        mock_trust.assert_called_once()
-
-    def test_non_interactive_without_a_file_raises_a_clean_error(self):
-        with patch("main._is_interactive", return_value=False):
-            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust"])
-        self.assertNotEqual(result.exit_code, 0)
-
-    def test_failure_becomes_a_clean_cli_error(self):
-        with patch("main.security_scan.trust_backup", side_effect=main.security_scan.SecurityScanError("ruim")):
-            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust", "/tmp/x.tar"])
-        self.assertNotEqual(result.exit_code, 0)
-        self.assertIn("ruim", result.output)
 
 
 if __name__ == "__main__":
