@@ -3,13 +3,18 @@ import sys
 import click
 
 from pvx.interactive import widgets
-from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_text, checkbox_choice
+from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_select, ask_text, checkbox_choice
 from pvx.modules.base import PvxModule
 
 import backup_ops
 import security_scan
 
 _TUDO = "Todos os componentes (tudo)"
+_ABORTAR = "Abortar"
+_PROSSEGUIR = "Prosseguir mesmo assim"
+_PROSSEGUIR_REMOVENDO = "Prosseguir removendo os arquivos suspeitos"
+_PROSSEGUIR_SELECIONANDO = "Prosseguir selecionando o que remover"
+_SUSPICIOUS_CHOICES = [_ABORTAR, _PROSSEGUIR, _PROSSEGUIR_REMOVENDO, _PROSSEGUIR_SELECIONANDO]
 # grandes o bastante pra valer a pena não vir marcado por padrão (gravações e
 # correio de voz podem ser vários GB numa central com histórico longo) --
 # ainda aparecem no checklist, só não pré-selecionados.
@@ -73,6 +78,24 @@ def _finding_key(finding):
     return f"{finding.label}::{finding.path}"
 
 
+def _prunable_findings(scan_result):
+    return [f for f in scan_result["findings"] if f.level == "suspeito" and _is_prunable(f)]
+
+
+def _prune_all(logger, path, findings):
+    removed = security_scan.prune_backup(path, findings)
+    logger.info(f"pruning removeu {removed} arquivo(s) de {path}.")
+    widgets.success(f"{removed} arquivo(s) suspeito(s) removido(s) do backup.")
+
+
+def _prompt_and_prune(logger, path, findings, message):
+    items = [checkbox_choice(_finding_key(f), description=f.reason, checked=True) for f in findings]
+    chosen = ask_checkbox(message, items)
+    to_remove = [f for f in findings if _finding_key(f) in (chosen or [])]
+    if to_remove:
+        _prune_all(logger, path, to_remove)
+
+
 def _export_backup(logger, filename, components):
     interactive = _is_interactive()
     available = backup_ops.available_components()
@@ -118,15 +141,11 @@ def _export_backup(logger, filename, components):
         scan_result = _run_audit(path)
         _print_audit(scan_result)
 
-        prunable = [f for f in scan_result["findings"] if f.level == "suspeito" and _is_prunable(f)]
+        prunable = _prunable_findings(scan_result)
         if prunable:
-            items = [checkbox_choice(_finding_key(f), description=f.reason, checked=True) for f in prunable]
-            chosen = ask_checkbox("Quais arquivos suspeitos remover do backup? (pruning seletivo)", items)
-            to_remove = [f for f in prunable if _finding_key(f) in (chosen or [])]
-            if to_remove:
-                removed = security_scan.prune_backup(path, to_remove)
-                logger.info(f"pruning seletivo removeu {removed} arquivo(s) de {path}.")
-                widgets.success(f"{removed} arquivo(s) suspeito(s) removido(s) do backup.")
+            _prompt_and_prune(
+                logger, path, prunable, "Quais arquivos suspeitos remover do backup? (pruning seletivo)",
+            )
 
 
 def _import_backup(logger, file, components, yes):
@@ -155,14 +174,25 @@ def _import_backup(logger, file, components, yes):
     security_override = False
     if interactive and not ask_confirm("Você confia nesse backup?", default=True):
         widgets.section("Auditoria de segurança (heurística, não é antivírus)")
-        level = _print_audit(_run_audit(path))
+        scan_result = _run_audit(path)
+        level = _print_audit(scan_result)
         if level == "error":
-            if not ask_confirm(
-                "Foram encontrados achados suspeitos na auditoria. Restaurar mesmo assim?",
-                default=False,
-            ):
+            choice = ask_select(
+                "Foram encontrados achados suspeitos na auditoria. O que deseja fazer?",
+                _SUSPICIOUS_CHOICES, default=_ABORTAR,
+            )
+            if choice is None or choice == _ABORTAR:
                 return
             security_override = True
+            if choice != _PROSSEGUIR:
+                prunable = _prunable_findings(scan_result)
+                if prunable:
+                    if choice == _PROSSEGUIR_REMOVENDO:
+                        _prune_all(logger, path, prunable)
+                    else:
+                        _prompt_and_prune(
+                            logger, path, prunable, "Quais arquivos suspeitos remover antes de restaurar?",
+                        )
 
     if components:
         selected = list(components)
@@ -230,7 +260,7 @@ def _inspect_backup(file):
 
 class IssabelModule(PvxModule):
     name = "issabel"
-    version = "0.1.4"
+    version = "0.1.5"
 
     def cli_group(self):
         @click.group(name="issabel")

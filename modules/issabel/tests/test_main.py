@@ -175,71 +175,77 @@ class ImportCmdTest(unittest.TestCase):
     INSPECTED = {"components": ["as_db", "mysql_db"], "versions": {"issabel": "5.0.0"}}
 
     def _invoke(self, args, interactive=False, confirm=True, checkbox_result=None, text_result="/tmp/x.tar",
-                installed_version="5.0.0", import_warning=None, ask_confirm_side_effect=None, scan_result=None):
+                installed_version="5.0.0", import_warning=None, ask_confirm_side_effect=None, scan_result=None,
+                ask_select_result=None, checkbox_side_effect=None):
         confirm_patch = (
             patch("main.ask_confirm", side_effect=ask_confirm_side_effect) if ask_confirm_side_effect
             else patch("main.ask_confirm", return_value=confirm)
         )
+        checkbox_patch = (
+            patch("main.ask_checkbox", side_effect=checkbox_side_effect) if checkbox_side_effect
+            else patch("main.ask_checkbox", return_value=checkbox_result)
+        )
         with patch("main._is_interactive", return_value=interactive), \
              patch("main.ask_text", return_value=text_result), \
              confirm_patch, \
-             patch("main.ask_checkbox", return_value=checkbox_result) as mock_checkbox, \
+             checkbox_patch as mock_checkbox, \
+             patch("main.ask_select", return_value=ask_select_result) as mock_select, \
              patch("main.backup_ops.inspect_backup", return_value=self.INSPECTED), \
              patch("main.backup_ops.installed_issabel_version", return_value=installed_version), \
              patch("main.backup_ops.available_components", return_value=FAKE_COMPONENTS), \
              patch("main.security_scan.scan_backup", return_value=scan_result or CLEAN_SCAN), \
              patch("main.backup_ops.import_backup", return_value=import_warning) as mock_import:
             result = CliRunner().invoke(cli.cli_group(), ["backups", "import"] + args)
-        return result, mock_checkbox, mock_import
+        return result, mock_checkbox, mock_import, mock_select
 
     def test_interactive_checklist_defaults_to_tudo_checked_and_rest_unchecked(self):
-        _, mock_checkbox, _ = self._invoke([], interactive=True, checkbox_result=[main._TUDO])
+        _, mock_checkbox, _, _ = self._invoke([], interactive=True, checkbox_result=[main._TUDO])
         choices = {c.value: c.checked for c in mock_checkbox.call_args.args[1]}
         self.assertTrue(choices[main._TUDO])
         self.assertFalse(choices["as_db"])
         self.assertFalse(choices["mysql_db"])
 
     def test_interactive_default_choice_is_all_components_from_the_backup(self):
-        result, _, mock_import = self._invoke([], interactive=True, checkbox_result=[main._TUDO])
+        result, _, mock_import, _ = self._invoke([], interactive=True, checkbox_result=[main._TUDO])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_import.assert_called_once_with("/tmp/x.tar", ["as_db", "mysql_db"])
 
     def test_interactive_can_narrow_to_specific_components(self):
-        result, _, mock_import = self._invoke([], interactive=True, checkbox_result=["as_db"])
+        result, _, mock_import, _ = self._invoke([], interactive=True, checkbox_result=["as_db"])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_import.assert_called_once_with("/tmp/x.tar", ["as_db"])
 
     def test_interactive_declining_the_confirm_never_imports(self):
-        result, _, mock_import = self._invoke([], interactive=True, confirm=False)
+        result, _, mock_import, _ = self._invoke([], interactive=True, confirm=False)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_import.assert_not_called()
 
     def test_interactive_warns_on_issabel_version_mismatch(self):
-        result, _, _ = self._invoke(
+        result, _, _, _ = self._invoke(
             [], interactive=True, checkbox_result=[main._TUDO], installed_version="4.0.0",
         )
         self.assertIn("4", result.output)
         self.assertIn("5", result.output)
 
     def test_non_interactive_requires_yes_to_skip_confirmation(self):
-        result, _, mock_import = self._invoke(["--file", "/tmp/x.tar"], interactive=False)
+        result, _, mock_import, _ = self._invoke(["--file", "/tmp/x.tar"], interactive=False)
         self.assertNotEqual(result.exit_code, 0)
         mock_import.assert_not_called()
 
     def test_non_interactive_with_yes_defaults_to_all_components_from_the_backup(self):
-        result, _, mock_import = self._invoke(["--file", "/tmp/x.tar", "--yes"], interactive=False)
+        result, _, mock_import, _ = self._invoke(["--file", "/tmp/x.tar", "--yes"], interactive=False)
         self.assertEqual(result.exit_code, 0, result.output)
         mock_import.assert_called_once_with("/tmp/x.tar", ["as_db", "mysql_db"])
 
     def test_non_interactive_honors_explicit_components_flag(self):
-        result, _, mock_import = self._invoke(
+        result, _, mock_import, _ = self._invoke(
             ["--file", "/tmp/x.tar", "--yes", "--components", "as_db"], interactive=False,
         )
         self.assertEqual(result.exit_code, 0, result.output)
         mock_import.assert_called_once_with("/tmp/x.tar", ["as_db"])
 
     def test_still_succeeds_and_warns_when_the_helper_returns_a_warning(self):
-        result, _, _ = self._invoke(
+        result, _, _, _ = self._invoke(
             ["--file", "/tmp/x.tar", "--yes"], interactive=False, import_warning="WARN: banco tal nao existe",
         )
         self.assertEqual(result.exit_code, 0, result.output)
@@ -247,7 +253,7 @@ class ImportCmdTest(unittest.TestCase):
 
     def test_trusting_the_backup_by_default_skips_the_security_scan(self):
         with patch("main.security_scan.scan_backup") as mock_scan:
-            result, _, mock_import = self._invoke(
+            result, _, mock_import, _ = self._invoke(
                 [], interactive=True, confirm=True, checkbox_result=[main._TUDO],
             )
         self.assertEqual(result.exit_code, 0, result.output)
@@ -255,7 +261,7 @@ class ImportCmdTest(unittest.TestCase):
         mock_import.assert_called_once()
 
     def test_distrust_runs_the_scan_and_proceeds_when_clean(self):
-        result, _, mock_import = self._invoke(
+        result, _, mock_import, _ = self._invoke(
             [], interactive=True, checkbox_result=[main._TUDO], scan_result=CLEAN_SCAN,
             ask_confirm_side_effect=[False, True],  # não confio -> ... -> restaurar por cima? sim
         )
@@ -263,30 +269,66 @@ class ImportCmdTest(unittest.TestCase):
         self.assertIn("nenhum sinal de webshell", result.output)
         mock_import.assert_called_once()
 
-    def test_distrust_with_suspicious_findings_asks_to_proceed_and_stops_if_declined(self):
-        suspicious = {
-            "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "shell.php", "ofuscacao")],
-            "blobs_scanned": ["var.www.html.admin.tgz"],
-        }
-        result, _, mock_import = self._invoke(
-            [], interactive=True, scan_result=suspicious,
-            ask_confirm_side_effect=[False, False],  # não confio -> acha suspeito -> restaurar mesmo assim? nao
+    SUSPICIOUS_SCAN = {
+        "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "admin/shell.php", "ofuscacao")],
+        "blobs_scanned": ["var.www.html.admin.tgz"],
+    }
+
+    def test_distrust_with_suspicious_findings_shows_the_menu_and_aborts_by_default(self):
+        # só 1 resposta de confirm na lista -- se o código pedir mais
+        # alguma confirmação depois do menu de achados, estoura.
+        result, _, mock_import, mock_select = self._invoke(
+            [], interactive=True, scan_result=self.SUSPICIOUS_SCAN,
+            ask_confirm_side_effect=[False], ask_select_result=main._ABORTAR,
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_select.call_args.args[1], main._SUSPICIOUS_CHOICES)
+        mock_import.assert_not_called()
+
+    def test_escaping_the_menu_also_aborts(self):
+        result, _, mock_import, _ = self._invoke(
+            [], interactive=True, scan_result=self.SUSPICIOUS_SCAN,
+            ask_confirm_side_effect=[False], ask_select_result=None,
         )
         self.assertEqual(result.exit_code, 0, result.output)
         mock_import.assert_not_called()
 
-    def test_confirming_despite_suspicious_findings_skips_the_generic_restore_confirm(self):
-        suspicious = {
-            "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "shell.php", "ofuscacao")],
-            "blobs_scanned": ["var.www.html.admin.tgz"],
-        }
-        # só 2 respostas na lista -- se o código pedir confirmação genérica
-        # de novo depois da de segurança, side_effect estoura StopIteration.
-        result, _, mock_import = self._invoke(
-            [], interactive=True, checkbox_result=[main._TUDO], scan_result=suspicious,
-            ask_confirm_side_effect=[False, True],  # não confio -> restaurar mesmo assim? sim
-        )
+    def test_proceeding_anyway_skips_the_generic_restore_confirm_and_never_prunes(self):
+        with patch("main.security_scan.prune_backup") as mock_prune:
+            result, _, mock_import, _ = self._invoke(
+                [], interactive=True, checkbox_result=[main._TUDO], scan_result=self.SUSPICIOUS_SCAN,
+                ask_confirm_side_effect=[False], ask_select_result=main._PROSSEGUIR,
+            )
         self.assertEqual(result.exit_code, 0, result.output)
+        mock_import.assert_called_once()
+        mock_prune.assert_not_called()
+
+    def test_proceeding_and_removing_prunes_every_suspicious_file_without_asking_which(self):
+        with patch("main.security_scan.prune_backup", return_value=1) as mock_prune:
+            result, _, mock_import, mock_checkbox = self._invoke(
+                [], interactive=True, checkbox_result=[main._TUDO], scan_result=self.SUSPICIOUS_SCAN,
+                ask_confirm_side_effect=[False], ask_select_result=main._PROSSEGUIR_REMOVENDO,
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_prune.assert_called_once()
+        self.assertEqual(mock_prune.call_args.args[0], "/tmp/x.tar")
+        self.assertEqual(len(mock_prune.call_args.args[1]), 1)
+        mock_import.assert_called_once()
+        self.assertIn("1 arquivo(s)", result.output)
+
+    def test_proceeding_and_selecting_offers_a_cherrypick_checklist(self):
+        with patch("main.security_scan.prune_backup", return_value=1) as mock_prune:
+            result, mock_checkbox, mock_import, _ = self._invoke(
+                [], scan_result=self.SUSPICIOUS_SCAN, ask_select_result=main._PROSSEGUIR_SELECIONANDO,
+                ask_confirm_side_effect=[False],
+                checkbox_side_effect=[["var.www.html.admin.tgz::admin/shell.php"], [main._TUDO]],
+                interactive=True,
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        prune_choices = mock_checkbox.call_args_list[0].args[1]
+        self.assertEqual(len(prune_choices), 1)
+        self.assertTrue(prune_choices[0].checked)
+        mock_prune.assert_called_once()
         mock_import.assert_called_once()
 
 
