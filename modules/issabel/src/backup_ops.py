@@ -6,7 +6,6 @@ import tarfile
 import xml.etree.ElementTree as ET
 
 HELPER = "issabel-helper"
-DEFAULT_BACKUP_DIR = "/var/www/backup"
 
 # lista oficial de componentes do backupengine do Issabel (a mesma tela de
 # Backup/Restore da interface web) -- mesmo arquivo/estrutura em Issabel 4 e
@@ -77,45 +76,52 @@ def default_filename(now=None):
     return f"issabel-backup-{now:%Y%m%d%H%M%S}.tar"
 
 
-def export_backup(filename, components, backup_dir=DEFAULT_BACKUP_DIR):
+def _split_path(filename_or_path):
+    # issabel-helper só aceita --backupfile como nome sem diretório --
+    # --tmpdir carrega o diretório de verdade. Um nome sem "/" (ex.: só
+    # "x.tar") é relativo a onde o pvx foi chamado, não a um lugar fixo.
+    directory, filename = os.path.split(filename_or_path)
+    directory = os.path.abspath(directory) if directory else os.getcwd()
+    return directory, filename
+
+
+def export_backup(filename_or_path, components):
     if not shutil.which(HELPER):
         raise IssabelBackupError("não parece ser uma central Issabel (issabel-helper ausente)")
     if not components:
         raise IssabelBackupError("nenhum componente selecionado.")
 
+    directory, filename = _split_path(filename_or_path)
+    if not os.path.isdir(directory):
+        raise IssabelBackupError(f"diretório não existe: {directory}")
+
     _run(
         [HELPER, "backupengine", "--backup", "--backupfile", filename,
-         "--tmpdir", backup_dir, "--components", ",".join(components)],
+         "--tmpdir", directory, "--components", ",".join(components)],
         "falha ao gerar o backup",
     )
-    path = os.path.join(backup_dir, filename)
+    path = os.path.join(directory, filename)
     if not os.path.isfile(path):
         raise IssabelBackupError("issabel-helper rodou mas o arquivo de backup não foi gerado.")
     return path
 
 
-def import_backup(path, components, backup_dir=DEFAULT_BACKUP_DIR):
+def import_backup(filename_or_path, components):
     if not shutil.which(HELPER):
         raise IssabelBackupError("não parece ser uma central Issabel (issabel-helper ausente)")
     if not components:
         raise IssabelBackupError("nenhum componente selecionado.")
 
-    # --restore exige o arquivo já dentro de --tmpdir, referenciado só pelo
-    # nome (sem diretório) -- copia pra lá se o usuário apontou pra outro lugar.
-    filename = os.path.basename(path)
-    staged = os.path.join(backup_dir, filename)
-    copied = os.path.abspath(path) != os.path.abspath(staged)
-    if copied:
-        shutil.copy(path, staged)
-    try:
-        _run(
-            [HELPER, "backupengine", "--restore", "--backupfile", filename,
-             "--tmpdir", backup_dir, "--components", ",".join(components)],
-            "falha ao restaurar o backup",
-        )
-    finally:
-        if copied:
-            os.remove(staged)
+    directory, filename = _split_path(filename_or_path)
+    path = os.path.join(directory, filename)
+    if not os.path.isfile(path):
+        raise IssabelBackupError(f"arquivo de backup não encontrado: {path}")
+
+    _run(
+        [HELPER, "backupengine", "--restore", "--backupfile", filename,
+         "--tmpdir", directory, "--components", ",".join(components)],
+        "falha ao restaurar o backup",
+    )
 
 
 def inspect_backup(path):

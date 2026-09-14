@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import patch
 
+import questionary
+
 from pvx.interactive import inputs
 from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_password, ask_select, ask_text
 
@@ -92,6 +94,37 @@ class AskCheckboxTest(unittest.TestCase):
         result = ask_checkbox("Selecione:", ["a", "b"])
         self.assertIsNone(result)
         mock_answer.assert_not_called()
+
+    @patch("pvx.interactive.inputs._run_scrollable", return_value=[])
+    def test_accepts_prebuilt_choices_preserving_description_and_checked(self, mock_run):
+        # achado ao vivo: um chamador que quer descrição em hover (ver
+        # ask_select) precisa poder passar Choice já pronto, sem que
+        # ask_checkbox re-envelope tudo em str(c) e perca isso.
+        choices = [
+            questionary.Choice(title="a", value="a", description="descrição de a", checked=True),
+            questionary.Choice(title="b", value="b", checked=False),
+        ]
+        ask_checkbox("Selecione:", choices)
+        state = mock_run.call_args.args[1]
+        self.assertEqual(state.selected, {"a"})
+        self.assertEqual(state.choices[0].description, "descrição de a")
+
+
+class CheckboxChoiceTest(unittest.TestCase):
+    def test_builds_a_questionary_choice_with_description_and_checked(self):
+        # módulos nunca importam questionary direto -- isso é o jeito deles
+        # montarem um item de ask_checkbox() com descrição em hover.
+        choice = inputs.checkbox_choice("as_db", description="Banco de dados", checked=True)
+        self.assertIsInstance(choice, questionary.Choice)
+        self.assertEqual(choice.title, "as_db")
+        self.assertEqual(choice.value, "as_db")
+        self.assertEqual(choice.description, "Banco de dados")
+        self.assertTrue(choice.checked)
+
+    def test_defaults_to_no_description_and_unchecked(self):
+        choice = inputs.checkbox_choice("as_db")
+        self.assertIsNone(choice.description)
+        self.assertFalse(choice.checked)
 
 
 class AskConfirmTest(unittest.TestCase):

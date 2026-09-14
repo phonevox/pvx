@@ -235,12 +235,24 @@ def ask_select(msg, choices, default=None, window_size=_ScrollableList.WINDOW_SI
 
 def ask_checkbox(msg, choices, defaults=None):
     defaults = defaults or []
-    wrapped = [questionary.Choice(title=str(c), value=c, checked=c in defaults) for c in choices]
+    # Choice já pronto (com description, p/ hover) passa direto -- só valor
+    # solto vira um Choice simples, marcado por `defaults`.
+    wrapped = [
+        c if isinstance(c, questionary.Choice)
+        else questionary.Choice(title=str(c), value=c, checked=c in defaults)
+        for c in choices
+    ]
     state = _ScrollableList(wrapped, multi=True)
     result = _run_scrollable(msg, state, CHECKBOX_NAV_HINT_TEXT)
     if result is not None:
         widgets.checkbox_answer(msg, result)
     return result
+
+
+def checkbox_choice(value, description=None, checked=False):
+    # módulos nunca importam questionary direto -- isso monta um item pra
+    # ask_checkbox() com descrição em hover, sem expor o tipo da lib.
+    return questionary.Choice(title=str(value), value=value, description=description, checked=checked)
 
 
 def ask_confirm(msg, default=True):

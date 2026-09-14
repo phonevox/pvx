@@ -3,24 +3,34 @@ import sys
 import click
 
 from pvx.interactive import widgets
-from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_text
+from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_text, checkbox_choice
 from pvx.modules.base import PvxModule
 
 import backup_ops
 
 _TUDO = "Todos os componentes (tudo)"
+# grandes o bastante pra valer a pena não vir marcado por padrão (gravações e
+# correio de voz podem ser vários GB numa central com histórico longo) --
+# ainda aparecem no checklist, só não pré-selecionados.
+_HEAVY_COMPONENTS = {"as_monitor", "as_voicemail"}
 
 
 def _is_interactive():
     return sys.stdin.isatty()
 
 
-def _checklist_item(key, desc):
-    return f"{key} -- {desc}"
+def _export_choices(available):
+    return [
+        checkbox_choice(key, description=desc, checked=key not in _HEAVY_COMPONENTS)
+        for key, desc in available.items()
+    ]
 
 
-def _key_from_item(item):
-    return item.split(" -- ", 1)[0]
+def _import_choices(components_in_backup, available):
+    return [checkbox_choice(_TUDO, checked=True)] + [
+        checkbox_choice(key, description=available.get(key), checked=False)
+        for key in components_in_backup
+    ]
 
 
 def _version_mismatch_warning(backup_version, installed_version):
@@ -53,16 +63,15 @@ def _export_backup(logger, filename, components):
             raise click.ClickException(f"componente(s) desconhecido(s): {', '.join(unknown)}")
         selected = list(components)
     elif interactive:
-        items = [_checklist_item(key, desc) for key, desc in available.items()]
-        chosen = ask_checkbox("O que deseja salvar?", items, defaults=items)
-        if chosen is None:
+        selected = ask_checkbox("O que deseja salvar?", _export_choices(available))
+        if selected is None:
             return
-        selected = [_key_from_item(item) for item in chosen]
     else:
         selected = list(available)
 
     try:
-        path = backup_ops.export_backup(filename, selected)
+        with widgets.step("Gerando backup..."):
+            path = backup_ops.export_backup(filename, selected)
     except backup_ops.IssabelBackupError as e:
         logger.error(f"export falhou: {e}")
         raise click.ClickException(str(e))
@@ -96,16 +105,11 @@ def _import_backup(logger, file, components, yes):
     if components:
         selected = list(components)
     elif interactive:
-        items = [_TUDO] + [
-            _checklist_item(key, backup_ops.available_components().get(key, key))
-            for key in info["components"]
-        ]
-        chosen = ask_checkbox("O que deseja importar?", items, defaults=[_TUDO])
+        available = backup_ops.available_components()
+        chosen = ask_checkbox("O que deseja importar?", _import_choices(info["components"], available))
         if chosen is None:
             return
-        selected = info["components"] if _TUDO in chosen else [
-            _key_from_item(item) for item in chosen if item != _TUDO
-        ]
+        selected = info["components"] if _TUDO in chosen else [c for c in chosen if c != _TUDO]
     else:
         selected = info["components"]
 
@@ -119,7 +123,8 @@ def _import_backup(logger, file, components, yes):
         raise click.ClickException("restaurar é destrutivo -- confirme com --yes.")
 
     try:
-        backup_ops.import_backup(path, selected)
+        with widgets.step("Restaurando backup..."):
+            backup_ops.import_backup(path, selected)
     except backup_ops.IssabelBackupError as e:
         logger.error(f"import falhou: {e}")
         raise click.ClickException(str(e))
@@ -128,6 +133,14 @@ def _import_backup(logger, file, components, yes):
 
 
 def _inspect_backup(file):
+    interactive = _is_interactive()
+    if file is None:
+        if not interactive:
+            raise click.ClickException("informe o arquivo.")
+        file = ask_text("Onde está o arquivo?")
+        if not file:
+            return
+
     try:
         info = backup_ops.inspect_backup(file)
     except backup_ops.IssabelBackupError as e:
@@ -143,7 +156,7 @@ def _inspect_backup(file):
 
 class IssabelModule(PvxModule):
     name = "issabel"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def cli_group(self):
         @click.group(name="issabel")
@@ -172,7 +185,7 @@ class IssabelModule(PvxModule):
                 widgets.pause()
 
         @backups_group.command(name="inspect", help="mostra o que tem dentro de um backup local do Issabel.")
-        @click.argument("file")
+        @click.argument("file", required=False)
         def inspect_cmd(file):
             _inspect_backup(file)
             if _is_interactive():

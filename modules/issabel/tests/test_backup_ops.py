@@ -51,12 +51,14 @@ class ExportBackupTest(unittest.TestCase):
                 ops.export_backup("x.tar", [])
         self.assertIn("componente", str(ctx.exception))
 
-    def test_calls_issabel_helper_with_the_given_components_and_returns_the_path(self):
+    def test_calls_issabel_helper_with_an_absolute_path_split_into_tmpdir_and_bare_filename(self):
+        # --backupfile do issabel-helper só aceita nome sem diretório --
+        # --tmpdir vira o diretório de verdade que o usuário pediu.
         with tempfile.TemporaryDirectory() as tmp_dir:
             Path(tmp_dir, "x.tar").write_text("fake")
             with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
                  patch("backup_ops.subprocess.run", return_value=_run_result()) as mock_run:
-                path = ops.export_backup("x.tar", ["as_db", "as_config_files"], backup_dir=tmp_dir)
+                path = ops.export_backup(f"{tmp_dir}/x.tar", ["as_db", "as_config_files"])
 
         self.assertEqual(path, f"{tmp_dir}/x.tar")
         args = mock_run.call_args.args[0]
@@ -66,12 +68,31 @@ class ExportBackupTest(unittest.TestCase):
         self.assertIn("as_db,as_config_files", args)
         self.assertIn(tmp_dir, args)
 
+    def test_a_bare_filename_lands_in_the_current_working_directory(self):
+        # pedido explícito: exportar com só um nome de arquivo salva relativo
+        # a onde o pvx foi chamado, não num diretório fixo do Issabel.
+        with tempfile.TemporaryDirectory() as cwd:
+            Path(cwd, "x.tar").write_text("fake")
+            with patch("backup_ops.os.getcwd", return_value=cwd), \
+                 patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result()) as mock_run:
+                path = ops.export_backup("x.tar", ["as_db"])
+
+        self.assertEqual(path, f"{cwd}/x.tar")
+        self.assertIn(cwd, mock_run.call_args.args[0])
+
+    def test_raises_when_the_target_directory_does_not_exist(self):
+        with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"):
+            with self.assertRaises(ops.IssabelBackupError) as ctx:
+                ops.export_backup("/nao/existe/x.tar", ["as_db"])
+        self.assertIn("diretório", str(ctx.exception))
+
     def test_raises_when_issabel_helper_does_not_produce_the_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir, \
              patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
              patch("backup_ops.subprocess.run", return_value=_run_result()):
             with self.assertRaises(ops.IssabelBackupError) as ctx:
-                ops.export_backup("x.tar", ["as_db"], backup_dir=tmp_dir)
+                ops.export_backup(f"{tmp_dir}/x.tar", ["as_db"])
         self.assertIn("não foi gerado", str(ctx.exception))
 
     def test_issabel_helper_failure_becomes_a_clean_error(self):
@@ -90,6 +111,59 @@ class ExportBackupTest(unittest.TestCase):
             with self.assertRaises(ops.IssabelBackupError) as ctx:
                 ops.export_backup("x.tar", ["as_db"])
         self.assertIn("deu ruim", str(ctx.exception))
+
+
+class ImportBackupTest(unittest.TestCase):
+    def test_raises_when_not_an_issabel_box(self):
+        with patch("backup_ops.shutil.which", return_value=None):
+            with self.assertRaises(ops.IssabelBackupError) as ctx:
+                ops.import_backup("x.tar", ["as_db"])
+        self.assertIn("issabel-helper", str(ctx.exception))
+
+    def test_raises_when_no_components_given(self):
+        with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"):
+            with self.assertRaises(ops.IssabelBackupError) as ctx:
+                ops.import_backup("x.tar", [])
+        self.assertIn("componente", str(ctx.exception))
+
+    def test_raises_when_the_backup_file_is_not_found(self):
+        with tempfile.TemporaryDirectory() as tmp_dir, \
+             patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"):
+            with self.assertRaises(ops.IssabelBackupError) as ctx:
+                ops.import_backup(f"{tmp_dir}/missing.tar", ["as_db"])
+        self.assertIn("não encontrado", str(ctx.exception))
+
+    def test_calls_issabel_helper_using_the_files_own_directory_as_tmpdir(self):
+        # --restore do issabel-helper exige o arquivo já dentro de --tmpdir,
+        # referenciado só pelo nome -- nada de copiar pra um lugar fixo.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            Path(tmp_dir, "x.tar").write_text("fake")
+            with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result()) as mock_run:
+                ops.import_backup(f"{tmp_dir}/x.tar", ["as_db"])
+
+        args = mock_run.call_args.args[0]
+        self.assertIn("--restore", args)
+        self.assertIn("x.tar", args)
+        self.assertIn(tmp_dir, args)
+
+    def test_a_bare_filename_is_resolved_against_the_current_working_directory(self):
+        with tempfile.TemporaryDirectory() as cwd:
+            Path(cwd, "x.tar").write_text("fake")
+            with patch("backup_ops.os.getcwd", return_value=cwd), \
+                 patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result()) as mock_run:
+                ops.import_backup("x.tar", ["as_db"])
+        self.assertIn(cwd, mock_run.call_args.args[0])
+
+    def test_issabel_helper_failure_becomes_a_clean_error(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            Path(tmp_dir, "x.tar").write_text("fake")
+            with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="boom")):
+                with self.assertRaises(ops.IssabelBackupError) as ctx:
+                    ops.import_backup(f"{tmp_dir}/x.tar", ["as_db"])
+        self.assertIn("boom", str(ctx.exception))
 
 
 class InspectBackupTest(unittest.TestCase):
