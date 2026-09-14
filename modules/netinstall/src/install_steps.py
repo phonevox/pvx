@@ -123,6 +123,12 @@ def post_install():
     os_ops.run_cmd(["mkdir", "--parents", "/var/log/asterisk/cdr-csv"])
     os_ops.run_cmd(["/usr/sbin/amportal", "chown"])
 
+    # fop2 (pacote sempre instalado, ver PACKAGES_ISSABEL) causa erro/estoura
+    # processamento em algumas centrais -- desliga incondicionalmente, garante
+    # que nunca sobe sozinho depois de um reboot.
+    os_ops.run_cmd(["systemctl", "stop", "fop2"])
+    os_ops.run_cmd(["systemctl", "disable", "fop2"])
+
 
 def install_db():
     ok = os_ops.run_cmd([
