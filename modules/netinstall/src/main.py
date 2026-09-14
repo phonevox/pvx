@@ -249,7 +249,7 @@ def _run_issabel5(logger, flags, interactive):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.25"
+    version = "0.1.26"
 
     def cli_group(self):
         @click.group(name="netinstall")

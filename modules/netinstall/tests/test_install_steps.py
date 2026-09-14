@@ -225,6 +225,15 @@ class PostInstallTest(unittest.TestCase):
         disable_calls = [c for c in mock_run_cmd.call_args_list if "firewalld" in " ".join(c.args[0])]
         self.assertEqual(disable_calls, [])
 
+    @patch("install_steps.os_ops.run_cmd", return_value=True)
+    @patch("install_steps.shutil.which", return_value=None)
+    def test_stops_and_disables_fop2_service(self, mock_which, mock_run_cmd):
+        # fop2 causa erro/estoura processamento em algumas centrais -- garante que
+        # nunca sobe sozinho, independente do resto da instalação.
+        install_steps.post_install()
+        mock_run_cmd.assert_any_call(["systemctl", "stop", "fop2"])
+        mock_run_cmd.assert_any_call(["systemctl", "disable", "fop2"])
+
     @patch("install_steps.os_ops.run_cmd")
     @patch("install_steps.shutil.which", return_value=None)
     def test_raises_when_setting_the_temp_root_password_fails(self, mock_which, mock_run_cmd):
