@@ -7,6 +7,7 @@ from pvx.interactive.inputs import ask_checkbox, ask_confirm, ask_text, checkbox
 from pvx.modules.base import PvxModule
 
 import backup_ops
+import security_scan
 
 _TUDO = "Todos os componentes (tudo)"
 # grandes o bastante pra valer a pena não vir marcado por padrão (gravações e
@@ -153,10 +154,37 @@ def _inspect_backup(file):
     for key in info["components"]:
         widgets.item(key, comment=available.get(key))
 
+    widgets.section("Auditoria de segurança (heurística, não é antivírus)")
+    try:
+        scan_result = security_scan.scan_backup(file, baseline_path=security_scan.default_baseline_path())
+    except security_scan.SecurityScanError as e:
+        raise click.ClickException(str(e))
+    for finding in scan_result["findings"]:
+        widgets.check_result(str(finding), "ok" if finding.level == "ok" else "error")
+    level, text = security_scan.verdict(scan_result)
+    widgets.check_result(text, level)
+
+
+def _trust_backup(logger, file):
+    interactive = _is_interactive()
+    if file is None:
+        if not interactive:
+            raise click.ClickException("informe o arquivo.")
+        file = ask_text("Onde está o arquivo confiável?")
+        if not file:
+            return
+
+    try:
+        before, after = security_scan.trust_backup(file, security_scan.default_baseline_path())
+    except security_scan.SecurityScanError as e:
+        raise click.ClickException(str(e))
+    logger.info(f"baseline de segurança atualizado a partir de {file} ({before} -> {after} entradas).")
+    widgets.success(f"baseline atualizado ({before} -> {after} entradas).")
+
 
 class IssabelModule(PvxModule):
     name = "issabel"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def cli_group(self):
         @click.group(name="issabel")
@@ -188,6 +216,16 @@ class IssabelModule(PvxModule):
         @click.argument("file", required=False)
         def inspect_cmd(file):
             _inspect_backup(file)
+            if _is_interactive():
+                widgets.pause()
+
+        @backups_group.command(
+            name="trust",
+            help="marca os arquivos de codigo (admin/agi-bin/etc.asterisk) desse backup como confiaveis.",
+        )
+        @click.argument("file", required=False)
+        def trust_cmd(file):
+            _trust_backup(self.get_logger(), file)
             if _is_interactive():
                 widgets.pause()
 

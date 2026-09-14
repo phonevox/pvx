@@ -1,6 +1,6 @@
 {
   "name": "issabel",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "entrypoint": "main:cli",
   "description": "Backup e restore local do Issabel (export/import/inspect via issabel-helper).",
   "author": "pvx",

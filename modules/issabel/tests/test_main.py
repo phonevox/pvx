@@ -155,22 +155,52 @@ class ImportCmdTest(unittest.TestCase):
         mock_import.assert_called_once_with("/tmp/x.tar", ["as_db"])
 
 
+CLEAN_SCAN = {"findings": [], "blobs_scanned": ["var.www.html.admin.tgz"]}
+
+
 class InspectCmdTest(unittest.TestCase):
-    def test_prints_issabel_version_and_components_found(self):
+    def _invoke(self, args, scan_result=None):
         with patch(
             "main.backup_ops.inspect_backup",
             return_value={"components": ["as_db"], "versions": {"issabel": "5.0.0"}},
-        ):
-            result = CliRunner().invoke(cli.cli_group(), ["backups", "inspect", "/tmp/x.tar"])
+        ), patch("main.security_scan.scan_backup", return_value=scan_result or CLEAN_SCAN):
+            return CliRunner().invoke(cli.cli_group(), ["backups", "inspect"] + args)
+
+    def test_prints_issabel_version_and_components_found(self):
+        result = self._invoke(["/tmp/x.tar"])
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("5.0.0", result.output)
         self.assertIn("as_db", result.output)
+
+    def test_prints_a_clean_audit_verdict_when_nothing_suspicious(self):
+        result = self._invoke(["/tmp/x.tar"], scan_result=CLEAN_SCAN)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("nenhum sinal de webshell", result.output)
+
+    def test_prints_each_suspicious_finding_and_the_bad_verdict(self):
+        scan_result = {
+            "findings": [main.security_scan.Finding("suspeito", "var.www.html.admin.tgz", "shell.php", "ofuscacao")],
+            "blobs_scanned": ["var.www.html.admin.tgz"],
+        }
+        result = self._invoke(["/tmp/x.tar"], scan_result=scan_result)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("shell.php", result.output)
+        self.assertIn("achado(s) suspeito", result.output)
 
     def test_failure_becomes_a_clean_cli_error(self):
         with patch("main.backup_ops.inspect_backup", side_effect=backup_ops.IssabelBackupError("arquivo inválido")):
             result = CliRunner().invoke(cli.cli_group(), ["backups", "inspect", "/tmp/x.tar"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("arquivo inválido", result.output)
+
+    def test_scan_failure_becomes_a_clean_cli_error(self):
+        with patch(
+            "main.backup_ops.inspect_backup",
+            return_value={"components": [], "versions": {}},
+        ), patch("main.security_scan.scan_backup", side_effect=main.security_scan.SecurityScanError("corrompido")):
+            result = CliRunner().invoke(cli.cli_group(), ["backups", "inspect", "/tmp/x.tar"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("corrompido", result.output)
 
     def test_interactive_prompts_for_the_file_when_omitted(self):
         # achado ao vivo: argumento posicional obrigatório crasha com
@@ -182,6 +212,7 @@ class InspectCmdTest(unittest.TestCase):
                  "main.backup_ops.inspect_backup",
                  return_value={"components": ["as_db"], "versions": {"issabel": "5.0.0"}},
              ) as mock_inspect, \
+             patch("main.security_scan.scan_backup", return_value=CLEAN_SCAN), \
              patch("main.widgets.pause"):
             result = CliRunner().invoke(cli.cli_group(), ["backups", "inspect"])
         self.assertEqual(result.exit_code, 0, result.output)
@@ -192,6 +223,35 @@ class InspectCmdTest(unittest.TestCase):
         with patch("main._is_interactive", return_value=False):
             result = CliRunner().invoke(cli.cli_group(), ["backups", "inspect"])
         self.assertNotEqual(result.exit_code, 0)
+
+
+class TrustCmdTest(unittest.TestCase):
+    def test_updates_the_baseline_and_reports_counts(self):
+        with patch("main.security_scan.trust_backup", return_value=(3, 5)) as mock_trust, \
+             patch("main.security_scan.default_baseline_path", return_value="/etc/pvx/modules/issabel/state/baseline.txt"):
+            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust", "/tmp/x.tar"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_trust.assert_called_once_with("/tmp/x.tar", "/etc/pvx/modules/issabel/state/baseline.txt")
+
+    def test_interactive_prompts_for_the_file_when_omitted(self):
+        with patch("main._is_interactive", return_value=True), \
+             patch("main.ask_text", return_value="/tmp/x.tar"), \
+             patch("main.security_scan.trust_backup", return_value=(0, 2)) as mock_trust, \
+             patch("main.widgets.pause"):
+            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_trust.assert_called_once()
+
+    def test_non_interactive_without_a_file_raises_a_clean_error(self):
+        with patch("main._is_interactive", return_value=False):
+            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust"])
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_failure_becomes_a_clean_cli_error(self):
+        with patch("main.security_scan.trust_backup", side_effect=main.security_scan.SecurityScanError("ruim")):
+            result = CliRunner().invoke(cli.cli_group(), ["backups", "trust", "/tmp/x.tar"])
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("ruim", result.output)
 
 
 if __name__ == "__main__":
