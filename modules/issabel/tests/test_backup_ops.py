@@ -58,9 +58,10 @@ class ExportBackupTest(unittest.TestCase):
             Path(tmp_dir, "x.tar").write_text("fake")
             with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
                  patch("backup_ops.subprocess.run", return_value=_run_result()) as mock_run:
-                path = ops.export_backup(f"{tmp_dir}/x.tar", ["as_db", "as_config_files"])
+                path, warning = ops.export_backup(f"{tmp_dir}/x.tar", ["as_db", "as_config_files"])
 
         self.assertEqual(path, f"{tmp_dir}/x.tar")
+        self.assertIsNone(warning)
         args = mock_run.call_args.args[0]
         self.assertEqual(args[0], "issabel-helper")
         self.assertIn("--backup", args)
@@ -76,7 +77,7 @@ class ExportBackupTest(unittest.TestCase):
             with patch("backup_ops.os.getcwd", return_value=cwd), \
                  patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
                  patch("backup_ops.subprocess.run", return_value=_run_result()) as mock_run:
-                path = ops.export_backup("x.tar", ["as_db"])
+                path, _ = ops.export_backup("x.tar", ["as_db"])
 
         self.assertEqual(path, f"{cwd}/x.tar")
         self.assertIn(cwd, mock_run.call_args.args[0])
@@ -95,7 +96,7 @@ class ExportBackupTest(unittest.TestCase):
                 ops.export_backup(f"{tmp_dir}/x.tar", ["as_db"])
         self.assertIn("não foi gerado", str(ctx.exception))
 
-    def test_issabel_helper_failure_becomes_a_clean_error(self):
+    def test_raises_using_captured_output_when_the_file_is_missing_and_the_helper_failed(self):
         with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
              patch("backup_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="boom")):
             with self.assertRaises(ops.IssabelBackupError) as ctx:
@@ -104,13 +105,27 @@ class ExportBackupTest(unittest.TestCase):
 
     def test_falls_back_to_stdout_when_issabel_helper_writes_the_error_there(self):
         # achado ao vivo (autobackup): pbackup/issabel-helper às vezes erra sem
-        # escrever nada em stderr -- _run só olhava stderr, o motivo real do
-        # erro sumia sem deixar rastro nenhum pro usuário nem pro log.
+        # escrever nada em stderr -- sem o fallback pro stdout, o motivo real
+        # do erro some sem deixar rastro nenhum.
         with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
              patch("backup_ops.subprocess.run", return_value=_run_result(returncode=1, stdout="deu ruim")):
             with self.assertRaises(ops.IssabelBackupError) as ctx:
                 ops.export_backup("x.tar", ["as_db"])
         self.assertIn("deu ruim", str(ctx.exception))
+
+    def test_nonzero_exit_code_is_not_fatal_when_the_file_was_produced_anyway(self):
+        # achado ao vivo: issabel-helper (igual a interface web nativa)
+        # retorna código != 0 sempre que QUALQUER componente individual
+        # falha (banco que não existe nessa central, etc.) mesmo com o
+        # arquivo final gerado com sucesso -- exit code não é o sinal de
+        # verdade, o arquivo no disco é.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            Path(tmp_dir, "x.tar").write_text("fake")
+            with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="WARN: ...")):
+                path, warning = ops.export_backup(f"{tmp_dir}/x.tar", ["as_db"])
+        self.assertEqual(path, f"{tmp_dir}/x.tar")
+        self.assertEqual(warning, "WARN: ...")
 
 
 class ImportBackupTest(unittest.TestCase):
@@ -156,14 +171,26 @@ class ImportBackupTest(unittest.TestCase):
                 ops.import_backup("x.tar", ["as_db"])
         self.assertIn(cwd, mock_run.call_args.args[0])
 
-    def test_issabel_helper_failure_becomes_a_clean_error(self):
+    def test_nonzero_exit_code_is_not_fatal_and_is_returned_as_a_warning(self):
+        # mesmo achado do export: o próprio --restore nativo (igual a
+        # interface web) retorna código != 0 sempre que algum componente
+        # individual falha, sem que a restauração como um todo tenha dado
+        # errado -- não existe um "arquivo gerado" pra conferir aqui como no
+        # export, então isso nunca é tratado como fatal.
         with tempfile.TemporaryDirectory() as tmp_dir:
             Path(tmp_dir, "x.tar").write_text("fake")
             with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
-                 patch("backup_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="boom")):
-                with self.assertRaises(ops.IssabelBackupError) as ctx:
-                    ops.import_backup(f"{tmp_dir}/x.tar", ["as_db"])
-        self.assertIn("boom", str(ctx.exception))
+                 patch("backup_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="WARN: ...")):
+                warning = ops.import_backup(f"{tmp_dir}/x.tar", ["as_db"])
+        self.assertEqual(warning, "WARN: ...")
+
+    def test_returns_no_warning_on_a_clean_exit(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            Path(tmp_dir, "x.tar").write_text("fake")
+            with patch("backup_ops.shutil.which", return_value="/usr/bin/issabel-helper"), \
+                 patch("backup_ops.subprocess.run", return_value=_run_result()):
+                warning = ops.import_backup(f"{tmp_dir}/x.tar", ["as_db"])
+        self.assertIsNone(warning)
 
 
 class InspectBackupTest(unittest.TestCase):

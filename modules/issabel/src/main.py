@@ -72,10 +72,16 @@ def _export_backup(logger, filename, components):
 
     try:
         with widgets.step("Gerando backup..."):
-            path = backup_ops.export_backup(filename, selected)
+            path, warning = backup_ops.export_backup(filename, selected)
     except backup_ops.IssabelBackupError as e:
         logger.error(f"export falhou: {e}")
         raise click.ClickException(str(e))
+    if warning:
+        # não fatal -- issabel-helper retorna código de erro sempre que um
+        # componente individual falha (banco ausente etc.), igual a própria
+        # interface web nativa, mesmo com o backup gerado com sucesso.
+        logger.warning(f"issabel-helper reportou avisos durante o export: {warning}")
+        widgets.warning("issabel-helper reportou avisos (alguns componentes podem não existir nessa central) -- veja `pvx logs issabel`.")
     logger.info(f"backup exportado em {path}.")
     widgets.success(f"backup gerado em {path}.")
 
@@ -125,10 +131,13 @@ def _import_backup(logger, file, components, yes):
 
     try:
         with widgets.step("Restaurando backup..."):
-            backup_ops.import_backup(path, selected)
+            warning = backup_ops.import_backup(path, selected)
     except backup_ops.IssabelBackupError as e:
         logger.error(f"import falhou: {e}")
         raise click.ClickException(str(e))
+    if warning:
+        logger.warning(f"issabel-helper reportou avisos durante o import: {warning}")
+        widgets.warning("issabel-helper reportou avisos durante a restauração -- veja `pvx logs issabel`.")
     logger.info(f"backup restaurado a partir de {path}.")
     widgets.success("backup restaurado.")
 
@@ -184,7 +193,7 @@ def _trust_backup(logger, file):
 
 class IssabelModule(PvxModule):
     name = "issabel"
-    version = "0.1.2"
+    version = "0.1.3"
 
     def cli_group(self):
         @click.group(name="issabel")

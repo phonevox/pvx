@@ -54,14 +54,23 @@ class IssabelBackupError(Exception):
     pass
 
 
-def _run(args, error):
-    result = subprocess.run(args, capture_output=True, text=True)
-    if result.returncode != 0:
-        # achado no autobackup: issabel-helper/pbackup às vezes erram sem
-        # escrever nada em stderr -- sem o fallback pro stdout, o motivo
-        # real do erro some sem deixar rastro nenhum.
-        detail = (result.stderr or result.stdout or "").strip()
-        raise IssabelBackupError(f"{error}{': ' + detail if detail else ''}")
+def _run(args):
+    # achado ao vivo: issabel-helper (igual a interface web nativa do
+    # Issabel) retorna código != 0 sempre que QUALQUER componente individual
+    # falha (banco que não existe nessa central, arquivo ausente, etc.),
+    # mesmo quando o resultado final (arquivo de backup, restauração)
+    # funcionou -- exit code aqui é só informativo, nunca o sinal de
+    # verdade. Quem chama decide o que fazer com o resultado.
+    return subprocess.run(args, capture_output=True, text=True)
+
+
+def _warning_text(result):
+    if result.returncode == 0:
+        return None
+    # achado no autobackup: issabel-helper/pbackup às vezes erram sem
+    # escrever nada em stderr -- sem o fallback pro stdout, o motivo real
+    # do erro some sem deixar rastro nenhum.
+    return (result.stderr or result.stdout or "").strip() or None
 
 
 def available_components():
@@ -95,15 +104,16 @@ def export_backup(filename_or_path, components):
     if not os.path.isdir(directory):
         raise IssabelBackupError(f"diretório não existe: {directory}")
 
-    _run(
-        [HELPER, "backupengine", "--backup", "--backupfile", filename,
-         "--tmpdir", directory, "--components", ",".join(components)],
-        "falha ao gerar o backup",
-    )
+    result = _run([
+        HELPER, "backupengine", "--backup", "--backupfile", filename,
+        "--tmpdir", directory, "--components", ",".join(components),
+    ])
     path = os.path.join(directory, filename)
     if not os.path.isfile(path):
-        raise IssabelBackupError("issabel-helper rodou mas o arquivo de backup não foi gerado.")
-    return path
+        detail = _warning_text(result)
+        msg = "issabel-helper rodou mas o arquivo de backup não foi gerado."
+        raise IssabelBackupError(f"{msg} {detail}" if detail else msg)
+    return path, _warning_text(result)
 
 
 def import_backup(filename_or_path, components):
@@ -117,11 +127,11 @@ def import_backup(filename_or_path, components):
     if not os.path.isfile(path):
         raise IssabelBackupError(f"arquivo de backup não encontrado: {path}")
 
-    _run(
-        [HELPER, "backupengine", "--restore", "--backupfile", filename,
-         "--tmpdir", directory, "--components", ",".join(components)],
-        "falha ao restaurar o backup",
-    )
+    result = _run([
+        HELPER, "backupengine", "--restore", "--backupfile", filename,
+        "--tmpdir", directory, "--components", ",".join(components),
+    ])
+    return _warning_text(result)
 
 
 def inspect_backup(path):

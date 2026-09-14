@@ -34,7 +34,7 @@ class ExportCmdTest(unittest.TestCase):
              patch("main.backup_ops.available_components", return_value=FAKE_COMPONENTS), \
              patch("main.ask_text", return_value=text_result), \
              patch("main.ask_checkbox", return_value=checkbox_result) as mock_checkbox, \
-             patch("main.backup_ops.export_backup", return_value="/tmp/x.tar") as mock_export:
+             patch("main.backup_ops.export_backup", return_value=("/tmp/x.tar", None)) as mock_export:
             result = CliRunner().invoke(cli.cli_group(), ["backups", "export"] + args)
         return result, mock_checkbox, mock_export
 
@@ -91,12 +91,22 @@ class ExportCmdTest(unittest.TestCase):
         self.assertNotEqual(result.exit_code, 0)
         self.assertIn("deu ruim", result.output)
 
+    def test_still_succeeds_and_warns_when_the_helper_returns_a_warning(self):
+        # issabel-helper (igual a interface web nativa) retorna avisos sem
+        # que o export como um todo tenha falhado -- não pode virar erro.
+        with patch("main._is_interactive", return_value=False), \
+             patch("main.backup_ops.available_components", return_value=FAKE_COMPONENTS), \
+             patch("main.backup_ops.export_backup", return_value=("/tmp/x.tar", "WARN: banco tal nao existe")):
+            result = CliRunner().invoke(cli.cli_group(), ["backups", "export"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("avisos", result.output)
+
 
 class ImportCmdTest(unittest.TestCase):
     INSPECTED = {"components": ["as_db", "mysql_db"], "versions": {"issabel": "5.0.0"}}
 
     def _invoke(self, args, interactive=False, confirm=True, checkbox_result=None, text_result="/tmp/x.tar",
-                installed_version="5.0.0"):
+                installed_version="5.0.0", import_warning=None):
         with patch("main._is_interactive", return_value=interactive), \
              patch("main.ask_text", return_value=text_result), \
              patch("main.ask_confirm", return_value=confirm), \
@@ -104,7 +114,7 @@ class ImportCmdTest(unittest.TestCase):
              patch("main.backup_ops.inspect_backup", return_value=self.INSPECTED), \
              patch("main.backup_ops.installed_issabel_version", return_value=installed_version), \
              patch("main.backup_ops.available_components", return_value=FAKE_COMPONENTS), \
-             patch("main.backup_ops.import_backup") as mock_import:
+             patch("main.backup_ops.import_backup", return_value=import_warning) as mock_import:
             result = CliRunner().invoke(cli.cli_group(), ["backups", "import"] + args)
         return result, mock_checkbox, mock_import
 
@@ -153,6 +163,13 @@ class ImportCmdTest(unittest.TestCase):
         )
         self.assertEqual(result.exit_code, 0, result.output)
         mock_import.assert_called_once_with("/tmp/x.tar", ["as_db"])
+
+    def test_still_succeeds_and_warns_when_the_helper_returns_a_warning(self):
+        result, _, _ = self._invoke(
+            ["--file", "/tmp/x.tar", "--yes"], interactive=False, import_warning="WARN: banco tal nao existe",
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertIn("avisos", result.output)
 
 
 CLEAN_SCAN = {"findings": [], "blobs_scanned": ["var.www.html.admin.tgz"]}
