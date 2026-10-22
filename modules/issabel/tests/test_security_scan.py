@@ -75,6 +75,53 @@ class ScanSignatureFileTest(unittest.TestCase):
                 )
         self.assertEqual(finding.level, "ok")
 
+    def test_centralized_trust_clears_a_signature_only_suspicion(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            digest = hashlib.sha256(EVIL_PHP).hexdigest()
+            trusted = {"admin.tgz:index.php": {"sha256": digest, "origem": "remoto"}}
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(
+                    path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao",
+                    trusted_by_path=trusted,
+                )
+        self.assertEqual(finding.level, "ok")
+        self.assertIn("trust", finding.reason)
+        self.assertIn("rede", finding.reason)
+
+    def test_centralized_trust_names_local_origin_too(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            digest = hashlib.sha256(EVIL_PHP).hexdigest()
+            trusted = {"admin.tgz:index.php": {"sha256": digest, "origem": "local"}}
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(
+                    path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao",
+                    trusted_by_path=trusted,
+                )
+        self.assertEqual(finding.level, "ok")
+        self.assertIn("local", finding.reason)
+
+    def test_centralized_trust_does_not_clear_when_the_hash_no_longer_matches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            trusted = {"admin.tgz:index.php": {"sha256": "a" * 64, "origem": "remoto"}}
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(
+                    path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao",
+                    trusted_by_path=trusted,
+                )
+        self.assertEqual(finding.level, "suspeito")
+
+    def test_no_trusted_by_path_given_behaves_like_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao")
+        self.assertEqual(finding.level, "suspeito")
+
 
 class RpmConfirmsCleanTest(unittest.TestCase):
     def test_returns_false_when_rpm_is_not_installed(self):

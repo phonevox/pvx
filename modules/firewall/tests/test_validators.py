@@ -1,6 +1,6 @@
 import unittest
 
-from validators import parse_cidr_list, parse_port_spec, validate_cidr
+from validators import parse_cidr_list, parse_country_list, parse_port_spec, validate_cidr, validate_country_code
 
 
 class ParsePortSpecTest(unittest.TestCase):
@@ -81,6 +81,34 @@ class ParseCidrListTest(unittest.TestCase):
     def test_raises_naming_every_invalid_entry_and_adds_none(self):
         with self.assertRaisesRegex(ValueError, r"999\.1\.1\.1.*abc|abc.*999\.1\.1\.1"):
             parse_cidr_list("1.1.1.1/32,999.1.1.1,abc")
+
+
+class ValidateCountryCodeTest(unittest.TestCase):
+    def test_accepts_two_letter_code_case_insensitive(self):
+        self.assertTrue(validate_country_code("br"))
+        self.assertTrue(validate_country_code("BR"))
+
+    def test_rejects_wrong_length(self):
+        self.assertFalse(validate_country_code("BRA"))
+        self.assertFalse(validate_country_code("B"))
+
+    def test_rejects_non_letters(self):
+        self.assertFalse(validate_country_code("B1"))
+
+
+class ParseCountryListTest(unittest.TestCase):
+    def test_single_code_normalized_to_uppercase(self):
+        self.assertEqual(parse_country_list("br"), ["BR"])
+
+    def test_splits_multiple_codes_by_comma(self):
+        self.assertEqual(parse_country_list("br,ca"), ["BR", "CA"])
+
+    def test_tolerates_spaces_around_commas(self):
+        self.assertEqual(parse_country_list("br, ca , US"), ["BR", "CA", "US"])
+
+    def test_raises_naming_every_invalid_entry(self):
+        with self.assertRaisesRegex(ValueError, r"BRA.*XY1|XY1.*BRA"):
+            parse_country_list("br,BRA,XY1")
 
 
 if __name__ == "__main__":

@@ -176,7 +176,7 @@ class ResolveScheduleTest(unittest.TestCase):
 
 
 class SetupCommandTest(unittest.TestCase):
-    def _invoke(self, args, is_tty=False, pbackup_root="/root/pbackup", pbackup_version=(1, 3, 1),
+    def _invoke(self, args, is_tty=False, pbackup_root="/root/pbackup", pbackup_version=(1, 3, 2),
                 register_error=None, login_side_effect=None):
         with patch("main._is_interactive", return_value=is_tty), \
              patch("main.pbackup_ops.find_install", return_value=pbackup_root), \
@@ -655,33 +655,33 @@ class IssabelUploadCommandTest(unittest.TestCase):
     def _invoke(self, args=None, error=None):
         args = args or ["issabel-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123"]
         with patch("main.issabel_upload_ops.export_and_upload", side_effect=error) as mock_export, \
-             patch("main.AutobackupModule.get_logger"), \
+             patch("main.AutobackupModule.get_logger") as mock_get_logger, \
              patch("main.widgets.pause") as mock_pause:
             result = CliRunner().invoke(cli.cli_group(), args)
-            return result, mock_export, mock_pause
+            return result, mock_export, mock_pause, mock_get_logger.return_value
 
     def test_defaults_to_configuration_only(self):
-        result, mock_export, _ = self._invoke()
+        result, mock_export, _, logger = self._invoke()
         self.assertEqual(result.exit_code, 0, result.output)
         mock_export.assert_called_once_with(
-            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=False,
+            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=False, logger=logger,
         )
 
     def test_recordings_flag_is_passed_through(self):
-        result, mock_export, _ = self._invoke(args=[
+        result, mock_export, _, logger = self._invoke(args=[
             "issabel-upload", "--upload-url", "http://uoe.example/v1/upload", "--token", "tok123", "--recordings",
         ])
         self.assertEqual(result.exit_code, 0, result.output)
         mock_export.assert_called_once_with(
-            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=True,
+            "http://uoe.example/v1/upload", "tok123", configuration=True, recordings=True, logger=logger,
         )
 
     def test_never_pauses_even_when_run_from_a_real_terminal(self):
-        _, _, mock_pause = self._invoke()
+        _, _, mock_pause, _ = self._invoke()
         mock_pause.assert_not_called()
 
     def test_failure_becomes_a_clean_click_exception(self):
-        result, _, _ = self._invoke(error=issabel_upload_ops.IssabelUploadError("falha ao enviar o backup: 401"))
+        result, _, _, _ = self._invoke(error=issabel_upload_ops.IssabelUploadError("falha ao enviar o backup: 401"))
         self.assertNotEqual(result.exit_code, 0)
         self.assertNotIn("Traceback", result.output)
         self.assertIn("401", result.output)

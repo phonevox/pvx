@@ -466,4 +466,18 @@ KNOWN_GOOD_HASHES = {
     "var.www.html.admin.tgz:admin/views/reports.php": "086191fae82022fc680968ebdc800a7efcd7d0b1658c03116a4b2e66626aa584",
     "var.www.html.admin.tgz:admin/views/welcome.php": "49aea9736e4768a41d7a5c0423ed8f43c781056c656ecc1f9c86573ce2042318",
     "var.www.html.admin.tgz:admin/views/welcome_nomanager.php": "4e8aac74684a3c3035269d4138adb7e1aa8252e6939bfe66f2f2b09ee75d944c",
+
+    # @NOTE(adrian): backup real, nao lembro de quem era mas os itens foram analisados manualmente e estão ok
+    "var.www.html.admin.tgz:admin/libraries/php-upgrade/upgrade.php": "de9080ee503a6a17ca9c675056c6ff52c28ad612a8543bda59a244d0ab2096d6",
+    "var.www.html.admin.tgz:admin/libraries/php-upgrade/ext/contrib/http_query.class.php": "0ef42b8693b3d7afbf9112a7a66292cdf4c7da2d57f452ecd9a5f6464931951a",
+    "var.www.html.admin.tgz:admin/libraries/php-upgrade/ext/contrib/archive/xmlrpc.php": "87d7049e9d37df2dddbf303bc4ef2eec9e764f5e4f2855800fc9d114e9da2274",
+    "var.www.html.admin.tgz:admin/modules/framework/amp_conf/htdocs/admin/libraries/php-upgrade/upgrade.php": "de9080ee503a6a17ca9c675056c6ff52c28ad612a8543bda59a244d0ab2096d6",
+    "var.www.html.admin.tgz:admin/modules/framework/amp_conf/htdocs/admin/libraries/php-upgrade/ext/contrib/http_query.class.php": "0ef42b8693b3d7afbf9112a7a66292cdf4c7da2d57f452ecd9a5f6464931951a",
+    "var.www.html.admin.tgz:admin/modules/framework/amp_conf/htdocs/admin/libraries/php-upgrade/ext/contrib/archive/phprequest.php": "18677c6543de333700839478f8a3567231dabbafd1e889d5c4b660d99af86da0",
+    "var.www.html.admin.tgz:admin/modules/framework/amp_conf/htdocs/admin/libraries/php-upgrade/ext/contrib/archive/xmlrpc.php": "87d7049e9d37df2dddbf303bc4ef2eec9e764f5e4f2855800fc9d114e9da2274",
+    "var.www.html.admin.tgz:admin/modules/framework/amp_conf/htdocs/admin/libraries/php-upgrade/ext/nonstandard/base16.php": "b8c8ec4938d7cdaee034097ac628171b83368897b27031954bb34353f1807dc9",
+    "var.www.html.admin.tgz:admin/modules/framework/amp_conf/htdocs/admin/libraries/php-upgrade/ext/stubs/zlib.php": "f068f55f9662a3ef27daaccc6593f7d186dcde2de11e3b5f8237d43604d1e735",
+    "var.www.html.admin.tgz:admin/modules/backup/bin/backup.php": "eb22c704a603980322fda2779dd4d19a9670abccd7ae1df2a5d24cb35f17f9b7",
+    "var.www.html.admin.tgz:admin/modules/backup/bin/restore.php": "a450f6263a232363b47d0ba90f7d12dcedf6108a343b32853dcc999afe0a5046",
+    "var.www.html.admin.tgz:admin/modules/weakpasswords/functions.inc.php": "350337c88095459ab64b3ea348d95ce227a520321cef07a51dd6c90e620c3adb",
 }

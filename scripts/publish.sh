@@ -17,9 +17,9 @@ PUBLISH_LOG="scripts/.publish_log"
 # é POSIX) pra gerar o byte de escape, funciona em qualquer sh, não só bash.
 if [ -t 1 ] && [ -z "${NO_COLOR+x}" ]; then
     C_RESET=$(printf '\033[0m'); C_BOLD=$(printf '\033[1m'); C_DIM=$(printf '\033[2m')
-    C_GREEN=$(printf '\033[32m'); C_YELLOW=$(printf '\033[33m'); C_CYAN=$(printf '\033[36m')
+    C_GREEN=$(printf '\033[32m'); C_YELLOW=$(printf '\033[33m'); C_CYAN=$(printf '\033[36m'); C_RED=$(printf '\033[31m')
 else
-    C_RESET=""; C_BOLD=""; C_DIM=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""
+    C_RESET=""; C_BOLD=""; C_DIM=""; C_GREEN=""; C_YELLOW=""; C_CYAN=""; C_RED=""
 fi
 
 # descoberto de modules/*/manifest.json -- nunca lista fixa (achado ao vivo:
@@ -61,6 +61,19 @@ EOF
 
 module_version() {
     python3 -c "import json; print(json.load(open('$MODULES_DIR/$1/manifest.json'))['version'])"
+}
+
+# achado ao vivo: firewall publicado com manifest 0.2.30 e classe 0.2.27 --
+# central instalou o código novo mas `module list` (que lê a classe) seguia
+# mostrando update pendente pra sempre.
+check_class_version() {
+    class_v="$(sed -n 's/^    version = "\([0-9.]*\)"$/\1/p' "$MODULES_DIR/$1/src/main.py")"
+    manifest_v="$(module_version "$1")"
+    if [ "$class_v" != "$manifest_v" ]; then
+        printf '%s✗%s %s: manifest.json diz %s mas src/main.py diz %s -- alinhe os dois antes de publicar.\n' \
+            "$C_RED" "$C_RESET" "$1" "$manifest_v" "${class_v:-?}" >&2
+        exit 1
+    fi
 }
 
 log_publish() {
@@ -124,6 +137,10 @@ cmd_stage() {
 
     updated=0
     unchanged=0
+
+    for m in $modules; do
+        check_class_version "$m"
+    done
 
     for m in $modules; do
         (cd "$MODULES_DIR/$m" && sh build.sh >/dev/null)

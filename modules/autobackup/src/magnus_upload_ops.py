@@ -30,8 +30,14 @@ def _run(args, error):
     # stderr, nunca um CalledProcessError cru estourando na tela.
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
-        detail = (result.stderr or "").strip()
-        raise MagnusUploadError(f"{error}{': ' + detail if detail else ''}")
+        # achado ao vivo: pbackup às vezes erra sem escrever nada em NENHUM
+        # dos dois streams -- sem esse fallback, o usuário só via o rótulo
+        # fixo do erro, sem pista nenhuma do que rolou de verdade (ex.: host
+        # de upload não resolve via DNS).
+        detail = (result.stderr or result.stdout or "").strip()
+        if not detail:
+            detail = f"{args[0]} saiu com código {result.returncode}, sem mensagem em stdout/stderr"
+        raise MagnusUploadError(f"{error}: {detail}")
 
 
 def remote_name(today=None):

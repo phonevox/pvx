@@ -98,7 +98,21 @@ def baseline_confirms_clean(label, rel_path, content):
     return expected is not None and hashlib.sha256(content).hexdigest() == expected
 
 
-def _scan_signature_file(full_path, rel_path, label, parent, sig_re, reason):
+# mesma chave "label:rel_path" que KNOWN_GOOD_HASHES já usa -- só que aqui a
+# tabela é dinâmica (trust_ops.merged_trusted_items(), rede + pendência
+# local desta central), em vez de hardcoded. Reconfere o hash NA HORA --
+# se o conteúdo não bate mais, não limpa (mesma proteção de audit.sh contra
+# o arquivo ter mudado desde que foi confiado).
+def trust_confirms_clean(label, rel_path, content, trusted_by_path):
+    if not trusted_by_path:
+        return None
+    info = trusted_by_path.get(f"{label}:{rel_path}")
+    if info and hashlib.sha256(content).hexdigest() == info["sha256"]:
+        return info["origem"]
+    return None
+
+
+def _scan_signature_file(full_path, rel_path, label, parent, sig_re, reason, trusted_by_path=None):
     content = open(full_path, "rb").read()
     known_bad = os.path.basename(full_path) in KNOWN_BAD_NAMES
     matched = bool(sig_re.search(content.decode("utf-8", "replace")))
@@ -111,6 +125,10 @@ def _scan_signature_file(full_path, rel_path, label, parent, sig_re, reason):
             return Finding("ok", label, rel_path, "bate com o pacote original (rpm)")
         if baseline_confirms_clean(label, rel_path, content):
             return Finding("ok", label, rel_path, "bate com o hash conhecido do Issabel")
+        origem = trust_confirms_clean(label, rel_path, content, trusted_by_path)
+        if origem:
+            origem_label = "rede" if origem == "remoto" else "local, não publicado"
+            return Finding("ok", label, rel_path, f"confiado via trust ({origem_label})")
 
     reasons = []
     if known_bad:
@@ -131,7 +149,7 @@ def _scan_dialplan_file(full_path, rel_path, label):
     return findings
 
 
-def scan_directory(root_dir, label, parent=None, mode="full"):
+def scan_directory(root_dir, label, parent=None, mode="full", trusted_by_path=None):
     findings = []
     for dirpath, _, filenames in os.walk(root_dir):
         for filename in filenames:
@@ -140,10 +158,12 @@ def scan_directory(root_dir, label, parent=None, mode="full"):
             ext = os.path.splitext(filename)[1].lower()
             finding = None
             if ext == ".php":
-                finding = _scan_signature_file(full_path, rel_path, label, parent, PHP_SIG_RE, "ofuscacao")
+                finding = _scan_signature_file(
+                    full_path, rel_path, label, parent, PHP_SIG_RE, "ofuscacao", trusted_by_path,
+                )
             elif mode != "php_only" and ext in SCRIPT_EXTENSIONS:
                 finding = _scan_signature_file(
-                    full_path, rel_path, label, parent, SHELL_SIG_RE, "shell reverso/exec remoto",
+                    full_path, rel_path, label, parent, SHELL_SIG_RE, "shell reverso/exec remoto", trusted_by_path,
                 )
             elif mode == "full" and ext in DIALPLAN_EXTENSIONS:
                 findings.extend(_scan_dialplan_file(full_path, rel_path, label))
@@ -176,7 +196,7 @@ def _extract_blob(tar, member_name, tmp_dir):
     return extract_dir
 
 
-def scan_backup(path):
+def scan_backup(path, trusted_by_path=None):
     findings = []
     blobs_scanned = []
     try:
@@ -189,7 +209,7 @@ def scan_backup(path):
                 parent, mode = CODE_BLOBS[base]
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     extract_dir = _extract_blob(tar, member_name, tmp_dir)
-                    findings.extend(scan_directory(extract_dir, base, parent, mode))
+                    findings.extend(scan_directory(extract_dir, base, parent, mode, trusted_by_path))
     except (OSError, tarfile.TarError) as e:
         raise SecurityScanError(f"falha ao auditar o backup: {e}")
     return {"findings": findings, "blobs_scanned": blobs_scanned}

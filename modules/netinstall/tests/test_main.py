@@ -4,6 +4,7 @@ from unittest.mock import call, patch
 
 from click.testing import CliRunner
 
+import main
 from main import cli
 
 BASE_ARGS = [
@@ -78,6 +79,20 @@ class TmuxRelaunchTest(MainTestCase):
         mock_ensure.assert_called_once()
         mock_relaunch.assert_called_once()
 
+    def test_relaunches_with_the_command_reconstructed_from_the_resolved_flags(self):
+        # achado ao vivo: usar sys.argv pra remontar o comando quebra no menu
+        # interativo (processo pvx roda sem nenhum argumento ali) -- reconstruir a
+        # partir dos flags que o próprio Click já resolveu funciona nos dois
+        # caminhos (CLI direta ou menu), sempre com o mesmo resultado.
+        mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=False, is_tty=True)
+        argv = mock_relaunch.call_args.args[0]
+        self.assertEqual(argv[:2], ["netinstall", "issabel5"])
+        self.assertIn("--astver", argv)
+        self.assertIn("18", argv)
+        self.assertIn("--sql-password", argv)
+        self.assertIn("sqlpw", argv)
+        self.assertIn("--yes", argv)
+
     def test_does_not_relaunch_when_already_inside_tmux(self):
         mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=True, is_tty=True)
         mock_ensure.assert_not_called()
@@ -89,6 +104,47 @@ class TmuxRelaunchTest(MainTestCase):
         mock_ensure, mock_relaunch = self._invoke_with_tmux(BASE_ARGS, is_active=False, is_tty=False)
         mock_ensure.assert_not_called()
         mock_relaunch.assert_not_called()
+
+
+class Issabel5ArgvTest(unittest.TestCase):
+    def _flags(self, **overrides):
+        base = {
+            "astver": None, "addpkgs": (), "tweaks": (), "timezone": None,
+            "sql_password": None, "web_password": None, "force": False,
+            "skip_clean": False, "yes": False, "reboot": True,
+        }
+        base.update(overrides)
+        return base
+
+    def test_bare_defaults_reconstruct_just_the_command_name(self):
+        # é exatamente o que vem do menu interativo (auto_menu chama o comando
+        # sem nenhum flag -- ver TmuxRelaunchTest) -- tem que dar "netinstall
+        # issabel5" sozinho, não vazio.
+        self.assertEqual(main._issabel5_argv(self._flags()), ["netinstall", "issabel5"])
+
+    def test_includes_astver_when_set(self):
+        argv = main._issabel5_argv(self._flags(astver="18"))
+        self.assertIn("--astver", argv)
+        self.assertIn("18", argv)
+
+    def test_repeats_multi_value_options(self):
+        argv = main._issabel5_argv(self._flags(addpkgs=("zabbix", "sngrep"), tweaks=("operator-panel",)))
+        self.assertEqual(argv.count("--addpkgs"), 2)
+        self.assertIn("zabbix", argv)
+        self.assertIn("sngrep", argv)
+        self.assertEqual(argv.count("--tweaks"), 1)
+        self.assertIn("operator-panel", argv)
+
+    def test_includes_boolean_flags_only_when_true(self):
+        argv = main._issabel5_argv(self._flags(force=True, skip_clean=True, yes=True))
+        self.assertIn("--force", argv)
+        self.assertIn("--skip-clean", argv)
+        self.assertIn("--yes", argv)
+        self.assertNotIn("--force", main._issabel5_argv(self._flags()))
+
+    def test_omits_no_reboot_by_default_but_includes_it_when_disabled(self):
+        self.assertNotIn("--no-reboot", main._issabel5_argv(self._flags()))
+        self.assertIn("--no-reboot", main._issabel5_argv(self._flags(reboot=False)))
 
 
 class PreflightTest(MainTestCase):

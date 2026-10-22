@@ -18,10 +18,11 @@ class RemoteNameTest(unittest.TestCase):
 
 
 class ExportAndUploadTest(unittest.TestCase):
-    def _run_result(self, returncode=0, stderr=""):
+    def _run_result(self, returncode=0, stderr="", stdout=""):
         result = Mock()
         result.returncode = returncode
         result.stderr = stderr
+        result.stdout = stdout
         return result
 
     def test_exports_uploads_and_cleans_up_on_success(self):
@@ -57,6 +58,27 @@ class ExportAndUploadTest(unittest.TestCase):
             with self.assertRaises(ops.MagnusUploadError) as ctx:
                 ops.export_and_upload("http://uoe.example/v1/upload", "tok123")
         self.assertIn("401 unauthorized", str(ctx.exception))
+        mock_remove.assert_not_called()
+
+    def test_falls_back_to_stdout_when_the_error_is_written_there(self):
+        with patch("magnus_upload_ops.subprocess.run", return_value=self._run_result(returncode=1, stdout="deu ruim")):
+            with self.assertRaises(ops.MagnusUploadError) as ctx:
+                ops.export_and_upload("http://uoe.example/v1/upload", "tok123")
+        self.assertIn("deu ruim", str(ctx.exception))
+
+    def test_a_silent_pbackup_failure_still_names_the_command_and_exit_code(self):
+        # achado ao vivo (2026-09, mesmo bug do issabel_upload_ops.py):
+        # pbackup pode sair != 0 sem escrever nada em stdout/stderr (ex.:
+        # host de upload não resolve via DNS) -- sem esse fallback, o erro
+        # vira só o rótulo fixo "falha ao enviar o backup pro UOE", sem
+        # pista nenhuma do motivo real.
+        with patch("magnus_upload_ops.subprocess.run", side_effect=[
+            self._run_result(returncode=0), self._run_result(returncode=1),
+        ]), patch("magnus_upload_ops.os.remove") as mock_remove:
+            with self.assertRaises(ops.MagnusUploadError) as ctx:
+                ops.export_and_upload("http://uoe.example/v1/upload", "tok123")
+        self.assertIn("pbackup", str(ctx.exception))
+        self.assertIn("código 1", str(ctx.exception))
         mock_remove.assert_not_called()
 
     def test_split_exports_the_three_components_into_their_own_remote_folders(self):

@@ -437,7 +437,7 @@ def _run_remove(logger, yes, delete_remote_user, admin_password_file, interactiv
 
 class AutobackupModule(PvxModule):
     name = "autobackup"
-    version = "0.1.16"
+    version = "0.1.19"
 
     def cli_group(self):
         @click.group(name="autobackup")
@@ -582,7 +582,9 @@ class AutobackupModule(PvxModule):
             # rodar à mão num terminal real.
             logger = self.get_logger()
             try:
-                issabel_upload_ops.export_and_upload(upload_url, token, configuration=True, recordings=recordings)
+                issabel_upload_ops.export_and_upload(
+                    upload_url, token, configuration=True, recordings=recordings, logger=logger,
+                )
             except issabel_upload_ops.IssabelUploadError as e:
                 logger.error(f"issabel-upload falhou: {e}")
                 raise click.ClickException(str(e))

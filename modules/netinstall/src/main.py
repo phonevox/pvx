@@ -19,6 +19,35 @@ def _is_interactive():
     return sys.stdin.isatty()
 
 
+def _issabel5_argv(flags):
+    # reconstrói a linha de comando a partir dos flags já resolvidos pelo Click,
+    # nunca de sys.argv -- funciona igual vindo de CLI direta ou do menu
+    # interativo (que invoca o comando sem nenhum argumento, deixando tudo no
+    # valor default -- ver TmuxRelaunchTest em test_main.py).
+    argv = ["netinstall", "issabel5"]
+    if flags["astver"]:
+        argv += ["--astver", flags["astver"]]
+    for pkg in flags["addpkgs"]:
+        argv += ["--addpkgs", pkg]
+    for tweak in flags["tweaks"]:
+        argv += ["--tweaks", tweak]
+    if flags["timezone"]:
+        argv += ["--timezone", flags["timezone"]]
+    if flags["sql_password"]:
+        argv += ["--sql-password", flags["sql_password"]]
+    if flags["web_password"]:
+        argv += ["--web-password", flags["web_password"]]
+    if flags["force"]:
+        argv.append("--force")
+    if flags["skip_clean"]:
+        argv.append("--skip-clean")
+    if flags["yes"]:
+        argv.append("--yes")
+    if not flags["reboot"]:
+        argv.append("--no-reboot")
+    return argv
+
+
 def _pyz_path():
     # assets estáticos (repos, control_panel) vêm de DENTRO do .pyz (ver assets.py) -- no
     # host instalado só module.pyz+manifest.json existem no diretório do módulo.
@@ -249,7 +278,7 @@ def _run_issabel5(logger, flags, interactive):
 
 class NetinstallModule(PvxModule):
     name = "netinstall"
-    version = "0.1.26"
+    version = "0.1.29"
 
     def cli_group(self):
         @click.group(name="netinstall")
@@ -275,7 +304,7 @@ class NetinstallModule(PvxModule):
             interactive = _is_interactive()
             if interactive and not tmux_ops.is_active():
                 tmux_ops.ensure_installed()
-                tmux_ops.relaunch_inside()  # nunca retorna se der certo
+                tmux_ops.relaunch_inside(_issabel5_argv(flags))  # nunca retorna se der certo
 
             logger = self.get_logger()
             try:

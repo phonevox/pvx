@@ -34,8 +34,14 @@ class IssabelUploadError(Exception):
 def _run(args, error):
     result = subprocess.run(args, capture_output=True, text=True)
     if result.returncode != 0:
-        detail = (result.stderr or "").strip()
-        raise IssabelUploadError(f"{error}{': ' + detail if detail else ''}")
+        # achado ao vivo: pbackup/issabel-helper às vezes erram sem escrever
+        # nada em NENHUM dos dois streams -- sem esse fallback, o usuário só
+        # via o rótulo fixo do erro, sem pista nenhuma do que rolou de
+        # verdade (ex.: host de upload não resolve via DNS).
+        detail = (result.stderr or result.stdout or "").strip()
+        if not detail:
+            detail = f"{args[0]} saiu com código {result.returncode}, sem mensagem em stdout/stderr"
+        raise IssabelUploadError(f"{error}: {detail}")
 
 
 def backup_filename(now=None):
@@ -50,20 +56,31 @@ def _components():
     return components
 
 
-def generate_config_backup():
+def generate_config_backup(logger=None):
     if not os.path.isfile("/usr/bin/issabel-helper"):
         raise IssabelUploadError("não parece ser uma central Issabel (/usr/bin/issabel-helper ausente)")
 
     filename = backup_filename()
-    _run(
+    # achado ao vivo (2026-09): issabel-helper retorna código != 0 sempre que
+    # QUALQUER componente individual falha (banco ausente, integração
+    # Phonevox sem suporte no host, etc.) mesmo com o backup gerado com
+    # sucesso -- mesmo comportamento já corrigido em backup_ops.export_backup
+    # (módulo issabel), nunca portado de volta pra cá. Exit code não é
+    # autoritativo -- o arquivo no disco é quem decide se deu certo.
+    result = subprocess.run(
         ["issabel-helper", "backupengine", "--backup", "--backupfile", filename,
          "--tmpdir", BACKUP_DIR, "--components", _components()],
-        "falha ao gerar o backup de configuração via issabel-helper",
+        capture_output=True, text=True,
     )
-
     path = os.path.join(BACKUP_DIR, filename)
+    detail = (result.stderr or result.stdout or "").strip()
     if not os.path.isfile(path):
-        raise IssabelUploadError("issabel-helper rodou mas o arquivo de backup não foi gerado")
+        if not detail:
+            detail = f"issabel-helper saiu com código {result.returncode}, sem mensagem em stdout/stderr"
+        raise IssabelUploadError(f"issabel-helper rodou mas o arquivo de backup não foi gerado: {detail}")
+
+    if result.returncode != 0 and detail and logger:
+        logger.warning(f"issabel-helper reportou avisos durante o backup de configuração: {detail}")
     return path
 
 
@@ -84,7 +101,7 @@ def archive_recent_recordings(tmp_dir):
     return archives
 
 
-def export_and_upload(upload_url, token, configuration=True, recordings=False):
+def export_and_upload(upload_url, token, configuration=True, recordings=False, logger=None):
     if not configuration and not recordings:
         raise IssabelUploadError("nada pra fazer -- configuration e recordings desligados.")
 
@@ -93,7 +110,7 @@ def export_and_upload(upload_url, token, configuration=True, recordings=False):
 
         config_path = None
         if configuration:
-            config_path = generate_config_backup()
+            config_path = generate_config_backup(logger=logger)
             files.append((config_path, REMOTE_CONFIG_FOLDER))
 
         files_arg = ",".join(f"{local}:{remote}" for local, remote in files)

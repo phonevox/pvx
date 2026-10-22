@@ -1,4 +1,5 @@
 import ipaddress
+import re
 
 VALID_PROTOCOLS = {"tcp", "udp", "icmp", "sctp", "dccp", "gre", "ah", "esp"}
 
@@ -40,4 +41,16 @@ def parse_cidr_list(value):
     invalid = [entry for entry in entries if not validate_cidr(entry)]
     if invalid:
         raise ValueError(f"CIDR inválido: {', '.join(invalid)}")
+    return entries
+
+
+def validate_country_code(value):
+    return bool(re.fullmatch(r"[A-Za-z]{2}", value))
+
+
+def parse_country_list(value):
+    entries = [part.strip().upper() for part in value.split(",") if part.strip()]
+    invalid = [entry for entry in entries if not validate_country_code(entry)]
+    if invalid:
+        raise ValueError(f"código de país inválido (use ISO 3166-1 alpha-2): {', '.join(invalid)}")
     return entries
