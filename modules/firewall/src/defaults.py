@@ -3,6 +3,7 @@ CONFIG_FILENAMES = {
     "ip_deny": "ip_deny.conf",
     "port_accept": "port_accept.conf",
     "port_deny": "port_deny.conf",
+    "geo_accept": "geo_accept.conf",
 }
 
 DEFAULT_LISTS = {
@@ -20,6 +21,7 @@ DEFAULT_LISTS = {
         ("31.97.160.127", "PHONEVOX INTERNO V2"),
         ("45.140.193.125", "PHONEVOX HELPDESK"),
         ("186.233.122.92", "PHONEVOX ABNER"),
+        ("145.223.92.246", "PHONEVOX"),
     ],
     "ip_deny": [],
     "port_accept": [
@@ -54,7 +56,17 @@ DEFAULT_LISTS = {
         ("10050/tcp", "Zabbix agent"),
         ("10051/tcp", "Zabbix server"),
     ],
+    # vazio por padrão, de propósito -- diferente de ip_accept/port_deny,
+    # ligar isso BLOQUEIA (não só restringe) todo IP fora dos países
+    # listados, em toda porta. Nunca pode ser semeado por uma leitura
+    # passiva (check/list) -- só por uma ação explícita (`geo enable`,
+    # ver DEFAULT_GEO_ACCEPT).
+    "geo_accept": [],
 }
+
+# seed usado só pelo comando explícito `geo enable` -- nunca por
+# lists.read_list(seed=...) numa leitura passiva.
+DEFAULT_GEO_ACCEPT = [("BR", "Brasil")]
 
 # nomes das chains/zona -- iguais nos dois engines onde faz sentido.
 IPTABLES_TRUSTED_CHAIN = "ptrusted"
@@ -80,3 +92,13 @@ FIREWALLD_PRIORITY_PORT_DENY = 100
 FIREWALLD_PRIORITY_PORT_ACCEPT = 200
 
 SYSTEMD_UNIT_PATH = "/etc/systemd/system/pvx-firewall.service"
+
+# logging de pacotes dropados -- opt-in (ver log_ops.py), rate-limited pra
+# não virar vetor de disk-fill/log-flood vindo de um scanner qualquer.
+IPTABLES_LOG_RATE_LIMIT = "5/min"
+LOG_PREFIX_DENY = "pvx-fw-deny: "
+LOG_PREFIX_PORT = "pvx-fw-port: "
+
+# geoban -- opt-in (ver geoip_ops.py/ipset_ops.py), só iptables por enquanto.
+IPTABLES_GEO_CHAIN = "pgeo"
+GEO_IPSET_NAME = "pvx-geo"

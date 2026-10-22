@@ -8,7 +8,14 @@ import zipfile
 
 REPO = "phonevox/pbackup"
 INSTALL_DIR = "/opt/pbackup"
-MIN_VERSION = (1, 1, 0)
+# achado ao vivo (2026-09): --token só foi integrado de verdade ao script
+# principal do pbackup na v1.3.0 (changelog: "integrate uoe-upload into main
+# pbackup, remake issabel script") -- antes disso o parser de flags recusa
+# --token junto de --files/--to ("Multi-flag is not allowed"), falhando o
+# issabel-upload/magnus-upload sem instalar/atualizar sozinho (esse check
+# achava v1.1.0 "suportado"). v1.3.2 corrige de quebra uma falha silenciosa
+# do próprio pbackup -- mesmo motivo pra exigir pelo menos essa versão.
+MIN_VERSION = (1, 3, 2)
 
 # pbackup --install cria um symlink em um desses dois caminhos apontando pro
 # pbackup.sh real -- resolver o symlink é como a gente acha a raiz de instalação

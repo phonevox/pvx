@@ -35,5 +35,31 @@ def remove(conf_dir, domain, distro):
         path.unlink()
 
 
+def find_ssl_configs(conf_dir, domain):
+    # certbot pode ter instalado o cert num arquivo com nome imprevisível (ex.:
+    # ssl-le-ssl.conf, do ssl.conf genérico do mod_ssl, quando não achou um
+    # match unívoco pro vhost do domínio) -- não dá pra confiar no nome do
+    # arquivo, só no conteúdo. O marcador é o caminho literal que o certbot
+    # sempre usa pra SSLCertificateFile/KeyFile/Chain (ver certbot_ops._LIVE_DIR).
+    marker = f"/etc/letsencrypt/live/{domain}/"
+    matches = []
+    for path in sorted(Path(conf_dir).glob("*.conf")):
+        try:
+            content = path.read_text()
+        except OSError:
+            continue
+        if marker in content:
+            matches.append(str(path))
+    return matches
+
+
+def remove_ssl_configs(conf_dir, domain):
+    removed = []
+    for path in find_ssl_configs(conf_dir, domain):
+        Path(path).unlink()
+        removed.append(path)
+    return removed
+
+
 def reload_apache(service):
     subprocess.run(["systemctl", "reload", service], capture_output=True)

@@ -19,7 +19,7 @@
 # alem de coreutils/procps. Tudo que pode faltar e' testado antes de usar.
 #===============================================================================
 
-VERSION="1.4.0"
+VERSION="1.5.0"
 
 LC_ALL=C
 LANG=C
@@ -1217,6 +1217,41 @@ check_pbx() {
     fi
 }
 
+# MySQL/AMI escutando fora do loopback sem bloqueio no firewall -- exposicao
+# (risco), nao prova de comprometimento: MED, igual ao check de AMI acima.
+port_blocked() {
+    local port="$1" rules
+    if have firewall-cmd && firewall-cmd --state >/dev/null 2>&1; then
+        local svc="" opened
+        [ "$port" = "3306" ] && svc="mysql"
+        opened=$(firewall-cmd --list-ports 2>/dev/null)
+        printf ' %s ' $opened | grep -q " ${port}/tcp " && return 1
+        [ -n "$svc" ] && printf ' %s ' $(firewall-cmd --list-services 2>/dev/null) | grep -q " ${svc} " && return 1
+        return 0
+    fi
+    have iptables || return 1
+    rules=$(run iptables -S)
+    printf '%s\n' "$rules" | grep -qE '^-P INPUT (DROP|REJECT)' && return 0
+    printf '%s\n' "$rules" | grep -qE -- "--dport ${port}( |$).*-j (DROP|REJECT)" && return 0
+    if printf '%s\n' "$rules" | grep -qE '^-A pdrop -j DROP'; then
+        printf '%s\n' "$rules" | grep -qE -- "^-A pdrop .*--dport ${port}( |$).*-j ACCEPT" || return 0
+    fi
+    return 1
+}
+
+check_admin_ports() {
+    have ss || return 0
+    local listening port label
+    listening=$(run ss -Hlnt)
+    for port in 3306 5038; do
+        [ "$port" = "3306" ] && label="MySQL" || label="AMI"
+        printf '%s\n' "$listening" | awk '{print $4}' | grep -E ":${port}$" \
+            | grep -qvE "^(127\.|\[::1\]|::1)" || continue
+        port_blocked "$port" && continue
+        add_finding MED $C_NETWORK "${label} (${port}) escutando fora do loopback sem bloqueio no firewall"
+    done
+}
+
 #------------------------------------------------------------------------------
 # Execucao
 #------------------------------------------------------------------------------
@@ -1259,6 +1294,7 @@ main() {
     check_pbx
     check_pbxapi
     check_asterisk_exec
+    check_admin_ports
 
     # decisao final
     local has_crit=0 i
@@ -1277,4 +1313,4 @@ main() {
     emit_and_exit 0 ""
 }
 
-main
+[ "${AUDIT_NO_MAIN:-0}" = 1 ] || main

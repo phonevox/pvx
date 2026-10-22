@@ -1,3 +1,4 @@
+import datetime
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,6 +7,8 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 import defaults
+import geoip_ops
+import lists
 from main import cli
 
 BASE_STATUS = {
@@ -43,6 +46,29 @@ class RootCheckTest(MainTestCase):
         self.assertEqual(result.exit_code, 0)
 
 
+class CheckJsonTest(MainTestCase):
+    # contrato estável pra outros módulos (ex.: utilidades' checks-phonevox)
+    # consumirem via subprocess, sem depender do texto formatado/colorido.
+    def test_json_flag_outputs_the_raw_status_dict(self):
+        import json
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, engine_active=True, synced=True)):
+            result = self._invoke(["check", "--json"])
+        self.assertEqual(result.exit_code, 0)
+        payload = json.loads(result.output)
+        self.assertTrue(payload["engine_active"])
+        self.assertTrue(payload["synced"])
+
+    def test_json_flag_does_not_require_root(self):
+        with patch("main.status_module.get_status", return_value=BASE_STATUS):
+            result = self._invoke(["check", "--json"], is_root=False)
+        self.assertEqual(result.exit_code, 0)
+
+    def test_json_flag_skips_the_human_formatted_sections(self):
+        with patch("main.status_module.get_status", return_value=BASE_STATUS):
+            result = self._invoke(["check", "--json"])
+        self.assertNotIn("pvx > firewall > check", result.output)
+
+
 class CheckCommandTest(MainTestCase):
     def test_shows_engine_active_state(self):
         with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, engine_active=True)):
@@ -78,6 +104,31 @@ class CheckCommandTest(MainTestCase):
         with patch("main.status_module.get_status", return_value=BASE_STATUS) as mock_get_status:
             self._invoke(["check"])
         mock_get_status.assert_called_once_with(engine=None, base_dir=self.state_dir)
+
+    def test_warns_about_a_competing_engine(self):
+        with patch(
+            "main.status_module.get_status", return_value=dict(BASE_STATUS, competing_engine="firewalld"),
+        ):
+            result = self._invoke(["check"])
+        self.assertIn("firewalld", result.output)
+        self.assertIn("competir", result.output.lower())
+
+    def test_no_competing_engine_warning_when_none_detected(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, competing_engine=None)):
+            result = self._invoke(["check"])
+        self.assertNotIn("competindo", result.output.lower())
+
+    def test_shows_dropped_packet_counters_when_available(self):
+        counters = {"packets": 142, "bytes": 11360}
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, dropped_counters=counters)):
+            result = self._invoke(["check"])
+        self.assertIn("142", result.output)
+        self.assertIn("11.09KB", result.output)
+
+    def test_hides_dropped_counters_line_when_unavailable(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, dropped_counters=None)):
+            result = self._invoke(["check"])
+        self.assertNotIn("bloqueados", result.output.lower())
 
 
 class PortCommandsTest(MainTestCase):
@@ -144,6 +195,17 @@ class IpCommandsTest(MainTestCase):
     def test_deny_allows_self_ban_with_force(self):
         with patch("main.session_ip.detect_session_ip", return_value="203.0.113.9"):
             result = self._invoke(["ip", "deny", "203.0.113.0/24", "--force"])
+        self.assertEqual(result.exit_code, 0)
+
+    def test_deny_fires_a_best_effort_webhook_notification(self):
+        with patch("main.webhook_ops.notify", return_value=(True, None)) as mock_notify:
+            self._invoke(["ip", "deny", "1.2.3.4"])
+        mock_notify.assert_called_once()
+        self.assertEqual(mock_notify.call_args.args[1], "ip_deny")
+
+    def test_deny_never_fails_the_command_when_the_webhook_fails(self):
+        with patch("main.webhook_ops.notify", return_value=(False, "falha ao notificar webhook: boom")):
+            result = self._invoke(["ip", "deny", "1.2.3.4"])
         self.assertEqual(result.exit_code, 0)
 
     def test_accept_then_list_shows_entry(self):
@@ -251,6 +313,11 @@ class IpTrustPhonevoxCommandTest(MainTestCase):
         for ip, _ in defaults.DEFAULT_LISTS["ip_accept"]:
             self.assertIn(ip, listing.output)
 
+    def test_includes_the_new_phonevox_ip(self):
+        self._invoke(["ip", "trust-phonevox"])
+        listing = self._invoke(["ip", "list"])
+        self.assertIn("145.223.92.246", listing.output)
+
     def test_keeps_entries_added_before_it_ran(self):
         self._invoke(["ip", "accept", "45.162.8.0/24", "--comment", "cliente"])
         result = self._invoke(["ip", "trust-phonevox"])
@@ -272,26 +339,30 @@ class IpTrustPhonevoxCommandTest(MainTestCase):
 class StatusCommandTest(MainTestCase):
     # pedido ao vivo: "rodando/sincronizado" ficava escondido no meio de
     # outras linhas -- resumo grande, uma linha só, no topo, bem visível.
+    # achado ao vivo: linha misturava descrição e valor no mesmo texto --
+    # agora o veredito vem do símbolo/cor de check_result (✓/✗), nunca de
+    # uma palavra "ativo"/"inativo" sozinha (que inclusive é substring uma
+    # da outra, "inATIVO" contém "ativo").
     def test_shows_ativo_when_engine_active_and_synced(self):
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, engine_active=True, synced=True,
         )):
             result = self._invoke(["check"])
-        self.assertIn("status: ativo", result.output.lower())
+        self.assertIn("[✓] status", result.output)
 
     def test_shows_inativo_when_engine_is_not_active(self):
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, engine_active=False, synced=True,
         )):
             result = self._invoke(["check"])
-        self.assertIn("status: inativo", result.output.lower())
+        self.assertIn("[✗] status", result.output)
 
     def test_shows_inativo_when_not_synced_even_if_engine_is_active(self):
         with patch("main.status_module.get_status", return_value=dict(
             BASE_STATUS, engine_active=True, synced=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("status: inativo", result.output.lower())
+        self.assertIn("[✗] status", result.output)
 
     def test_status_line_comes_right_after_the_status_section_header(self):
         # pedido ao vivo: a linha de status/contador ficava avulsa, longe da
@@ -302,7 +373,7 @@ class StatusCommandTest(MainTestCase):
             result = self._invoke(["check"])
         lines = [line for line in result.output.splitlines() if line.strip()]
         section_index = next(i for i, line in enumerate(lines) if "status" in line.lower())
-        self.assertIn("status:", lines[section_index + 1].lower())
+        self.assertIn("status", lines[section_index + 1].lower())
 
     def test_shows_configured_over_expected_rule_counter_when_available(self):
         with patch("main.status_module.get_status", return_value=dict(
@@ -321,7 +392,7 @@ class StatusCommandTest(MainTestCase):
         )):
             result = self._invoke(["check"])
         self.assertIn("iptables", result.output)
-        self.assertIn("status: ativo", result.output.lower())
+        self.assertIn("[✓] status", result.output)
         self.assertNotIn("sucesso", result.output.lower())
 
     def test_shows_not_synced_state_without_failure_wording(self):
@@ -329,7 +400,7 @@ class StatusCommandTest(MainTestCase):
             BASE_STATUS, rule_count=0, session_ip="203.0.113.9", synced=False, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("status: inativo", result.output.lower())
+        self.assertIn("[✗] status", result.output)
         self.assertNotIn("falha", result.output.lower())
 
     def test_warns_when_synced_but_failsafe_does_not_cover_current_ip(self):
@@ -342,7 +413,7 @@ class StatusCommandTest(MainTestCase):
             BASE_STATUS, engine_active=True, rule_count=5, session_ip="203.0.113.9", synced=True, failsafe_ok=False,
         )):
             result = self._invoke(["check"])
-        self.assertIn("status: ativo", result.output.lower())
+        self.assertIn("[✓] status", result.output)
         self.assertIn("failsafe", result.output.lower())
 
 
@@ -398,6 +469,259 @@ class StartOnBootTest(MainTestCase):
         with patch("main.systemd_unit.install", return_value="content"):
             self._invoke(["start-on-boot"])
         mock_get_logger.return_value.info.assert_called_once()
+
+
+class LogsCommandsTest(MainTestCase):
+    def test_enable_requires_root(self):
+        result = self._invoke(["logs", "enable"], is_root=False)
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_enable_creates_the_marker(self):
+        import log_ops
+        result = self._invoke(["logs", "enable"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertTrue(log_ops.is_enabled(self.state_dir))
+
+    def test_disable_removes_the_marker(self):
+        import log_ops
+        log_ops.enable(self.state_dir)
+        result = self._invoke(["logs", "disable"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertFalse(log_ops.is_enabled(self.state_dir))
+
+    def test_show_prints_the_matching_lines(self):
+        with patch("main.log_ops.read_lines", return_value=["pvx-fw-deny: SRC=1.2.3.4"]) as mock_read:
+            result = self._invoke(["logs", "show", "--tail", "10"])
+        self.assertIn("1.2.3.4", result.output)
+        mock_read.assert_called_once_with(tail=10)
+
+    def test_show_reports_when_theres_nothing_logged_yet(self):
+        with patch("main.log_ops.read_lines", return_value=[]):
+            result = self._invoke(["logs", "show"])
+        self.assertIn("nenhum pacote bloqueado", result.output.lower())
+
+    def test_show_follow_delegates_to_log_ops(self):
+        with patch("main.log_ops.follow") as mock_follow, patch("main.log_ops.read_lines") as mock_read:
+            self._invoke(["logs", "show", "--follow"])
+        mock_follow.assert_called_once()
+        mock_read.assert_not_called()
+
+
+class GeoCommandsTest(MainTestCase):
+    def setUp(self):
+        super().setUp()
+        for target, value in (("main.geoip_ops.refresh", {}), ("main.ipset_ops.available", False)):
+            p = patch(target, return_value=value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_enable_requires_root(self):
+        result = self._invoke(["geo", "enable", "--yes"], is_root=False)
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_enable_without_yes_asks_for_confirmation(self):
+        with patch("main.ask_confirm", return_value=False) as mock_confirm:
+            result = self._invoke(["geo", "enable"])
+        mock_confirm.assert_called_once()
+        self.assertIn("cancelada", result.output.lower())
+        self.assertEqual((self.state_dir / "geo_accept.conf").exists(), False)
+
+    def test_enable_seeds_brazil_by_default(self):
+        result = self._invoke(["geo", "enable", "--yes"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(lists.read_list(self.state_dir / "geo_accept.conf"), [("BR", "Brasil")])
+
+    def test_enable_is_idempotent(self):
+        self._invoke(["geo", "enable", "--yes"])
+        result = self._invoke(["geo", "enable", "--yes"])
+        self.assertIn("nenhum país novo", result.output.lower())
+
+    def test_enable_runs_refresh_automatically_and_tells_to_apply(self):
+        with patch("main.geoip_ops.refresh", return_value={"BR": {"accepted": True, "count": 100, "reason": None}}) as mock_refresh:
+            result = self._invoke(["geo", "enable", "--yes"])
+        mock_refresh.assert_called_once()
+        self.assertEqual(mock_refresh.call_args.args[0], ["BR"])
+        self.assertIn("apply", result.output)
+
+    def test_enable_still_succeeds_when_refresh_fails(self):
+        with patch("main.geoip_ops.refresh", return_value={"BR": {"accepted": False, "count": 0, "reason": "db-ip fora"}}):
+            result = self._invoke(["geo", "enable", "--yes"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("db-ip fora", result.output)
+        self.assertEqual(lists.read_list(self.state_dir / "geo_accept.conf"), [("BR", "Brasil")])
+
+    def test_accept_runs_refresh_automatically_and_tells_to_apply(self):
+        with patch("main.geoip_ops.refresh", return_value={"CA": {"accepted": True, "count": 5, "reason": None}}) as mock_refresh:
+            result = self._invoke(["geo", "accept", "CA"])
+        mock_refresh.assert_called_once()
+        self.assertEqual(mock_refresh.call_args.args[0], ["CA"])
+        self.assertIn("apply", result.output)
+
+    def test_accept_rejects_invalid_country_code(self):
+        result = self._invoke(["geo", "accept", "BRA"])
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_accept_adds_multiple_countries(self):
+        result = self._invoke(["geo", "accept", "br,ca"])
+        self.assertEqual(result.exit_code, 0)
+        entries = [cc for cc, _ in lists.read_list(self.state_dir / "geo_accept.conf")]
+        self.assertEqual(entries, ["BR", "CA"])
+
+    def test_remove_an_existing_country(self):
+        self._invoke(["geo", "accept", "BR"])
+        result = self._invoke(["geo", "remove", "BR"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(lists.read_list(self.state_dir / "geo_accept.conf"), [])
+
+    def test_remove_rejects_country_not_configured(self):
+        result = self._invoke(["geo", "remove", "BR"])
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_list_shows_off_when_nothing_configured(self):
+        result = self._invoke(["geo", "list"])
+        self.assertIn("desligado", result.output.lower())
+
+    def test_list_shows_cache_state_per_country(self):
+        self._invoke(["geo", "accept", "BR"])
+        with patch("main.geoip_ops.read_cached_ranges", return_value=["1.2.3.0/24"]):
+            result = self._invoke(["geo", "list"])
+        self.assertIn("BR", result.output)
+        self.assertIn("1 range", result.output)
+
+    def test_list_shows_source_ip_count_and_cache_date(self):
+        self._invoke(["geo", "accept", "BR"])
+        geoip_ops._write_ranges(self.state_dir, "BR", ["1.2.3.0/24"])
+        result = self._invoke(["geo", "list"])
+        self.assertIn("DB-IP", result.output)
+        self.assertIn("IPs", result.output)
+        self.assertIn(datetime.date.today().isoformat(), result.output)
+
+    def test_list_shows_applied_state_from_ipset(self):
+        self._invoke(["geo", "accept", "BR"])
+        with patch("main.ipset_ops.available", return_value=True), \
+             patch("main.ipset_ops.members", return_value=["1.2.3.0/24", "5.6.7.0/24"]):
+            result = self._invoke(["geo", "list"])
+        self.assertIn("aplicado", result.output.lower())
+        self.assertNotIn("não aplicado", result.output.lower())
+
+    def test_list_warns_not_applied_when_ipset_is_empty(self):
+        self._invoke(["geo", "accept", "BR"])
+        with patch("main.ipset_ops.available", return_value=True), \
+             patch("main.ipset_ops.members", return_value=[]):
+            result = self._invoke(["geo", "list"])
+        self.assertIn("não aplicado", result.output.lower())
+
+    def test_refresh_requires_root(self):
+        result = self._invoke(["geo", "refresh"], is_root=False)
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_refresh_with_nothing_configured_does_not_touch_the_network(self):
+        with patch("main.geoip_ops.refresh") as mock_refresh:
+            result = self._invoke(["geo", "refresh"])
+        mock_refresh.assert_not_called()
+        self.assertEqual(result.exit_code, 0)
+
+    def test_refresh_reports_accepted_and_rejected_countries(self):
+        self._invoke(["geo", "accept", "BR,CA"])
+        with patch("main.geoip_ops.refresh", return_value={
+            "BR": {"accepted": True, "count": 100, "reason": None},
+            "CA": {"accepted": False, "count": 5, "reason": "CA: resposta vazia da RIPE, mantendo cache anterior"},
+        }):
+            result = self._invoke(["geo", "refresh"])
+        self.assertIn("100", result.output)
+        self.assertIn("resposta vazia", result.output)
+
+    def test_test_command_reports_a_country_match(self):
+        self._invoke(["geo", "accept", "BR"])
+        with patch("main.geoip_ops.read_cached_ranges", return_value=["203.0.113.0/24"]), \
+             patch("main.geoip_ops.lookup_ip_country", return_value=None):
+            result = self._invoke(["geo", "test", "203.0.113.9"])
+        self.assertIn("passaria", result.output.lower())
+
+    def test_test_command_reports_no_match(self):
+        self._invoke(["geo", "accept", "BR"])
+        with patch("main.geoip_ops.read_cached_ranges", return_value=["203.0.113.0/24"]), \
+             patch("main.geoip_ops.lookup_ip_country", return_value=None):
+            result = self._invoke(["geo", "test", "8.8.8.8"])
+        self.assertIn("bloqueado", result.output.lower())
+
+    def test_test_command_warns_geoban_is_off_without_blocking_the_test(self):
+        with patch("main.geoip_ops.lookup_ip_country", return_value=None):
+            result = self._invoke(["geo", "test", "8.8.8.8"])
+        self.assertIn("desligado", result.output.lower())
+
+    def test_test_command_shows_the_ripe_lookup_even_with_geoban_off(self):
+        with patch("main.geoip_ops.lookup_ip_country", return_value={"country": "BR", "resource": "189.124.0.0/16"}):
+            result = self._invoke(["geo", "test", "189.124.85.75"])
+        self.assertIn("BR", result.output)
+        self.assertIn("189.124.0.0/16", result.output)
+
+    def test_test_command_shows_the_ripe_lookup_even_with_geoban_on(self):
+        self._invoke(["geo", "accept", "BR"])
+        with patch("main.geoip_ops.read_cached_ranges", return_value=["203.0.113.0/24"]), \
+             patch("main.geoip_ops.lookup_ip_country", return_value={"country": "BR", "resource": "189.124.0.0/16"}):
+            result = self._invoke(["geo", "test", "203.0.113.9"])
+        self.assertIn("189.124.0.0/16", result.output)
+
+    def test_test_command_warns_but_does_not_fail_when_ripe_lookup_errors_out(self):
+        with patch("main.geoip_ops.lookup_ip_country", side_effect=geoip_ops.GeoIPError("sem rede")):
+            result = self._invoke(["geo", "test", "8.8.8.8"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("sem rede", result.output)
+
+    def test_test_command_rejects_invalid_ip(self):
+        result = self._invoke(["geo", "test", "not-an-ip"])
+        self.assertNotEqual(result.exit_code, 0)
+
+
+class WebhookCommandsTest(MainTestCase):
+    def test_set_requires_root(self):
+        result = self._invoke(["webhook", "set", "https://hooks.example.com/abc"], is_root=False)
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_set_then_test_reports_success(self):
+        self._invoke(["webhook", "set", "https://hooks.example.com/abc"])
+        with patch("main.webhook_ops.notify", return_value=(True, None)):
+            result = self._invoke(["webhook", "test"])
+        self.assertEqual(result.exit_code, 0)
+
+    def test_test_reports_failure_reason(self):
+        with patch("main.webhook_ops.notify", return_value=(False, "nenhuma URL de webhook configurada")):
+            result = self._invoke(["webhook", "test"])
+        self.assertIn("nenhuma url", result.output.lower())
+
+    def test_clear_requires_root(self):
+        result = self._invoke(["webhook", "clear"], is_root=False)
+        self.assertNotEqual(result.exit_code, 0)
+
+    def test_clear_removes_a_configured_url(self):
+        import webhook_ops
+        self._invoke(["webhook", "set", "https://hooks.example.com/abc"])
+        self._invoke(["webhook", "clear"])
+        self.assertIsNone(webhook_ops.get(self.state_dir))
+
+
+class CheckDriftWebhookTest(MainTestCase):
+    def test_notifies_when_drift_is_detected(self):
+        drifted = dict(BASE_STATUS, engine_active=True, rule_count=7, synced=False)
+        with patch("main.status_module.get_status", return_value=drifted), \
+             patch("main.webhook_ops.notify", return_value=(True, None)) as mock_notify:
+            self._invoke(["check"])
+        self.assertTrue(any(c.args[1] == "check_drift" for c in mock_notify.call_args_list))
+
+    def test_notifies_when_a_competing_engine_is_detected(self):
+        competing = dict(BASE_STATUS, competing_engine="firewalld")
+        with patch("main.status_module.get_status", return_value=competing), \
+             patch("main.webhook_ops.notify", return_value=(True, None)) as mock_notify:
+            self._invoke(["check"])
+        self.assertTrue(any(c.args[1] == "competing_engine" for c in mock_notify.call_args_list))
+
+    def test_does_not_notify_when_everything_is_fine(self):
+        fine = dict(BASE_STATUS, engine_active=True, rule_count=7, synced=True, competing_engine=None)
+        with patch("main.status_module.get_status", return_value=fine), \
+             patch("main.webhook_ops.notify") as mock_notify:
+            self._invoke(["check"])
+        mock_notify.assert_not_called()
 
 
 class BuildCliGroupTest(MainTestCase):

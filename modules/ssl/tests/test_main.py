@@ -18,6 +18,7 @@ def _invoke(args, is_root=True, **patches):
         "main.vhost.exists": patch("main.vhost.exists", return_value=False),
         "main.vhost.create": patch("main.vhost.create", return_value="/etc/apache2/sites-available/x.conf"),
         "main.vhost.remove": patch("main.vhost.remove"),
+        "main.vhost.remove_ssl_configs": patch("main.vhost.remove_ssl_configs", return_value=[]),
         "main.vhost.reload_apache": patch("main.vhost.reload_apache"),
         "main.firewall_guard.temporarily_open": patch("main.firewall_guard.temporarily_open"),
         "main.certbot_ops.has_certificate": patch("main.certbot_ops.has_certificate", return_value=False),
@@ -124,6 +125,30 @@ class SetupCommandTest(unittest.TestCase):
         result, mocks = _invoke(["setup", "example.com", "--email", "time@phonevox.com.br"])
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["main.certbot_ops.issue"].assert_called_once_with("example.com", "time@phonevox.com.br")
+
+    def test_cleans_up_an_orphaned_ssl_config_before_issuing_a_new_certificate(self):
+        result, mocks = _invoke(
+            ["setup", "example.com"],
+            **{
+                "main.vhost.remove_ssl_configs": patch(
+                    "main.vhost.remove_ssl_configs",
+                    return_value=["/etc/apache2/sites-available/ssl-le-ssl.conf"],
+                ),
+            },
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["main.vhost.remove_ssl_configs"].assert_called_once_with(
+            "/etc/apache2/sites-available", "example.com",
+        )
+        self.assertIn("ssl-le-ssl.conf", result.output)
+
+    def test_does_not_clean_up_ssl_configs_when_renewing_an_existing_certificate(self):
+        result, mocks = _invoke(
+            ["setup", "example.com"],
+            **{"main.certbot_ops.has_certificate": patch("main.certbot_ops.has_certificate", return_value=True)},
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["main.vhost.remove_ssl_configs"].assert_not_called()
 
     def test_certbot_failure_is_reported_as_a_click_exception(self):
         import certbot_ops as certbot_ops_module
@@ -242,6 +267,19 @@ class RemoveCommandTest(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         mocks["main.certbot_ops.remove"].assert_called_once_with("example.com")
         mocks["main.vhost.remove"].assert_called_once_with("/etc/apache2/sites-available", "example.com", "debian")
+
+    def test_also_cleans_up_orphaned_ssl_configs_left_behind_by_certbot(self):
+        result, mocks = _invoke(
+            ["remove", "example.com", "--yes"],
+            **{
+                "main.vhost.remove_ssl_configs": patch(
+                    "main.vhost.remove_ssl_configs",
+                    return_value=["/etc/apache2/sites-available/ssl-le-ssl.conf"],
+                ),
+            },
+        )
+        self.assertEqual(result.exit_code, 0, result.output)
+        mocks["main.vhost.remove_ssl_configs"].assert_called_once_with("/etc/apache2/sites-available", "example.com")
 
     def test_removes_the_cron_schedule_when_it_was_the_last_domain(self):
         # list_domains() é chamado 2x: valida o domínio antes de remover, confere se

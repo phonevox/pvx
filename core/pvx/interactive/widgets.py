@@ -30,6 +30,12 @@ def spinner(message):
     return Console().status(message, spinner_style=theme.current_accent_color())
 
 
+def _format_elapsed(seconds):
+    hours, remainder = divmod(max(0, int(seconds)), 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
 class _ElapsedColumn(TimeElapsedColumn):
     # TimeElapsedColumn nativa mostra "0:05:02" (hora sem zero à esquerda) --
     # HH:MM:SS fixo fica mais fácil de escanear numa lista de etapas.
@@ -37,9 +43,13 @@ class _ElapsedColumn(TimeElapsedColumn):
         elapsed = task.finished_time if task.finished else task.elapsed
         if elapsed is None:
             return Text("--:--:--", style="progress.elapsed")
-        hours, remainder = divmod(max(0, int(elapsed)), 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return Text(f"{hours:02d}:{minutes:02d}:{seconds:02d}", style="progress.elapsed")
+        return Text(_format_elapsed(elapsed), style="progress.elapsed")
+
+
+def _print_elapsed(elapsed):
+    # Step/StepWithLog são transient -- a linha do spinner some ao sair, sem
+    # isso não sobra nenhum rastro de quanto a etapa demorou.
+    Console().print(f"  levou {_format_elapsed(elapsed)}", style=theme.SEPARATOR_COLOR, highlight=False)
 
 
 class Step:
@@ -65,6 +75,7 @@ class Step:
     def __exit__(self, exc_type, exc, tb):
         self.elapsed = time.monotonic() - self._start
         self._progress.stop()
+        _print_elapsed(self.elapsed)
         return False
 
 
@@ -104,6 +115,7 @@ class StepWithLog:
     def __exit__(self, exc_type, exc, tb):
         self.elapsed = time.monotonic() - self._start
         self._live.__exit__(exc_type, exc, tb)
+        _print_elapsed(self.elapsed)
         return False
 
 

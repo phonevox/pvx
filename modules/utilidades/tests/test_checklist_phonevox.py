@@ -15,7 +15,7 @@ class SslCheckTest(unittest.TestCase):
     def test_no_live_dir_is_a_warning(self, mock_isdir):
         result = checklist_phonevox.check_ssl()
         self.assertEqual(result["level"], "warn")
-        self.assertIn("nenhum certificado", result["text"])
+        self.assertIn("nenhum certificado", result["value"])
 
     @patch("checklist_phonevox.os.listdir", return_value=[])
     @patch("checklist_phonevox.os.path.isdir", return_value=True)
@@ -30,8 +30,8 @@ class SslCheckTest(unittest.TestCase):
         with patch("checklist_phonevox.os.path.isdir", side_effect=[True, True]):
             result = checklist_phonevox.check_ssl()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("central.example.com", result["text"])
-        self.assertIn("60", result["text"])
+        self.assertIn("central.example.com", result["value"])
+        self.assertIn("60", result["value"])
 
     @patch("checklist_phonevox._days_until_expiry", return_value=-3)
     @patch("checklist_phonevox.os.listdir", return_value=["central.example.com"])
@@ -39,7 +39,7 @@ class SslCheckTest(unittest.TestCase):
         with patch("checklist_phonevox.os.path.isdir", side_effect=[True, True]):
             result = checklist_phonevox.check_ssl()
         self.assertEqual(result["level"], "error")
-        self.assertIn("expirado", result["text"])
+        self.assertIn("expirado", result["value"])
 
     @patch("checklist_phonevox._days_until_expiry", return_value=None)
     @patch("checklist_phonevox.os.listdir", return_value=["central.example.com"])
@@ -53,8 +53,8 @@ class SslCheckTest(unittest.TestCase):
     def test_reports_the_most_urgent_domain_when_there_are_several(self, mock_listdir, mock_days):
         with patch("checklist_phonevox.os.path.isdir", side_effect=[True, True, True]):
             result = checklist_phonevox.check_ssl()
-        self.assertIn("b.example.com", result["text"])
-        self.assertIn("5", result["text"])
+        self.assertIn("b.example.com", result["value"])
+        self.assertIn("5", result["value"])
 
 
 class DaysUntilExpiryTest(unittest.TestCase):
@@ -89,7 +89,7 @@ class AutobackupCheckTest(unittest.TestCase):
         path.write_text(json.dumps({"cron_minute": "25", "cron_hour": "2"}))
         result = checklist_phonevox.check_autobackup()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("25 2 * * *", result["text"])
+        self.assertIn("25 2 * * *", result["value"])
 
 
 class SshHardeningCheckTest(unittest.TestCase):
@@ -134,7 +134,7 @@ class ZabbixCheckTest(unittest.TestCase):
         ):
             result = checklist_phonevox.check_zabbix()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("vps-x", result["text"])
+        self.assertIn("vps-x", result["value"])
 
     def test_audit_script_not_added_is_a_warning(self):
         result = checklist_phonevox.check_zabbix_audit_script()
@@ -159,7 +159,7 @@ class AutobloqueadorCheckTest(unittest.TestCase):
         with patch("checklist_phonevox._read_json", return_value={"type": "pabx"}):
             result = checklist_phonevox.check_autobloqueador()
         self.assertEqual(result["level"], "ok")
-        self.assertIn("pabx", result["text"])
+        self.assertIn("pabx", result["value"])
 
 
 class FirewallBootCheckTest(unittest.TestCase):
@@ -204,7 +204,10 @@ class FirewallBaseIpsCheckTest(unittest.TestCase):
         self._write_ip_accept(["45.162.8.0/24  # cliente"])
         result = checklist_phonevox.check_firewall_base_ips()
         self.assertEqual(result["level"], "warn")
-        self.assertIn("trust-phonevox", result["text"])
+        self.assertIn("trust-phonevox", result["value"])
+
+    def test_new_phonevox_ip_is_part_of_the_base_set(self):
+        self.assertIn("145.223.92.246", checklist_phonevox._FIREWALL_BASE_IPS)
 
     def test_a_covering_supernet_counts_as_present(self):
         self._write_ip_accept(["0.0.0.0/0  # tudo"])
@@ -213,14 +216,25 @@ class FirewallBaseIpsCheckTest(unittest.TestCase):
 
 
 class FirewallSyncedCheckTest(unittest.TestCase):
+    # achado ao vivo: parsear o texto formatado de `pvx firewall check`
+    # (scraping de "status: ativo") quebrou quando o formato de exibição
+    # mudou -- `--json` é o contrato estável entre os dois módulos, nunca
+    # muda com o tema/formato de exibição escolhido pelo usuário.
     def test_ok_when_synced(self):
-        fake_result = MagicMock(stdout="  status: ativo -- 4/6 regra(s) configurada(s)")
-        with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
+        fake_result = MagicMock(stdout=json.dumps({"engine_active": True, "synced": True}))
+        with patch("checklist_phonevox.subprocess.run", return_value=fake_result) as mock_run:
             result = checklist_phonevox.check_firewall_synced()
         self.assertEqual(result["level"], "ok")
+        self.assertIn("--json", mock_run.call_args.args[0])
 
     def test_warns_when_not_synced(self):
-        fake_result = MagicMock(stdout="  status: inativo")
+        fake_result = MagicMock(stdout=json.dumps({"engine_active": True, "synced": False}))
+        with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
+            result = checklist_phonevox.check_firewall_synced()
+        self.assertEqual(result["level"], "warn")
+
+    def test_warns_when_engine_is_not_active(self):
+        fake_result = MagicMock(stdout=json.dumps({"engine_active": False, "synced": True}))
         with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
             result = checklist_phonevox.check_firewall_synced()
         self.assertEqual(result["level"], "warn")
@@ -229,6 +243,70 @@ class FirewallSyncedCheckTest(unittest.TestCase):
         with patch("checklist_phonevox.subprocess.run", side_effect=OSError()):
             result = checklist_phonevox.check_firewall_synced()
         self.assertEqual(result["level"], "warn")
+
+    def test_warns_when_output_is_not_valid_json(self):
+        fake_result = MagicMock(stdout="not json")
+        with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
+            result = checklist_phonevox.check_firewall_synced()
+        self.assertEqual(result["level"], "warn")
+
+
+class FirewallGeobanCheckTest(unittest.TestCase):
+    def test_ok_when_geoban_is_enabled(self):
+        fake_result = MagicMock(stdout=json.dumps({"lists": {"geo_accept": [["BR", "Brasil"]]}}))
+        with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
+            result = checklist_phonevox.check_firewall_geoban()
+        self.assertEqual(result["level"], "ok")
+        self.assertIn("BR", result["value"])
+
+    def test_warns_when_geoban_is_disabled(self):
+        fake_result = MagicMock(stdout=json.dumps({"lists": {"geo_accept": []}}))
+        with patch("checklist_phonevox.subprocess.run", return_value=fake_result):
+            result = checklist_phonevox.check_firewall_geoban()
+        self.assertEqual(result["level"], "warn")
+        self.assertIn("geo enable", result["value"])
+
+    def test_warns_when_pvx_firewall_check_is_unavailable(self):
+        with patch("checklist_phonevox.subprocess.run", side_effect=OSError()):
+            result = checklist_phonevox.check_firewall_geoban()
+        self.assertEqual(result["level"], "warn")
+
+
+class FirewallAdminPortsCheckTest(unittest.TestCase):
+    def _check(self, port_accept, port_deny):
+        payload = {"lists": {"port_accept": port_accept, "port_deny": port_deny}}
+        with patch("checklist_phonevox.subprocess.run", return_value=MagicMock(stdout=json.dumps(payload))):
+            return checklist_phonevox.check_firewall_admin_ports()
+
+    def test_ok_with_the_default_lists(self):
+        result = self._check([["5060/udp", "SIP"]], [["3306/tcp", "MySQL"], ["5038/tcp", "AMI"]])
+        self.assertEqual(result["level"], "ok")
+
+    def test_ok_when_not_listed_anywhere(self):
+        result = self._check([["5060/udp", "SIP"]], [])
+        self.assertEqual(result["level"], "ok")
+
+    def test_error_when_mysql_is_accepted_and_not_denied(self):
+        result = self._check([["3306/tcp", "MySQL"]], [])
+        self.assertEqual(result["level"], "error")
+        self.assertIn("3306", result["value"])
+
+    def test_error_when_a_range_without_protocol_opens_ami(self):
+        result = self._check([["5000-5100", "range"]], [])
+        self.assertEqual(result["level"], "error")
+        self.assertIn("5038", result["value"])
+
+    def test_deny_wins_over_accept(self):
+        result = self._check([["3306/tcp", "MySQL"]], [["3306/tcp", "MySQL"]])
+        self.assertEqual(result["level"], "ok")
+
+    def test_warns_when_pvx_firewall_check_is_unavailable(self):
+        with patch("checklist_phonevox.subprocess.run", side_effect=OSError()):
+            result = checklist_phonevox.check_firewall_admin_ports()
+        self.assertEqual(result["level"], "warn")
+
+    def test_admin_ports_check_is_in_the_checklist(self):
+        self.assertIn(checklist_phonevox.check_firewall_admin_ports, checklist_phonevox.CHECKS)
 
 
 class FirewallAsteriskIpsCheckTest(unittest.TestCase):
@@ -262,7 +340,7 @@ class FirewallAsteriskIpsCheckTest(unittest.TestCase):
         ):
             result = checklist_phonevox.check_firewall_asterisk_ips()
         self.assertEqual(result["level"], "warn")
-        self.assertIn("198.51.100.9", result["text"])
+        self.assertIn("198.51.100.9", result["value"])
 
     def test_ok_when_ip_accept_file_does_not_exist_yet_and_nothing_connected(self):
         with patch("checklist_phonevox._asterisk_cli", return_value=None):
@@ -273,18 +351,21 @@ class FirewallAsteriskIpsCheckTest(unittest.TestCase):
 class RunAllTest(unittest.TestCase):
     def test_runs_every_check_in_order(self):
         results = checklist_phonevox.run_all()
-        sections = [r["section"] for r in results]
+        rules = [r["rule"] for r in results]
         self.assertEqual(len(results), len(checklist_phonevox.CHECKS))
-        self.assertEqual(sections[0], "SSL")
-        self.assertIn("Firewall", sections)
+        self.assertEqual(rules[0], "SSL")
+        self.assertTrue(any("Firewall" in rule for rule in rules))
 
-    def test_zabbix_contributes_two_adjacent_items_to_the_same_section(self):
+    def test_every_result_has_the_four_expected_fields(self):
+        for result in checklist_phonevox.run_all():
+            self.assertEqual(set(result.keys()), {"rule", "description", "value", "level"})
+
+    def test_zabbix_contributes_two_adjacent_items(self):
         # zabbix (config) e zabbix_audit_script são checks separados, mas
-        # devem cair na MESMA seção, um logo depois do outro -- main.py só
-        # imprime section() quando o nome muda (ver _print_checklist).
+        # ficam um logo depois do outro na ordem de exibição.
         results = checklist_phonevox.run_all()
-        sections = [r["section"] for r in results]
-        zabbix_indexes = [i for i, s in enumerate(sections) if s == "Zabbix"]
+        rules = [r["rule"] for r in results]
+        zabbix_indexes = [i for i, rule in enumerate(rules) if rule.startswith("Zabbix")]
         self.assertEqual(zabbix_indexes, [zabbix_indexes[0], zabbix_indexes[0] + 1])
 
 

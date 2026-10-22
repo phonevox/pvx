@@ -77,6 +77,56 @@ class RemoveTest(unittest.TestCase):
         vhost.remove(self._tmp.name, "example.com", "rhel")  # não deve levantar
 
 
+class FindSslConfigsTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_finds_a_conf_file_referencing_the_domains_live_path(self):
+        path = Path(self._tmp.name) / "ssl.conf"
+        path.write_text(
+            "<VirtualHost _default_:443>\n"
+            "SSLCertificateFile /etc/letsencrypt/live/example.com/cert.pem\n"
+            "</VirtualHost>\n"
+        )
+        self.assertEqual(vhost.find_ssl_configs(self._tmp.name, "example.com"), [str(path)])
+
+    def test_ignores_files_referencing_a_different_domain(self):
+        (Path(self._tmp.name) / "ssl.conf").write_text(
+            "SSLCertificateFile /etc/letsencrypt/live/other.com/cert.pem\n"
+        )
+        self.assertEqual(vhost.find_ssl_configs(self._tmp.name, "example.com"), [])
+
+    def test_empty_when_conf_dir_has_no_conf_files(self):
+        self.assertEqual(vhost.find_ssl_configs(self._tmp.name, "example.com"), [])
+
+
+class RemoveSslConfigsTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_deletes_every_matching_file_and_returns_their_paths(self):
+        path = Path(self._tmp.name) / "ssl-le-ssl.conf"
+        path.write_text("SSLCertificateFile /etc/letsencrypt/live/example.com/cert.pem\n")
+        removed = vhost.remove_ssl_configs(self._tmp.name, "example.com")
+        self.assertEqual(removed, [str(path)])
+        self.assertFalse(path.exists())
+
+    def test_leaves_unrelated_files_untouched(self):
+        keep = Path(self._tmp.name) / "other.conf"
+        keep.write_text("SSLCertificateFile /etc/letsencrypt/live/other.com/cert.pem\n")
+        vhost.remove_ssl_configs(self._tmp.name, "example.com")
+        self.assertTrue(keep.exists())
+
+    def test_no_op_when_nothing_matches(self):
+        self.assertEqual(vhost.remove_ssl_configs(self._tmp.name, "example.com"), [])
+
+
 class ReloadApacheTest(unittest.TestCase):
     @patch("vhost.subprocess.run")
     def test_reloads_the_given_service(self, mock_run):

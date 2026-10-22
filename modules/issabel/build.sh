@@ -11,6 +11,12 @@ trap 'rm -rf "$BUILD_DIR"' EXIT
 cp src/*.py "$BUILD_DIR/"
 mv "$BUILD_DIR/main.py" "$BUILD_DIR/module.py"
 
+# scripts/*.sh (audit_ops.py) viajam dentro do .pyz, na mesma estrutura
+# relativa que audit_ops.py espera achar em dev (scripts/ ao lado de src/) --
+# get_data() lê tanto do zip quanto do disco solto (mesmo padrão do utilidades).
+mkdir -p "$BUILD_DIR/scripts"
+cp scripts/*.sh "$BUILD_DIR/scripts/"
+
 echo "from module import cli" > "$BUILD_DIR/__main__.py"
 
 mkdir -p dist

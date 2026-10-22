@@ -76,6 +76,17 @@ class StepTest(unittest.TestCase):
         spinner_column = mock_progress_cls.call_args.args[0]
         self.assertEqual(spinner_column.spinner.style, "#0087ff")
 
+    @patch("pvx.interactive.widgets.Console")
+    @patch("pvx.interactive.widgets.Progress")
+    @patch("pvx.interactive.widgets.time.monotonic", side_effect=[0, 5])
+    def test_prints_the_elapsed_time_once_the_block_ends(self, mock_monotonic, mock_progress_cls, mock_console_cls):
+        # a linha do Progress some (transient=True) -- sem isso, nada fica
+        # dizendo quanto a etapa demorou depois que ela termina.
+        with step("Instalando pacotes..."):
+            pass
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertIn("00:00:05", printed)
+
 
 class ElapsedColumnTest(unittest.TestCase):
     # rich.progress.TimeElapsedColumn mostra "0:05:02" (hora sem zero à
@@ -120,6 +131,15 @@ class StepWithLogTest(unittest.TestCase):
             for i in range(5):
                 s.feed(f"linha {i}")
         self.assertEqual(list(s._lines), ["linha 2", "linha 3", "linha 4"])
+
+    @patch("pvx.interactive.widgets.Console")
+    @patch("pvx.interactive.widgets.Live")
+    @patch("pvx.interactive.widgets.time.monotonic", side_effect=[0, 5])
+    def test_prints_the_elapsed_time_once_the_block_ends(self, mock_monotonic, mock_live_cls, mock_console_cls):
+        with step_with_log("Instalando pacotes..."):
+            pass
+        printed = mock_console_cls.return_value.print.call_args.args[0]
+        self.assertIn("00:00:05", printed)
 
 
 class BannerTest(unittest.TestCase):

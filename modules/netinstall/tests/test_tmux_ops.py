@@ -32,15 +32,35 @@ class RelaunchInsideTest(unittest.TestCase):
     # achado ao vivo: instalação de 20+min cortada no meio por queda de SSH, sem
     # jeito de retomar/ver o que já tinha rodado -- relançar dentro de uma sessão
     # tmux sobrevive a isso (reconecta e dá `tmux attach`).
+    #
+    # relaunch_inside() recebe o argv já pronto (quem chama monta a partir dos
+    # flags resolvidos pelo Click) em vez de ler sys.argv -- achado ao vivo: via
+    # menu interativo, o processo pvx inteiro roda sem nenhum argumento (a
+    # navegação acontece dentro do mesmo processo), então sys.argv[1:] vinha
+    # vazio e reabria o menu raiz dentro do tmux em vez do comando escolhido.
+    @patch("tmux_ops.pvx_config.pvx_bin_path", return_value="/usr/local/bin/pvx")
     @patch("tmux_ops.os.execvp")
     @patch("tmux_ops.shutil.which", return_value="/usr/bin/tmux")
-    def test_execs_tmux_new_session_with_the_original_command_line(self, mock_which, mock_execvp):
-        with patch("tmux_ops.sys.argv", ["/usr/local/bin/pvx", "netinstall", "issabel5", "--astver", "18"]):
-            tmux_ops.relaunch_inside()
+    def test_execs_tmux_new_session_with_the_given_argv(self, mock_which, mock_execvp, mock_bin_path):
+        tmux_ops.relaunch_inside(["netinstall", "issabel5", "--astver", "18"])
         args = mock_execvp.call_args.args
         self.assertEqual(args[0], "/usr/bin/tmux")
-        self.assertEqual(args[1][:3], ["/usr/bin/tmux", "new-session", "-s"])
-        self.assertIn("pvx netinstall issabel5 --astver 18", args[1][-1])
+        self.assertEqual(args[1][:4], ["/usr/bin/tmux", "new-session", "-A", "-s"])
+        self.assertEqual(args[1][-1], "/usr/local/bin/pvx netinstall issabel5 --astver 18")
+
+    @patch("tmux_ops.pvx_config.pvx_bin_path", return_value="/usr/local/bin/pvx")
+    @patch("tmux_ops.os.execvp")
+    @patch("tmux_ops.shutil.which", return_value="/usr/bin/tmux")
+    def test_uses_attach_or_create_so_a_leftover_session_does_not_crash(self, mock_which, mock_execvp, mock_bin_path):
+        # achado ao vivo: reconectar depois de uma queda de SSH e rodar `issabel5` de
+        # novo batia numa sessão "pvx-netinstall" órfã ainda viva -- `tmux new-session
+        # -s` (sem -A) falha com "duplicate session" e mata o processo na hora, sem
+        # nenhum traceback (os.execvp já trocou a imagem do processo Python pelo tmux,
+        # não tem mais catch-global rodando ali). `-A` faz o tmux anexar na sessão
+        # existente em vez de falhar -- é o "sobrevive a queda de SSH" completo.
+        tmux_ops.relaunch_inside(["netinstall", "issabel5"])
+        args = mock_execvp.call_args.args[1]
+        self.assertIn("-A", args)
 
     @patch("tmux_ops.os.execvp")
     @patch("tmux_ops.shutil.which", return_value=None)
@@ -48,7 +68,7 @@ class RelaunchInsideTest(unittest.TestCase):
         # ex.: ensure_installed() falhou em silêncio (sem root) -- segue sem tmux
         # em vez de estourar em os.execvp(None, ...); o preflight normal, logo na
         # sequência, é quem vai reportar a causa real (falta de root) com clareza.
-        tmux_ops.relaunch_inside()
+        tmux_ops.relaunch_inside(["netinstall", "issabel5"])
         mock_execvp.assert_not_called()
 
 

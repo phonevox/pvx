@@ -1,3 +1,4 @@
+import os
 import tarfile
 import tempfile
 import unittest
@@ -26,20 +27,20 @@ class ScanSignatureFileTest(unittest.TestCase):
     def test_clean_file_is_not_flagged(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write(tmp, "index.php", CLEAN_PHP)
-            finding = scan._scan_signature_file(path, "index.php", "admin.tgz", None, None, scan.PHP_SIG_RE, "ofuscacao")
+            finding = scan._scan_signature_file(path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao")
         self.assertIsNone(finding)
 
     def test_obfuscated_signature_is_suspicious(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write(tmp, "shell.php", EVIL_PHP)
-            finding = scan._scan_signature_file(path, "shell.php", "admin.tgz", None, None, scan.PHP_SIG_RE, "ofuscacao")
+            finding = scan._scan_signature_file(path, "shell.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao")
         self.assertEqual(finding.level, "suspeito")
         self.assertEqual(finding.reason, "ofuscacao")
 
     def test_known_bad_name_alone_is_suspicious(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write(tmp, "salem.php", CLEAN_PHP)
-            finding = scan._scan_signature_file(path, "salem.php", "admin.tgz", None, None, scan.PHP_SIG_RE, "ofuscacao")
+            finding = scan._scan_signature_file(path, "salem.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao")
         self.assertEqual(finding.level, "suspeito")
         self.assertEqual(finding.reason, "nome conhecido do incidente")
 
@@ -47,7 +48,7 @@ class ScanSignatureFileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch("security_scan.rpm_confirms_clean") as mock_rpm:
             path = self._write(tmp, "salem.php", EVIL_PHP)
-            finding = scan._scan_signature_file(path, "salem.php", "admin.tgz", "/var/www/html", None, scan.PHP_SIG_RE, "ofuscacao")
+            finding = scan._scan_signature_file(path, "salem.php", "admin.tgz", "/var/www/html", scan.PHP_SIG_RE, "ofuscacao")
         self.assertEqual(finding.level, "suspeito")
         self.assertIn("nome conhecido do incidente", finding.reason)
         self.assertIn("ofuscacao", finding.reason)
@@ -57,20 +58,69 @@ class ScanSignatureFileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, \
              patch("security_scan.rpm_confirms_clean", return_value=True):
             path = self._write(tmp, "index.php", EVIL_PHP)
-            finding = scan._scan_signature_file(path, "index.php", "admin.tgz", "/var/www/html", None, scan.PHP_SIG_RE, "ofuscacao")
+            finding = scan._scan_signature_file(path, "index.php", "admin.tgz", "/var/www/html", scan.PHP_SIG_RE, "ofuscacao")
         self.assertEqual(finding.level, "ok")
 
     def test_baseline_confirmation_clears_a_signature_only_suspicion(self):
+        # baseline agora é a tabela estática KNOWN_GOOD_HASHES (hardcoded),
+        # não mais um arquivo -- nunca requer 2 backups (1 confiável só pra
+        # gerar baseline + 1 pra analisar de fato).
         with tempfile.TemporaryDirectory() as tmp:
             path = self._write(tmp, "index.php", EVIL_PHP)
-            baseline = Path(tmp, "baseline.txt")
             digest = __import__("hashlib").sha256(EVIL_PHP).hexdigest()
-            baseline.write_text(f"admin.tgz:index.php:{digest}\n")
-            with patch("security_scan.rpm_confirms_clean", return_value=False):
+            with patch("security_scan.rpm_confirms_clean", return_value=False), \
+                 patch.dict(scan.KNOWN_GOOD_HASHES, {"admin.tgz:index.php": digest}, clear=True):
                 finding = scan._scan_signature_file(
-                    path, "index.php", "admin.tgz", None, str(baseline), scan.PHP_SIG_RE, "ofuscacao",
+                    path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao",
                 )
         self.assertEqual(finding.level, "ok")
+
+    def test_centralized_trust_clears_a_signature_only_suspicion(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            digest = hashlib.sha256(EVIL_PHP).hexdigest()
+            trusted = {"admin.tgz:index.php": {"sha256": digest, "origem": "remoto"}}
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(
+                    path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao",
+                    trusted_by_path=trusted,
+                )
+        self.assertEqual(finding.level, "ok")
+        self.assertIn("trust", finding.reason)
+        self.assertIn("rede", finding.reason)
+
+    def test_centralized_trust_names_local_origin_too(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            digest = hashlib.sha256(EVIL_PHP).hexdigest()
+            trusted = {"admin.tgz:index.php": {"sha256": digest, "origem": "local"}}
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(
+                    path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao",
+                    trusted_by_path=trusted,
+                )
+        self.assertEqual(finding.level, "ok")
+        self.assertIn("local", finding.reason)
+
+    def test_centralized_trust_does_not_clear_when_the_hash_no_longer_matches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            trusted = {"admin.tgz:index.php": {"sha256": "a" * 64, "origem": "remoto"}}
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(
+                    path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao",
+                    trusted_by_path=trusted,
+                )
+        self.assertEqual(finding.level, "suspeito")
+
+    def test_no_trusted_by_path_given_behaves_like_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "index.php", EVIL_PHP)
+            with patch("security_scan.rpm_confirms_clean", return_value=False):
+                finding = scan._scan_signature_file(path, "index.php", "admin.tgz", None, scan.PHP_SIG_RE, "ofuscacao")
+        self.assertEqual(finding.level, "suspeito")
 
 
 class RpmConfirmsCleanTest(unittest.TestCase):
@@ -154,17 +204,7 @@ class ScanDirectoryTest(unittest.TestCase):
         self.assertEqual(findings, [])
 
 
-class AddToBaselineTest(unittest.TestCase):
-    def test_adds_new_entries_and_reports_counts(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = str(Path(tmp, "baseline.txt"))
-            before, after = scan.add_to_baseline(["admin.tgz:index.php:abc"], path)
-            self.assertEqual((before, after), (0, 1))
-            before, after = scan.add_to_baseline(["admin.tgz:index.php:abc", "admin.tgz:other.php:def"], path)
-            self.assertEqual((before, after), (1, 2))
-
-
-class ScanAndTrustBackupTest(unittest.TestCase):
+class ScanBackupTest(unittest.TestCase):
     def _build_backup(self, path, with_absolute_symlink=False):
         with tempfile.TemporaryDirectory() as work:
             admin_dir = Path(work, "admin")
@@ -225,13 +265,60 @@ class ScanAndTrustBackupTest(unittest.TestCase):
         self.assertEqual(result["blobs_scanned"], [])
         self.assertEqual(result["findings"], [])
 
-    def test_trust_backup_adds_every_script_file_to_the_baseline(self):
+
+class PruneBackupTest(unittest.TestCase):
+    def _build_backup(self, path):
+        with tempfile.TemporaryDirectory() as work:
+            admin_dir = Path(work, "admin")
+            admin_dir.mkdir()
+            (admin_dir / "index.php").write_bytes(CLEAN_PHP)
+            (admin_dir / "shell.php").write_bytes(EVIL_PHP)
+            admin_tgz = Path(work, "var.www.html.admin.tgz")
+            with tarfile.open(admin_tgz, "w:gz") as tar:
+                tar.add(admin_dir, arcname="admin")
+
+            backup_dir = Path(work, "backup")
+            backup_dir.mkdir()
+            (backup_dir / "var.www.html.admin.tgz").write_bytes(admin_tgz.read_bytes())
+            (backup_dir / "mysql_db.tgz").write_text("nao eh codigo, nunca eh tocado")
+            with tarfile.open(path, "w") as tar:
+                tar.add(backup_dir, arcname="backup")
+
+    def _list_admin_files(self, path):
+        with tarfile.open(path) as tar, tempfile.TemporaryDirectory() as tmp:
+            extract_dir = scan._extract_blob(tar, "backup/var.www.html.admin.tgz", tmp)
+            return sorted(
+                os.path.relpath(os.path.join(dp, f), extract_dir)
+                for dp, _, files in os.walk(extract_dir) for f in files
+            )
+
+    def test_removes_only_the_given_finding_and_keeps_the_rest(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp, "x.tar"))
             self._build_backup(path)
-            baseline = str(Path(tmp, "baseline.txt"))
-            before, after = scan.trust_backup(path, baseline)
-        self.assertEqual((before, after), (0, 2))
+            finding = scan.Finding("suspeito", "var.www.html.admin.tgz", "admin/shell.php", "ofuscacao")
+            removed = scan.prune_backup(path, [finding])
+
+            self.assertEqual(removed, 1)
+            self.assertEqual(self._list_admin_files(path), ["admin/index.php"])
+
+    def test_untouched_blobs_survive_intact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp, "x.tar"))
+            self._build_backup(path)
+            finding = scan.Finding("suspeito", "var.www.html.admin.tgz", "admin/shell.php", "ofuscacao")
+            scan.prune_backup(path, [finding])
+
+            with tarfile.open(path) as tar:
+                content = tar.extractfile("backup/mysql_db.tgz").read()
+        self.assertEqual(content, b"nao eh codigo, nunca eh tocado")
+
+    def test_removing_nothing_reports_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = str(Path(tmp, "x.tar"))
+            self._build_backup(path)
+            removed = scan.prune_backup(path, [])
+        self.assertEqual(removed, 0)
 
 
 class VerdictTest(unittest.TestCase):

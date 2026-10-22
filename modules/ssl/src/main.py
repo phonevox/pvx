@@ -101,6 +101,8 @@ def _run_setup(logger, domain, email, interactive):
     try:
         with firewall_guard.temporarily_open(80):
             if not certbot_ops.has_certificate(domain):
+                for path in vhost.remove_ssl_configs(conf_dir, domain):
+                    widgets.message(f"config SSL órfão removido: {path} (sem certificado correspondente).")
                 with widgets.step(f"Emitindo certificado pra {domain}..."):
                     certbot_ops.issue(domain, email)
                 widgets.success("Certificado emitido.")
@@ -186,6 +188,8 @@ def _run_remove(logger, domain, interactive, yes):
         logger.error(f"ssl remove falhou: {e}")
         raise click.ClickException(str(e))
     vhost.remove(conf_dir, domain, distro)
+    for path in vhost.remove_ssl_configs(conf_dir, domain):
+        widgets.message(f"config SSL órfão removido: {path}.")
     vhost.reload_apache(service)
 
     if not certbot_ops.list_domains():
@@ -197,7 +201,7 @@ def _run_remove(logger, domain, interactive, yes):
 
 class SslModule(PvxModule):
     name = "ssl"
-    version = "0.1.2"
+    version = "0.1.3"
 
     def cli_group(self):
         @click.group(name="ssl")

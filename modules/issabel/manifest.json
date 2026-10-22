@@ -1,8 +1,8 @@
 {
   "name": "issabel",
-  "version": "0.1.2",
+  "version": "0.2.7",
   "entrypoint": "main:cli",
-  "description": "Backup e restore local do Issabel (export/import/inspect via issabel-helper).",
+  "description": "Backup e restore local do Issabel (export/import/inspect via issabel-helper), checagens de saúde e auditoria de comprometimento com trust centralizado.",
   "author": "pvx",
   "min_pvx_version": "0.2.44",
   "checksum_sha256": "",

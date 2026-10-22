@@ -16,10 +16,19 @@ class ParseVersionTest(unittest.TestCase):
 
 class IsSupportedTest(unittest.TestCase):
     def test_true_when_at_or_above_minimum(self):
-        self.assertTrue(pbackup_ops.is_supported((1, 1, 0)))
-        self.assertTrue(pbackup_ops.is_supported((1, 3, 1)))
+        self.assertTrue(pbackup_ops.is_supported((1, 3, 2)))
+        self.assertTrue(pbackup_ops.is_supported((1, 4, 0)))
 
     def test_false_when_below_minimum(self):
+        # achado ao vivo (2026-09): v1.1.0 passava nesse check (MIN_VERSION
+        # antigo era 1.1.0) mas quebrava de verdade -- `--token` só foi
+        # integrado ao script principal do pbackup na v1.3.0 (changelog:
+        # "integrate uoe-upload into main pbackup, remake issabel script"),
+        # antes disso o parser de flags recusava `--token` junto de
+        # `--files`/`--to` ("Multi-flag is not allowed"). v1.3.2 corrige de
+        # quebra um bug de falha silenciosa do lado do próprio pbackup.
+        self.assertFalse(pbackup_ops.is_supported((1, 1, 0)))
+        self.assertFalse(pbackup_ops.is_supported((1, 2, 0)))
         self.assertFalse(pbackup_ops.is_supported((1, 0, 9)))
 
     def test_false_when_none(self):

@@ -5,10 +5,11 @@ from unittest.mock import Mock, patch
 import issabel_upload_ops as ops
 
 
-def _run_result(returncode=0, stderr=""):
+def _run_result(returncode=0, stderr="", stdout=""):
     result = Mock()
     result.returncode = returncode
     result.stderr = stderr
+    result.stdout = stdout
     return result
 
 
@@ -68,12 +69,68 @@ class GenerateConfigBackupTest(unittest.TestCase):
                 ops.generate_config_backup()
         self.assertIn("não foi gerado", str(ctx.exception))
 
-    def test_issabel_helper_failure_becomes_a_clean_error(self):
+    def test_nonzero_exit_code_is_not_fatal_when_the_file_was_produced_anyway(self):
+        # achado ao vivo (2026-09): issabel-helper retorna código != 0 sempre
+        # que QUALQUER componente individual falha (banco que não existe,
+        # integração Phonevox sem suporte no host que virou ERR em vez de
+        # WARN, etc.) mesmo com o arquivo de backup gerado com sucesso --
+        # mesmo comportamento já corrigido no módulo issabel mais novo
+        # (backup_ops.export_backup), nunca portado de volta pra cá. Uma
+        # central real gerou o .tar be-a-bá (confirmado por ls -lat) e o pvx
+        # ainda assim reportava falha fatal.
         with patch("issabel_upload_ops.os.path.isfile", return_value=True), \
+             patch("issabel_upload_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="boom")):
+            path = ops.generate_config_backup()
+        self.assertTrue(path.endswith(".tar"))
+
+    def test_logs_a_warning_when_the_helper_reported_issues_but_the_file_exists(self):
+        logger = Mock()
+        with patch("issabel_upload_ops.os.path.isfile", return_value=True), \
+             patch("issabel_upload_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="boom")):
+            ops.generate_config_backup(logger=logger)
+        logger.warning.assert_called_once()
+        self.assertIn("boom", logger.warning.call_args.args[0])
+
+    def test_no_warning_logged_on_a_clean_exit(self):
+        logger = Mock()
+        with patch("issabel_upload_ops.os.path.isfile", return_value=True), \
+             patch("issabel_upload_ops.subprocess.run", return_value=_run_result()):
+            ops.generate_config_backup(logger=logger)
+        logger.warning.assert_not_called()
+
+    def test_raises_with_the_real_reason_when_the_file_is_genuinely_not_produced(self):
+        def fake_isfile(path):
+            return path == "/usr/bin/issabel-helper"  # nunca o arquivo de backup
+
+        with patch("issabel_upload_ops.os.path.isfile", side_effect=fake_isfile), \
              patch("issabel_upload_ops.subprocess.run", return_value=_run_result(returncode=1, stderr="boom")):
             with self.assertRaises(ops.IssabelUploadError) as ctx:
                 ops.generate_config_backup()
         self.assertIn("boom", str(ctx.exception))
+
+    def test_falls_back_to_stdout_when_the_error_is_written_there(self):
+        def fake_isfile(path):
+            return path == "/usr/bin/issabel-helper"  # nunca o arquivo de backup
+
+        with patch("issabel_upload_ops.os.path.isfile", side_effect=fake_isfile), \
+             patch("issabel_upload_ops.subprocess.run", return_value=_run_result(returncode=1, stdout="deu ruim")):
+            with self.assertRaises(ops.IssabelUploadError) as ctx:
+                ops.generate_config_backup()
+        self.assertIn("deu ruim", str(ctx.exception))
+
+    def test_names_the_exit_code_when_both_streams_are_silent_and_the_file_is_missing(self):
+        # achado ao vivo: issabel-helper às vezes erra sem escrever nada em
+        # NENHUM dos dois streams -- sem esse fallback, o usuário recebe só
+        # o rótulo fixo do erro, sem pista nenhuma do que rolou.
+        def fake_isfile(path):
+            return path == "/usr/bin/issabel-helper"  # nunca o arquivo de backup
+
+        with patch("issabel_upload_ops.os.path.isfile", side_effect=fake_isfile), \
+             patch("issabel_upload_ops.subprocess.run", return_value=_run_result(returncode=1)):
+            with self.assertRaises(ops.IssabelUploadError) as ctx:
+                ops.generate_config_backup()
+        self.assertIn("issabel-helper", str(ctx.exception))
+        self.assertIn("código 1", str(ctx.exception))
 
 
 class ArchiveRecentRecordingsTest(unittest.TestCase):
@@ -116,7 +173,7 @@ class ExportAndUploadTest(unittest.TestCase):
              patch("issabel_upload_ops.os.remove") as mock_remove:
             ops.export_and_upload("http://uoe.example/v1/upload", "tok123", configuration=True, recordings=False)
 
-        mock_gen.assert_called_once()
+        mock_gen.assert_called_once_with(logger=None)
         mock_rec.assert_not_called()
         upload_call = mock_run.call_args
         self.assertEqual(upload_call.args[0][0], "pbackup")
@@ -160,6 +217,28 @@ class ExportAndUploadTest(unittest.TestCase):
             with self.assertRaises(ops.IssabelUploadError) as ctx:
                 ops.export_and_upload("http://uoe.example/v1/upload", "tok123", configuration=True, recordings=False)
         self.assertIn("401", str(ctx.exception))
+        mock_remove.assert_not_called()
+
+    def test_forwards_the_logger_to_generate_config_backup(self):
+        logger = Mock()
+        with patch("issabel_upload_ops.generate_config_backup", return_value="/var/www/backup/x.tar") as mock_gen, \
+             patch("issabel_upload_ops.subprocess.run", return_value=_run_result()), \
+             patch("issabel_upload_ops.os.path.isfile", return_value=True), \
+             patch("issabel_upload_ops.os.remove"):
+            ops.export_and_upload("http://uoe.example/v1/upload", "tok123", configuration=True, logger=logger)
+        mock_gen.assert_called_once_with(logger=logger)
+
+    def test_a_silent_pbackup_failure_still_names_the_exit_code(self):
+        # achado ao vivo (2026-09): "Error: falha ao enviar o backup pro
+        # UOE" sem nenhum detalhe -- pbackup saiu != 0 sem escrever nada em
+        # stdout/stderr (ex.: host de upload não resolve via DNS).
+        with patch("issabel_upload_ops.generate_config_backup", return_value="/var/www/backup/x.tar"), \
+             patch("issabel_upload_ops.subprocess.run", return_value=_run_result(returncode=1)), \
+             patch("issabel_upload_ops.os.remove") as mock_remove:
+            with self.assertRaises(ops.IssabelUploadError) as ctx:
+                ops.export_and_upload("http://uoe.example/v1/upload", "tok123", configuration=True, recordings=False)
+        self.assertIn("pbackup", str(ctx.exception))
+        self.assertIn("código 1", str(ctx.exception))
         mock_remove.assert_not_called()
 
 
