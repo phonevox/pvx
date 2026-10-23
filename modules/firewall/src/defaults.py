@@ -102,3 +102,7 @@ LOG_PREFIX_PORT = "pvx-fw-port: "
 # geoban -- opt-in (ver geoip_ops.py/ipset_ops.py), só iptables por enquanto.
 IPTABLES_GEO_CHAIN = "pgeo"
 GEO_IPSET_NAME = "pvx-geo"
+
+# fail2ban -- override que soma os IPs confiáveis ao ignoreip de cada jail
+# (ver fail2ban_ops.py). Vale pros dois engines.
+FAIL2BAN_OVERRIDE_PATH = "/etc/fail2ban/jail.d/pvx-firewall.local"

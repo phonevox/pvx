@@ -1,3 +1,6 @@
+import ipaddress
+import re
+import shlex
 import subprocess
 
 import defaults
@@ -65,15 +68,41 @@ def expected_rule_count(ip_accept, ip_deny, port_accept, port_deny, log_enabled=
     ))
 
 
-def clear_input_except_failsafe(failsafe_ip):
-    listing = _run(["-L", "INPUT", "--line-numbers", "-n"])
-    rule_lines = [line for line in listing.stdout.splitlines()[2:] if line.strip()]
+# só o que o próprio sync() põe na INPUT -- o resto (jump do fail2ban,
+# NFQUEUE do Issabel, ...) é de outro dono e nunca sai num apply.
+_OWN_INPUT_RULES = {
+    "-m state --state RELATED,ESTABLISHED -j ACCEPT",
+    "-p icmp -j ACCEPT",
+    *(f"-j {chain}" for chain in (
+        defaults.IPTABLES_DENY_CHAIN, defaults.IPTABLES_TRUSTED_CHAIN,
+        defaults.IPTABLES_GEO_CHAIN, defaults.IPTABLES_PORT_CHAIN,
+    )),
+}
+_FAILSAFE_SHAPE = re.compile(r"^-s (\S+) -j ACCEPT$")
 
-    for line in reversed(rule_lines):
-        if failsafe_ip and failsafe_ip in line:
+
+def _normalize_source(value):
+    try:
+        net = ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        return value
+    return str(net.network_address) if net.prefixlen == net.max_prefixlen else str(net)
+
+
+def clear_input_except_failsafe(failsafe_ip):
+    # failsafes de sessões antigas também saem (mesmo formato da regra de
+    # failsafe), menos o da sessão atual.
+    for line in _run(["-S", "INPUT"]).stdout.splitlines():
+        if not line.startswith("-A INPUT "):
             continue
-        line_number = line.split()[0]
-        _run(["-D", "INPUT", line_number])
+        rule = line[len("-A INPUT "):].strip()
+        failsafe = _FAILSAFE_SHAPE.match(rule)
+        if failsafe:
+            if failsafe_ip and _normalize_source(failsafe.group(1)) == failsafe_ip:
+                continue
+        elif rule not in _OWN_INPUT_RULES:
+            continue
+        _run(["-D", "INPUT", *shlex.split(rule)])
 
 
 def port_rule_args(spec):
@@ -135,6 +164,13 @@ def _rule_text(chain, args):
     return " ".join(["-A", chain, *quoted])
 
 
+def _normalize_rule(line):
+    # achado ao vivo: `iptables -S` devolve "-s 127.0.0.1/32" e
+    # "-p udp -m udp --dport ..." -- formas que o pvx nunca escreve.
+    line = re.sub(r"(-p (tcp|udp)) -m \2(?= )", r"\1", line)
+    return re.sub(r"(?<=-s )\S+", lambda m: _normalize_source(m.group(0)), line)
+
+
 def _live_rule_lines(chain):
     result = _run(["-S", chain], check=False)
     if result.returncode != 0:
@@ -161,7 +197,8 @@ def rules_match_expected(ip_accept, ip_deny, port_accept, port_deny, log_enabled
         chains_to_check.append(defaults.IPTABLES_GEO_CHAIN)
 
     for chain in chains_to_check:
-        if _live_rule_lines(chain) != expected_by_chain.get(chain, []):
+        live = [_normalize_rule(line) for line in _live_rule_lines(chain)]
+        if live != [_normalize_rule(line) for line in expected_by_chain.get(chain, [])]:
             return False
     return True
 

@@ -82,7 +82,7 @@ def _echo_list(label, entries):
 
 class FirewallModule(PvxModule):
     name = "firewall"
-    version = "0.2.31"
+    version = "0.2.32"
 
     def cli_group(self):
         @click.group(name="firewall")
@@ -628,6 +628,17 @@ class FirewallModule(PvxModule):
                         "geoban", "bloqueio geográfico em toda porta, exceto IPs confiáveis", names, "ok",
                     )
 
+            fail2ban = result.get("fail2ban")
+            if fail2ban is None:
+                f2b_value, f2b_level = "não instalado", "ok"
+            elif fail2ban:
+                f2b_value, f2b_level = "IPs confiáveis no ignoreip", "ok"
+            else:
+                f2b_value, f2b_level = "IPs confiáveis fora do ignoreip -- rode `apply`", "warn"
+            _check_row(
+                "fail2ban", "IPs confiáveis nunca tomam ban do fail2ban (ignoreip)", f2b_value, f2b_level,
+            )
+
             competing = result.get("competing_engine")
             _check_row(
                 "engine concorrente", "outro firewall rodando junto que pode competir pelas mesmas regras",
@@ -682,6 +693,16 @@ class FirewallModule(PvxModule):
 
             logger.info(f"firewall sincronizado (engine: {result['engine']}).")
             widgets.success(f"firewall sincronizado (engine: {result['engine']}).")
+            fail2ban = result.get("fail2ban")
+            if fail2ban and "error" in fail2ban:
+                logger.error(f"apply: fail2ban: {fail2ban['error']}")
+                widgets.warning(f"fail2ban: não consegui atualizar o ignoreip -- {fail2ban['error']}")
+            elif fail2ban:
+                unbanned = f", desbanido(s): {', '.join(fail2ban['unbanned'])}" if fail2ban["unbanned"] else ""
+                widgets.success(
+                    f"fail2ban: {fail2ban['trusted']} IP(s) confiável(is) no ignoreip de "
+                    f"{fail2ban['jails']} jail(s){unbanned}."
+                )
             if result["session_ip"] is None:
                 click.echo("aviso: IP da sessão não detectado -- nenhum failsafe foi inserido (rodou com --force).")
             if _is_interactive():

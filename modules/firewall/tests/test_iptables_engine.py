@@ -59,35 +59,49 @@ class FailsafeTest(unittest.TestCase):
 
 
 class ClearInputExceptFailsafeTest(unittest.TestCase):
+    # achado ao vivo: apagar TODA a INPUT derrubava o jump do fail2ban
+    # (F2B_INPUT) a cada apply -- só as regras que o próprio pvx cria saem.
+    _INPUT = (
+        "-P INPUT ACCEPT\n"
+        "-A INPUT -s 186.233.124.252/32 -j ACCEPT\n"
+        "-A INPUT -j F2B_INPUT\n"
+        "-A INPUT -s 203.0.113.50/32 -j ACCEPT\n"
+        "-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT\n"
+        "-A INPUT -p icmp -j ACCEPT\n"
+        "-A INPUT -p udp -m multiport --dports 5060,5061 -m state --state NEW -j NFQUEUE --queue-num 1\n"
+        "-A INPUT -j pdenyip\n"
+        "-A INPUT -j ptrusted\n"
+        "-A INPUT -j pdrop\n"
+    )
+
+    def _deleted(self, mock_run, failsafe_ip):
+        mock_run.return_value = _run_result(stdout=self._INPUT)
+        ipt.clear_input_except_failsafe(failsafe_ip)
+        return [" ".join(c.args[0][3:]) for c in mock_run.call_args_list if c.args[0][1:3] == ["-D", "INPUT"]]
+
     @patch("iptables_engine.subprocess.run")
-    def test_deletes_every_rule_except_the_one_matching_the_failsafe_ip(self, mock_run):
-        listing = _run_result(stdout=(
-            "Chain INPUT (policy DROP)\n"
-            "num  target     prot opt source               destination\n"
-            "1    ACCEPT     all  --  189.124.85.75        0.0.0.0/0\n"
-            "2    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0            state RELATED,ESTABLISHED\n"
-            "3    DROP       all  --  1.2.3.4              0.0.0.0/0\n"
-        ))
-        mock_run.side_effect = [listing, _run_result(), _run_result()]
-
-        ipt.clear_input_except_failsafe("189.124.85.75")
-
-        delete_calls = mock_run.call_args_list[1:]
-        deleted_lines = [c.args[0][3] for c in delete_calls]
-        self.assertEqual(sorted(deleted_lines), ["2", "3"])
+    def test_keeps_fail2ban_and_other_foreign_rules(self, mock_run):
+        deleted = self._deleted(mock_run, "186.233.124.252")
+        self.assertFalse(any("F2B_INPUT" in d for d in deleted))
+        self.assertFalse(any("NFQUEUE" in d for d in deleted))
 
     @patch("iptables_engine.subprocess.run")
-    def test_deletes_everything_when_no_failsafe_ip(self, mock_run):
-        listing = _run_result(stdout=(
-            "Chain INPUT (policy DROP)\n"
-            "num  target     prot opt source               destination\n"
-            "1    ACCEPT     all  --  0.0.0.0/0            0.0.0.0/0            state RELATED,ESTABLISHED\n"
-        ))
-        mock_run.side_effect = [listing, _run_result()]
+    def test_deletes_pvx_rules_except_the_current_failsafe(self, mock_run):
+        deleted = self._deleted(mock_run, "186.233.124.252")
+        self.assertEqual(sorted(deleted), sorted([
+            "-s 203.0.113.50/32 -j ACCEPT",
+            "-m state --state RELATED,ESTABLISHED -j ACCEPT",
+            "-p icmp -j ACCEPT",
+            "-j pdenyip",
+            "-j ptrusted",
+            "-j pdrop",
+        ]))
 
-        ipt.clear_input_except_failsafe(None)
-
-        self.assertEqual(mock_run.call_count, 2)
+    @patch("iptables_engine.subprocess.run")
+    def test_deletes_every_failsafe_shaped_rule_when_no_failsafe_ip(self, mock_run):
+        deleted = self._deleted(mock_run, None)
+        self.assertIn("-s 186.233.124.252/32 -j ACCEPT", deleted)
+        self.assertFalse(any("F2B_INPUT" in d for d in deleted))
 
 
 class BuildPortRuleArgsTest(unittest.TestCase):
@@ -309,6 +323,28 @@ class RulesMatchExpectedTest(unittest.TestCase):
         self._mock_chains(mock_run, {})
         self.assertFalse(ipt.rules_match_expected(
             ip_accept=[], ip_deny=[], port_accept=[], port_deny=[], geo_enabled=True,
+        ))
+
+    @patch("iptables_engine.subprocess.run")
+    def test_true_with_real_iptables_s_format(self, mock_run):
+        # achado ao vivo: o kernel devolve "/32" e "-m udp"/"-m tcp" que o
+        # pvx nunca escreve -- sem normalizar, `check` dava INATIVO sempre.
+        self._mock_chains(mock_run, {
+            defaults.IPTABLES_TRUSTED_CHAIN: (
+                "-N ptrusted\n-A ptrusted -s 127.0.0.1/32 -j ACCEPT\n-A ptrusted -s 10.0.0.0/8 -j ACCEPT\n"
+            ),
+            defaults.IPTABLES_PORT_CHAIN: (
+                "-N pdrop\n"
+                "-A pdrop -p udp -m udp --dport 995 -j DROP\n"
+                "-A pdrop -p tcp -m tcp --dport 995 -j DROP\n"
+                "-A pdrop -p tcp -m tcp --dport 20:23 -j DROP\n"
+                "-A pdrop -p udp -m udp --dport 20:23 -j DROP\n"
+                "-A pdrop -j DROP\n"
+            ),
+        })
+        self.assertTrue(ipt.rules_match_expected(
+            ip_accept=[("127.0.0.1", ""), ("10.0.0.0/8", "")], ip_deny=[],
+            port_accept=[], port_deny=[("995/udp", ""), ("995/tcp", ""), ("20-23", "")],
         ))
 
     @patch("iptables_engine.subprocess.run")
