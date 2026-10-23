@@ -2,6 +2,7 @@ from pathlib import Path
 
 import defaults
 import engine_detect
+import fail2ban_ops
 import firewalld_engine
 import geoip_ops
 import iptables_engine
@@ -86,4 +87,11 @@ def run(base_dir, engine=None, force=False):
         sync_kwargs["geo_enabled"] = _build_geo_ipset(lists_data["geo_accept"], base_dir)
 
     _ENGINES[engine_name].sync(**sync_kwargs)
-    return {"engine": engine_name, "session_ip": ip, "firewalld_zone": firewalld_zone}
+
+    # firewall já aplicado neste ponto -- falha no fail2ban vira aviso no
+    # resultado, nunca desfaz/derruba o apply.
+    try:
+        fail2ban = fail2ban_ops.sync([ip_entry for ip_entry, _ in lists_data["ip_accept"]])
+    except RuntimeError as e:
+        fail2ban = {"error": str(e)}
+    return {"engine": engine_name, "session_ip": ip, "firewalld_zone": firewalld_zone, "fail2ban": fail2ban}

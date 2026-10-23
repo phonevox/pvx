@@ -21,6 +21,11 @@ class RunTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.base_dir = Path(self._tmp.name)
+        # chamado incondicionalmente em todo run() agora, nos dois engines --
+        # sem isso os testes bateriam no fail2ban-client de verdade.
+        f2b_patcher = patch("sync.fail2ban_ops.sync", return_value=None)
+        self.mock_f2b_sync = f2b_patcher.start()
+        self.addCleanup(f2b_patcher.stop)
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -43,13 +48,36 @@ class RunTest(unittest.TestCase):
     def test_dispatches_to_iptables_with_seeded_lists(self, mock_ip, mock_engine_sync):
         result = sync.run(self.base_dir, engine="iptables", force=False)
         self.assertEqual(
-            result, {"engine": "iptables", "session_ip": "203.0.113.9", "firewalld_zone": None},
+            result, {"engine": "iptables", "session_ip": "203.0.113.9", "firewalld_zone": None, "fail2ban": None},
         )
 
         kwargs = mock_engine_sync.call_args.kwargs
         self.assertEqual(kwargs["failsafe_ip"], "203.0.113.9")
         self.assertIn(("127.0.0.1", "LOCALHOST"), kwargs["ip_accept"])
         self.assertTrue((self.base_dir / "ip_accept.conf").exists())
+
+    @patch("sync.iptables_engine.sync")
+    @patch("sync.session_ip.detect_session_ip", return_value="203.0.113.9")
+    def test_run_syncs_fail2ban_with_trusted_ips(self, mock_ip, mock_engine_sync):
+        self.mock_f2b_sync.return_value = {"jails": 1, "trusted": 2, "unbanned": []}
+        result = sync.run(self.base_dir, engine="iptables", force=False)
+        trusted = self.mock_f2b_sync.call_args.args[0]
+        self.assertIn("127.0.0.1", trusted)
+        self.assertEqual(result["fail2ban"], {"jails": 1, "trusted": 2, "unbanned": []})
+
+    @patch("sync.magnus_detect.is_magnusbilling", return_value=False)
+    @patch("sync.firewalld_engine.sync")
+    @patch("sync.session_ip.detect_session_ip", return_value="203.0.113.9")
+    def test_run_syncs_fail2ban_on_firewalld_too(self, mock_ip, mock_engine_sync, mock_magnus):
+        sync.run(self.base_dir, engine="firewalld", force=False)
+        self.mock_f2b_sync.assert_called_once()
+
+    @patch("sync.iptables_engine.sync")
+    @patch("sync.session_ip.detect_session_ip", return_value="203.0.113.9")
+    def test_run_does_not_fail_when_fail2ban_sync_errors(self, mock_ip, mock_engine_sync):
+        self.mock_f2b_sync.side_effect = RuntimeError("reload falhou")
+        result = sync.run(self.base_dir, engine="iptables", force=False)
+        self.assertEqual(result["fail2ban"], {"error": "reload falhou"})
 
     @patch("sync.magnus_detect.is_magnusbilling", return_value=False)
     @patch("sync.firewalld_engine.sync")

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import defaults
 import engine_detect
+import fail2ban_ops
 import firewalld_engine
 import iptables_engine
 import lists
@@ -50,6 +51,7 @@ def get_status(engine=None, base_dir=None):
         dropped_counters = None
 
     lists_data = None
+    fail2ban = None
     expected_rule_count = None
     # sem lista pra comparar, não dá pra saber se o conteúdo bate -- fica
     # neutro (nem confirma nem reprova), igual ao comportamento de antes de
@@ -65,6 +67,7 @@ def get_status(engine=None, base_dir=None):
             key: lists.read_list(base_dir / filename)
             for key, filename in defaults.CONFIG_FILENAMES.items()
         }
+        fail2ban = fail2ban_ops.is_synced([ip_entry for ip_entry, _ in lists_data["ip_accept"]])
         if engine_name == "iptables":
             # log_enabled precisa bater com o que sync() de fato aplicou --
             # senão "configured/expected" (contador) e o content-diff dão
@@ -108,4 +111,6 @@ def get_status(engine=None, base_dir=None):
         "expected_rule_count": expected_rule_count,
         "competing_engine": competing_engine,
         "dropped_counters": dropped_counters,
+        # None = fail2ban não instalado/não respondendo; bool = ignoreip bate com ip_accept.
+        "fail2ban": fail2ban,
     }

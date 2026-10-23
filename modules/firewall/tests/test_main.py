@@ -80,6 +80,22 @@ class CheckCommandTest(MainTestCase):
             result = self._invoke(["check"])
         self.assertIn("inativo", result.output.lower())
 
+    def test_shows_fail2ban_not_installed(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, fail2ban=None)):
+            result = self._invoke(["check"])
+        self.assertIn("fail2ban", result.output)
+        self.assertIn("não instalado", result.output)
+
+    def test_warns_when_fail2ban_whitelist_is_out_of_sync(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, fail2ban=False)):
+            result = self._invoke(["check"])
+        self.assertIn("[!] fail2ban", result.output)
+
+    def test_shows_fail2ban_synced(self):
+        with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, fail2ban=True)):
+            result = self._invoke(["check"])
+        self.assertIn("[✓] fail2ban", result.output)
+
     def test_shows_boot_persistence_state(self):
         with patch("main.status_module.get_status", return_value=dict(BASE_STATUS, boot_persistent=True)):
             result = self._invoke(["check"])
@@ -448,6 +464,26 @@ class SyncCommandTest(MainTestCase):
     @patch("main.sync_module.run", side_effect=RuntimeError("boom"))
     def test_logs_failure(self, mock_run, mock_get_logger):
         self._invoke(["apply", "--yes"])
+        mock_get_logger.return_value.error.assert_called_once()
+
+
+    @patch("main.sync_module.run", return_value={
+        "engine": "iptables", "session_ip": "203.0.113.9",
+        "fail2ban": {"jails": 3, "trusted": 15, "unbanned": ["168.195.176.30"]},
+    })
+    def test_reports_fail2ban_whitelist_and_unbans(self, mock_run):
+        result = self._invoke(["apply", "--yes"])
+        self.assertIn("fail2ban", result.output)
+        self.assertIn("168.195.176.30", result.output)
+
+    @patch("main.FirewallModule.get_logger")
+    @patch("main.sync_module.run", return_value={
+        "engine": "iptables", "session_ip": "203.0.113.9", "fail2ban": {"error": "reload falhou"},
+    })
+    def test_warns_and_logs_when_fail2ban_sync_fails(self, mock_run, mock_get_logger):
+        result = self._invoke(["apply", "--yes"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("reload falhou", result.output)
         mock_get_logger.return_value.error.assert_called_once()
 
 

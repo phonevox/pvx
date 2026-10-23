@@ -30,6 +30,11 @@ class GetStatusTest(unittest.TestCase):
         counters_patcher.start()
         self.addCleanup(counters_patcher.stop)
 
+        # idem -- fail2ban_ops.is_synced() roda em todo get_status() com base_dir.
+        self.f2b_patcher = patch("status.fail2ban_ops.is_synced", return_value=None)
+        self.mock_f2b_synced = self.f2b_patcher.start()
+        self.addCleanup(self.f2b_patcher.stop)
+
     @patch("status.iptables_engine.failsafe_present", return_value=True)
     @patch("status.iptables_engine.count_configured_rules", return_value=0)
     @patch("status.iptables_engine.count_input_rules", return_value=7)
@@ -339,6 +344,32 @@ class GetStatusTest(unittest.TestCase):
     ):
         result = status.get_status(engine=None)
         self.assertIsNone(result["dropped_counters"])
+
+    @patch("status.iptables_engine.rules_match_expected", return_value=True)
+    @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
+    @patch("status.iptables_engine.count_input_rules", return_value=7)
+    @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
+    @patch("status.sync.resolve_engine", return_value="iptables")
+    def test_fail2ban_sync_state_checks_the_trusted_ips(
+        self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe, mock_match,
+    ):
+        self.mock_f2b_synced.return_value = False
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "ip_accept.conf").write_text("1.2.3.4  # x\n")
+            result = status.get_status(engine=None, base_dir=tmp)
+        self.assertFalse(result["fail2ban"])
+        self.assertEqual(self.mock_f2b_synced.call_args.args[0], ["1.2.3.4"])
+
+    @patch("status.iptables_engine.failsafe_present", return_value=True)
+    @patch("status.iptables_engine.count_configured_rules", return_value=0)
+    @patch("status.iptables_engine.count_input_rules", return_value=7)
+    @patch("status.session_ip.detect_session_ip", return_value="203.0.113.9")
+    @patch("status.sync.resolve_engine", return_value="iptables")
+    def test_fail2ban_is_none_without_a_base_dir(self, mock_resolve, mock_ip, mock_count, mock_configured, mock_failsafe):
+        result = status.get_status(engine=None)
+        self.assertIsNone(result["fail2ban"])
+
 
 
 if __name__ == "__main__":
